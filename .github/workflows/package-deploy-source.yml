@@ -21,7 +21,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
 
       - name: Install dependencies
@@ -36,45 +36,54 @@ jobs:
       - name: Vercel frontend build
         run: npm run build:vercel
 
+      - name: Probe isolated Vercel imports
+        shell: bash
+        run: |
+          set -u
+          BASE="https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app"
+          failed=0
+
+          # Wait until this deployment has reached the branch alias.
+          for attempt in $(seq 1 36); do
+            code=$(curl -sS --max-time 15 -o /tmp/diag-a.txt -w "%{http_code}" "$BASE/__diag/a" || true)
+            if [ "$code" != "000" ] && [ "$code" != "404" ]; then
+              break
+            fi
+            echo "Waiting for Vercel preview (${attempt}/36)..."
+            sleep 5
+          done
+
+          for group in a b c d; do
+            echo "=== DIAG GROUP $group ==="
+            code=$(curl -sS --max-time 20 -o "/tmp/diag-$group.txt" -D "/tmp/diag-$group.headers" -w "%{http_code}" "$BASE/__diag/$group" || true)
+            echo "HTTP_STATUS=$code"
+            grep -iE '^(content-type|x-vercel-error|server|location):' "/tmp/diag-$group.headers" || true
+            head -c 1200 "/tmp/diag-$group.txt" || true
+            echo
+            if [ "$code" != "200" ]; then
+              failed=1
+            fi
+          done
+
+          if [ "$failed" != "0" ]; then
+            echo "One or more isolated import groups failed."
+            exit 1
+          fi
+
       - name: Probe Vercel Preview API
         shell: bash
         run: |
           set -u
           URL="https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app/api/ping"
-          CODE="000"
-          rm -f /tmp/aura-ping-body.txt /tmp/aura-ping-headers.txt
-
-          for attempt in $(seq 1 36); do
-            echo "Probe attempt ${attempt}/36..."
-            CODE=$(curl -sS \
-              --max-time 15 \
-              -o /tmp/aura-ping-body.txt \
-              -D /tmp/aura-ping-headers.txt \
-              -w "%{http_code}" \
-              "$URL" || true)
-
-            if [ "$CODE" != "000" ] && [ "$CODE" != "404" ]; then
-              break
-            fi
-            sleep 5
-          done
-
+          CODE=$(curl -sS --max-time 20 -o /tmp/aura-ping-body.txt -D /tmp/aura-ping-headers.txt -w "%{http_code}" "$URL" || true)
           echo "HTTP_STATUS=$CODE"
-          echo "--- response headers ---"
           grep -iE '^(content-type|x-vercel-error|server|location):' /tmp/aura-ping-headers.txt || true
-          echo "--- response body (first 1200 bytes) ---"
           head -c 1200 /tmp/aura-ping-body.txt || true
           echo
-
           if [ "$CODE" != "200" ]; then
-            echo "Preview API probe failed with HTTP $CODE"
             exit 1
           fi
-
-          if ! grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' /tmp/aura-ping-body.txt; then
-            echo "Preview API returned HTTP 200 but not the expected JSON payload."
-            exit 1
-          fi
+          grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' /tmp/aura-ping-body.txt
 
       - name: Set up Python
         uses: actions/setup-python@v5
