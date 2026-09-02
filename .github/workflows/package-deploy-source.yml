@@ -33,70 +33,112 @@ jobs:
       - name: Production build
         run: npm run build
 
-      - name: Vercel frontend build
+      - name: Build Vercel frontend and bundled API
         run: npm run build:vercel
 
-      - name: Probe isolated Vercel imports
+      - name: Refresh checked-in Vercel runtime bundle
+        id: bundle
         shell: bash
         run: |
-          set -u
-          BASE="https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app"
-          failed=0
-
-          # Wait until this deployment has reached the branch alias.
-          for attempt in $(seq 1 36); do
-            code=$(curl -sS --max-time 15 -o /tmp/diag-a.txt -w "%{http_code}" "$BASE/__diag/a" || true)
-            if [ "$code" != "000" ] && [ "$code" != "404" ]; then
-              break
-            fi
-            echo "Waiting for Vercel preview (${attempt}/36)..."
-            sleep 5
-          done
-
-          for group in a b c d; do
-            echo "=== DIAG GROUP $group ==="
-            code=$(curl -sS --max-time 20 -o "/tmp/diag-$group.txt" -D "/tmp/diag-$group.headers" -w "%{http_code}" "$BASE/__diag/$group" || true)
-            echo "HTTP_STATUS=$code"
-            grep -iE '^(content-type|x-vercel-error|server|location):' "/tmp/diag-$group.headers" || true
-            head -c 1200 "/tmp/diag-$group.txt" || true
-            echo
-            if [ "$code" != "200" ]; then
-              failed=1
-            fi
-          done
-
-          if [ "$failed" != "0" ]; then
-            echo "One or more isolated import groups failed."
-            exit 1
+          if ! git diff --quiet -- api/runtime.js; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add api/runtime.js
+            git commit -m "build: refresh bundled Vercel runtime"
+            git push origin HEAD:deploy-vercel-neon-20260902
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Probe Vercel Preview API
+      - name: Wait for current Vercel Preview
+        if: steps.bundle.outputs.changed != 'true'
         shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
         run: |
           set -u
           URL="https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app/api/ping"
-          CODE=$(curl -sS --max-time 20 -o /tmp/aura-ping-body.txt -D /tmp/aura-ping-headers.txt -w "%{http_code}" "$URL" || true)
-          echo "HTTP_STATUS=$CODE"
-          grep -iE '^(content-type|x-vercel-error|server|location):' /tmp/aura-ping-headers.txt || true
-          head -c 1200 /tmp/aura-ping-body.txt || true
-          echo
-          if [ "$CODE" != "200" ]; then
+          ready=0
+
+          for attempt in $(seq 1 48); do
+            CODE=$(curl -sS --max-time 20 -o /tmp/aura-ping-body.txt -D /tmp/aura-ping-headers.txt -w "%{http_code}" "$URL" || true)
+            BODY=$(cat /tmp/aura-ping-body.txt 2>/dev/null || true)
+            echo "Probe ${attempt}/48 HTTP=$CODE body=${BODY:0:300}"
+
+            if [ "$CODE" = "200" ] \
+              && grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' /tmp/aura-ping-body.txt \
+              && grep -Fq "$EXPECTED_SHA" /tmp/aura-ping-body.txt; then
+              ready=1
+              break
+            fi
+            sleep 5
+          done
+
+          if [ "$ready" != "1" ]; then
+            echo "Preview did not reach the expected commit $EXPECTED_SHA"
+            echo "--- headers ---"
+            grep -iE '^(content-type|x-vercel-error|server|location):' /tmp/aura-ping-headers.txt || true
+            echo "--- body ---"
+            head -c 1200 /tmp/aura-ping-body.txt || true
             exit 1
           fi
-          grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' /tmp/aura-ping-body.txt
+
+      - name: Verify API ping
+        if: steps.bundle.outputs.changed != 'true'
+        shell: bash
+        run: |
+          URL="https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app/api/ping"
+          CODE=$(curl -sS --max-time 20 -o /tmp/aura-final-ping.txt -w "%{http_code}" "$URL")
+          cat /tmp/aura-final-ping.txt
+          echo
+          test "$CODE" = "200"
+          grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' /tmp/aura-final-ping.txt
+
+      - name: Verify login reaches Neon
+        if: steps.bundle.outputs.changed != 'true'
+        shell: bash
+        run: |
+          URL="https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app/api/auth/login"
+          CODE=$(curl -sS --max-time 30 \
+            -o /tmp/aura-login-probe.txt \
+            -w "%{http_code}" \
+            -X POST \
+            -H 'content-type: application/json' \
+            --data '{"username":"__aura_connectivity_probe__","password":"not-a-real-password"}' \
+            "$URL")
+
+          echo "HTTP_STATUS=$CODE"
+          cat /tmp/aura-login-probe.txt
+          echo
+          test "$CODE" = "401"
+          grep -Fq 'Credenciais inválidas' /tmp/aura-login-probe.txt
+
+      - name: Verify frontend
+        if: steps.bundle.outputs.changed != 'true'
+        shell: bash
+        run: |
+          URL="https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app/"
+          CODE=$(curl -sS --max-time 20 -o /tmp/aura-home.html -w "%{http_code}" "$URL")
+          test "$CODE" = "200"
+          grep -qi '<html' /tmp/aura-home.html
 
       - name: Set up Python
+        if: steps.bundle.outputs.changed != 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
       - name: Install Graphify
+        if: steps.bundle.outputs.changed != 'true'
         run: pipx install graphifyy
 
       - name: Update Graphify incrementally
+        if: steps.bundle.outputs.changed != 'true'
         run: graphify update .
 
       - name: Commit refreshed graph to deployment branch
+        if: steps.bundle.outputs.changed != 'true'
         shell: bash
         run: |
           if ! git diff --quiet -- graphify-out; then
@@ -108,10 +150,12 @@ jobs:
           fi
 
       - name: Package tracked source
+        if: steps.bundle.outputs.changed != 'true'
         shell: bash
         run: git archive --format=tar.gz -o /tmp/aura-source.tgz HEAD
 
       - name: Upload source artifact
+        if: steps.bundle.outputs.changed != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: aura-deploy-source
