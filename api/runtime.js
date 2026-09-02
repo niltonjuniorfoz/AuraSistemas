@@ -3403,12 +3403,12 @@ router6.post("/ai/description", requirePermission("product", "manage"), async (r
   try {
     const { name, brand, model, group, subgroup, upc } = req.body;
     const prompt = `Crie uma descri\xE7\xE3o comercial pronta para a p\xE1gina de produto de uma loja online.
-Use portugu\xEAs do Brasil, com linguagem natural, profissional e convincente, sem exageros.
-Explique o que \xE9 o produto, para que ele serve e quais benef\xEDcios ou experi\xEAncia de uso podem ser comunicados com seguran\xE7a a partir dos dados fornecidos.
-Priorize valor para o cliente e situa\xE7\xF5es de uso. N\xE3o descreva apenas embalagem, cor do frasco, tampa ou apar\xEAncia visual, a menos que isso seja realmente relevante para a compra.
-N\xE3o invente composi\xE7\xE3o, dosagem, certifica\xE7\xF5es, resultados garantidos, indica\xE7\xE3o m\xE9dica, fragr\xE2ncia, tamanho ou especifica\xE7\xF5es que n\xE3o estejam nos dados.
-Se faltarem detalhes, escreva um texto \xFAtil usando somente o que \xE9 poss\xEDvel afirmar pelo nome, marca, modelo e categoria, sem preencher lacunas com suposi\xE7\xF5es.
-Entregue apenas o texto final, sem t\xEDtulo, sem markdown e sem mencionar que foi gerado por IA. Use de 1 a 3 par\xE1grafos curtos, aproximadamente 450 a 850 caracteres.
+Use portugu\xEAs do Brasil, linguagem natural, profissional, clara e persuasiva, sem exageros.
+A resposta deve explicar: (1) o que \xE9 o produto e sua proposta; (2) benef\xEDcios e diferenciais que possam ser afirmados com seguran\xE7a; (3) para quem ou em quais situa\xE7\xF5es ele \xE9 interessante; e (4) uma orienta\xE7\xE3o simples de uso quando isso puder ser inferido sem risco.
+Para perfumes, body splash e cosm\xE9ticos, priorize experi\xEAncia de uso, sensa\xE7\xE3o, ocasi\xE3o e benef\xEDcios cosm\xE9ticos conhecidos apenas quando os dados permitirem. N\xE3o transforme a descri\xE7\xE3o em invent\xE1rio visual da embalagem.
+N\xE3o invente notas olfativas, composi\xE7\xE3o, ingredientes, dosagem, certifica\xE7\xF5es, indica\xE7\xE3o m\xE9dica, resultados garantidos ou especifica\xE7\xF5es ausentes.
+Se faltarem detalhes, seja \xFAtil sem preencher lacunas com suposi\xE7\xF5es.
+Entregue somente a descri\xE7\xE3o final, sem t\xEDtulo, sem markdown e sem mencionar IA. Use 2 ou 3 par\xE1grafos curtos, aproximadamente 500 a 900 caracteres.
 Nome: ${name || ""}
 Marca: ${brand || ""}
 Modelo: ${model || ""}
@@ -12905,12 +12905,14 @@ async function getStoreConfig() {
     await fetchApiRates2().catch((e) => console.error("[store] fetchApiRates falhou:", e.message));
     fx = await resolveRates2().catch(() => fx);
   }
-  const currencies2 = [
+  const allCurrencies = [
     { code: "USD", rateToUsd: 1 },
     ...fx.USDBRL ? [{ code: "BRL", rateToUsd: fx.USDBRL.rate }] : [],
     ...fx.USDPYG ? [{ code: "PYG", rateToUsd: fx.USDPYG.rate }] : []
   ];
   const [cs] = await db.select().from(companySettings).limit(1);
+  const defaultCurrency = cs?.defaultCurrency || "BRL";
+  const currencies2 = defaultCurrency === "BRL" ? allCurrencies.filter((currency) => currency.code === "BRL") : allCurrencies;
   const pixRows = await db.select().from(systemSettings).where(eq39(systemSettings.key, PIX_SETTINGS_KEY2)).limit(1);
   const pix = pixRows[0]?.value || {};
   return {
@@ -12920,7 +12922,7 @@ async function getStoreConfig() {
     whatsapp: cs?.whatsappGateway || "",
     instagramUrl: cs?.instagramUrl || "",
     email: cs?.email || "",
-    defaultCurrency: cs?.defaultCurrency || "BRL",
+    defaultCurrency,
     pixKey: pix.pixKey || "",
     currencies: currencies2
   };
@@ -14424,6 +14426,10 @@ async function getStoreVitrineConfig() {
     announcement: String(v.announcement || ""),
     featuredProductIds: Array.isArray(v.featuredProductIds) ? v.featuredProductIds.map(String).slice(0, 8) : [],
     banners: Array.isArray(v.banners) ? v.banners : [],
+    promoBanners: Array.isArray(v.promoBanners) ? v.promoBanners.slice(0, 2).map((banner) => ({
+      url: String(banner?.url || "").slice(0, 45e4),
+      link: String(banner?.link || "/loja/catalogo").slice(0, 300)
+    })) : [],
     quickLinks: Array.isArray(v.quickLinks) ? v.quickLinks : [],
     // Banner lateral da home ("Selecionado pra você") — existia no schema mas nunca era
     // gravado por este endpoint (achado da auditoria desta sessão), corrigido aqui.
@@ -14546,6 +14552,10 @@ router36.put("/admin/config", requireAuth, requirePermission("settings", "manage
       announcement: String(b.announcement || "").slice(0, 200),
       featuredProductIds: Array.isArray(b.featuredProductIds) ? b.featuredProductIds.map(String).slice(0, 8) : [],
       banners: Array.isArray(b.banners) ? b.banners : [],
+      promoBanners: Array.isArray(b.promoBanners) ? b.promoBanners.slice(0, 2).map((banner) => ({
+        url: String(banner?.url || "").slice(0, 45e4),
+        link: String(banner?.link || "/loja/catalogo").slice(0, 300)
+      })) : [],
       quickLinks: Array.isArray(b.quickLinks) ? b.quickLinks : [],
       sideBannerTitle: String(b.sideBannerTitle || "").slice(0, 120),
       sideBannerSubtitle: String(b.sideBannerSubtitle || "").slice(0, 300),

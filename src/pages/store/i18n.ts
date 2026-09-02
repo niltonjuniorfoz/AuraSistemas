@@ -119,7 +119,7 @@ const resources = {
         pagamentoPix: 'Pago con PIX y QR al finalizar',
         retiradaEntrega: 'Retiro o envío — vos elegís al hacer el pedido',
         sobreProduto: 'Sobre el producto',
-        vocejaGostar: 'Quienes vieron este producto también eligieron',
+        vocejaGostar: 'También te puede gustar',
       },
       cart: {
         titulo: 'Tu Carrito',
@@ -460,7 +460,7 @@ const resources = {
         pagamentoPix: 'Pagamento por PIX com QR Code na finalização',
         retiradaEntrega: 'Retirada ou entrega — você escolhe no pedido',
         sobreProduto: 'Sobre o produto',
-        vocejaGostar: 'Quem viu este produto também gostou',
+        vocejaGostar: 'Você também pode gostar',
       },
       cart: {
         titulo: 'Seu Carrinho',
@@ -801,7 +801,7 @@ const resources = {
         pagamentoPix: 'PIX payment with QR code at checkout',
         retiradaEntrega: 'Pickup or delivery — you choose at checkout',
         sobreProduto: 'About this product',
-        vocejaGostar: 'Customers who viewed this product also liked',
+        vocejaGostar: 'You may also like',
       },
       cart: {
         titulo: 'Your Cart',

@@ -73,12 +73,18 @@ async function getStoreConfig() {
     await fetchApiRates().catch((e) => console.error("[store] fetchApiRates falhou:", e.message));
     fx = await resolveRates().catch(() => fx);
   }
-  const currencies = [
+  const allCurrencies = [
     { code: "USD", rateToUsd: 1 },
     ...(fx.USDBRL ? [{ code: "BRL", rateToUsd: fx.USDBRL.rate }] : []),
     ...(fx.USDPYG ? [{ code: "PYG", rateToUsd: fx.USDPYG.rate }] : []),
   ];
   const [cs] = await db.select().from(companySettings).limit(1);
+  const defaultCurrency = cs?.defaultCurrency || "BRL";
+  // Regra da vitrine: sistema configurado somente em Real nao deve mostrar
+  // moeda secundaria, bandeira USD/PYG nem conversao paralela nos cards.
+  const currencies = defaultCurrency === "BRL"
+    ? allCurrencies.filter((currency) => currency.code === "BRL")
+    : allCurrencies;
   const pixRows = await db.select().from(systemSettings).where(eq(systemSettings.key, PIX_SETTINGS_KEY)).limit(1);
   const pix = (pixRows[0]?.value as any) || {};
   return {
@@ -88,7 +94,7 @@ async function getStoreConfig() {
     whatsapp: cs?.whatsappGateway || "",
     instagramUrl: cs?.instagramUrl || "",
     email: cs?.email || "",
-    defaultCurrency: cs?.defaultCurrency || "BRL",
+    defaultCurrency,
     pixKey: pix.pixKey || "",
     currencies,
   };
@@ -1846,6 +1852,10 @@ async function getStoreVitrineConfig() {
     announcement: String(v.announcement || ""),
     featuredProductIds: Array.isArray(v.featuredProductIds) ? v.featuredProductIds.map(String).slice(0, 8) : [],
     banners: Array.isArray(v.banners) ? v.banners : [],
+    promoBanners: Array.isArray(v.promoBanners) ? v.promoBanners.slice(0, 2).map((banner: any) => ({
+      url: String(banner?.url || "").slice(0, 450000),
+      link: String(banner?.link || "/loja/catalogo").slice(0, 300),
+    })) : [],
     quickLinks: Array.isArray(v.quickLinks) ? v.quickLinks : [],
     // Banner lateral da home ("Selecionado pra você") — existia no schema mas nunca era
     // gravado por este endpoint (achado da auditoria desta sessão), corrigido aqui.
@@ -1979,6 +1989,10 @@ router.put("/admin/config", requireAuth, requirePermission("settings", "manage")
       announcement: String(b.announcement || "").slice(0, 200),
       featuredProductIds: Array.isArray(b.featuredProductIds) ? b.featuredProductIds.map(String).slice(0, 8) : [],
       banners: Array.isArray(b.banners) ? b.banners : [],
+      promoBanners: Array.isArray(b.promoBanners) ? b.promoBanners.slice(0, 2).map((banner: any) => ({
+        url: String(banner?.url || "").slice(0, 450000),
+        link: String(banner?.link || "/loja/catalogo").slice(0, 300),
+      })) : [],
       quickLinks: Array.isArray(b.quickLinks) ? b.quickLinks : [],
       sideBannerTitle: String(b.sideBannerTitle || "").slice(0, 120),
       sideBannerSubtitle: String(b.sideBannerSubtitle || "").slice(0, 300),

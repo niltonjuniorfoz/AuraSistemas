@@ -32,15 +32,14 @@ interface ThemeState {
 
 const DEFAULTS = {
   mode: 'dark' as ThemeMode,
-  colorPreset: 'gold' as ColorPreset,
-  density: 'comfortable' as Density,
+  colorPreset: 'orange' as ColorPreset,
+  density: 'compact' as Density,
   layout: 'sidebar' as LayoutPreset,
   container: 'fluid' as Container,
   direction: 'ltr' as Direction,
-  // Layout.tsx guardava isso direto em localStorage('sidebar_collapsed');
-  // herda o valor já salvo do usuário na primeira migração pro store, pra
-  // não resetar a preferência de quem já tinha colapsado o menu.
-  sidebarCollapsed: typeof localStorage !== 'undefined' && localStorage.getItem('sidebar_collapsed') === 'true',
+  // Padrao visual oficial do Aura: barra lateral expandida. O usuario pode
+  // recolher depois normalmente pelo proprio painel.
+  sidebarCollapsed: false,
 };
 
 export const useThemeStore = create<ThemeState>()(
@@ -57,6 +56,13 @@ export const useThemeStore = create<ThemeState>()(
       toggleSidebarCollapsed: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       reset: () => set(DEFAULTS),
     }),
-    { name: 'origin-admin-theme' }
+    {
+      name: 'origin-admin-theme',
+      version: 2,
+      // Aplica o novo preset oficial uma unica vez inclusive para navegadores
+      // que tinham a versao anterior persistida. Depois disso as escolhas do
+      // usuario voltam a ser preservadas normalmente.
+      migrate: (persisted: any, version) => version < 2 ? { ...persisted, ...DEFAULTS } : persisted,
+    }
   )
 );

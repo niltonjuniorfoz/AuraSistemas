@@ -113,7 +113,7 @@ export function ShopLayout() {
   // publicadas em /loja normal).
   const editCtx = useEditMode();
   const rootRef = useRef<HTMLDivElement>(null);
-  const { currency, rates, setRates, setCurrency } = useStorePrefs();
+  const { currency, rates, setRates, setCurrency, setAllowedCurrencies } = useStorePrefs();
   const navigate = useNavigate();
   // Dentro do editor, navegação programática também precisa ficar sob
   // /store-settings/editor/... — links <a> são tratados pelo interceptador
@@ -142,8 +142,15 @@ export function ShopLayout() {
     // (currencies vazio), nunca deixa BRL/PYG sem valor (mostraria "---").
     if (info?.currencies?.length) {
       const newRates = defaultRates();
+      const allowed = info.currencies.map((c: any) => String(c.code || "").toUpperCase()).filter(Boolean);
       info.currencies.forEach((c: any) => newRates[c.code] = Number(c.rateToUsd));
       setRates(newRates);
+      setAllowedCurrencies(allowed);
+      const current = useStorePrefs.getState().currency;
+      if (!allowed.includes(current)) setCurrency(allowed[0] || "BRL");
+    } else if (info?.defaultCurrency === "BRL") {
+      setAllowedCurrencies(["BRL"]);
+      setCurrency("BRL");
     }
   }, [info]);
   const [categories, setCategories] = useState<any[]>([]);
@@ -406,7 +413,7 @@ export function ShopLayout() {
           </div>
         </div>
         <div className="border-b border-stone-100 bg-white">
-          <div className="relative mx-auto flex min-h-[66px] w-[95%] max-w-[1600px] items-center gap-2 px-1 py-1 md:min-h-[74px] md:px-3 lg:gap-8">
+          <div className="relative mx-auto flex min-h-[58px] w-[95%] max-w-[1600px] items-center gap-2 px-1 py-0.5 md:min-h-[70px] md:px-3 lg:gap-8">
           <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); setMobileMenuOpen((open) => !open); }} className="relative z-20 flex h-11 w-11 shrink-0 items-center justify-center text-[#6b5b5a] md:hidden" aria-label="Abrir categorias" aria-controls="mobile-store-menu" aria-expanded={mobileMenuOpen}>
             <Menu className="h-6 w-6" />
           </button>
@@ -417,7 +424,7 @@ export function ShopLayout() {
               <img
                 src={info?.logoUrl || "/branding/db-cosmetics-logo.png"}
                 alt={info?.storeName || "Cosmetics by Jessica Ferreira"}
-                className="h-16 w-44 shrink-0 scale-[1.15] object-contain md:h-28 md:w-44 md:scale-100"
+                className="h-14 w-40 shrink-0 scale-[1.12] object-contain md:h-24 md:w-44 md:scale-100"
               />
             )}
           </Link>
@@ -448,7 +455,7 @@ export function ShopLayout() {
           </div>
           </div>
         </div>
-        <form onSubmit={submitSearch} className="mx-auto w-[95%] max-w-[1600px] bg-white px-1 pb-2 sm:hidden">
+        <form onSubmit={submitSearch} className="mx-auto w-[95%] max-w-[1600px] bg-white px-1 pb-1.5 sm:hidden">
           <div className="relative flex overflow-hidden rounded-md border border-rose-100">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
             <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder={t("header.buscarPlaceholder")}

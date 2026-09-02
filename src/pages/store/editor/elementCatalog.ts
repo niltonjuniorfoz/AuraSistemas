@@ -46,7 +46,7 @@ export const SECTION_LABELS: Record<string, string> = {
   marcas: "Marcas",
   vitrines: "Vitrines",
   hero: "Bloco de marca (hero)",
-  sideBanner: "Destaque com banner lateral",
+  sideBanner: "2 banners promocionais",
   filtros: "Faixa de filtros",
   grade: "Grade de produtos",
 };
@@ -86,7 +86,7 @@ const ESTATICOS: ElementoCatalogo[] = [
   { id: "hero-subtitle", descricao: "Subtítulo do bloco de marca da home", pagina: "home", campos: [{ path: "heroSubtitle", tipo: "texto", max: 300 }], capacidades: ["editar"] },
   { id: "hero-ctas", descricao: "Botões de ação do bloco de marca (Ver produtos / WhatsApp) — trocar ordem e tamanho", pagina: "home", campos: [{ path: "heroCtaSize", tipo: "enum" }, { path: "heroCtaOrder", tipo: "enum" }], capacidades: ["mover", "redimensionar"], tamanhos: ["P", "M", "G", "GG"] },
   { id: "announcement", descricao: "Texto da faixa de aviso no topo da loja", pagina: "home", campos: [{ path: "announcement", tipo: "texto", max: 200 }], capacidades: ["editar"] },
-  { id: "sideBanner", descricao: "Texto do banner lateral escuro (Selecionado pra você)", pagina: "home", campos: [{ path: "sideBannerTitle", tipo: "texto", max: 120 }, { path: "sideBannerSubtitle", tipo: "texto", max: 300 }], capacidades: ["editar"] },
+  { id: "sideBanner", descricao: "Par de banners promocionais da home", pagina: "home", campos: [{ path: "promoBanners", tipo: "lista" }], capacidades: ["editar"] },
   { id: "footer", descricao: "Texto de direitos autorais do rodapé", pagina: "home", campos: [{ path: "footerText", tipo: "texto", max: 200 }], capacidades: ["editar"] },
   // --- Home: seções (ordem/visibilidade em pages.home.sections) ---
   // secao-announcement sem "mover": renderiza no ShopLayout, acima do header,
@@ -97,7 +97,7 @@ const ESTATICOS: ElementoCatalogo[] = [
   { id: "secao-categories", descricao: "Seção: grade de categorias da home", pagina: "home", campos: [], capacidades: ["editar", "mover", "apagar"] },
   { id: "secao-vitrines", descricao: "Seção: vitrines de produtos da home", pagina: "home", campos: [{ path: "vitrines", tipo: "lista" }], capacidades: ["editar", "mover", "apagar"] },
   { id: "secao-hero", descricao: "Seção: bloco de marca (hero central) da home", pagina: "home", campos: [], capacidades: ["mover", "apagar"] },
-  { id: "secao-sideBanner", descricao: "Seção: destaque com banner lateral + produtos", pagina: "home", campos: [{ path: "sideBannerTitle", tipo: "texto", max: 120 }, { path: "sideBannerSubtitle", tipo: "texto", max: 300 }], capacidades: ["editar", "mover", "apagar", "redimensionar"], tamanhos: ["P", "M", "G", "GG"] },
+  { id: "secao-sideBanner", descricao: "Seção legada de destaque promocional", pagina: "home", campos: [{ path: "promoBanners", tipo: "lista" }], capacidades: ["editar", "mover", "apagar", "redimensionar"], tamanhos: ["P", "M", "G", "GG"] },
   // --- Catálogo ---
   { id: "catalogo-titulo", descricao: "Título da página de catálogo", pagina: "catalogo", campos: [{ path: "pages.catalogo.titulo", tipo: "texto", max: 80 }], capacidades: ["editar"] },
   { id: "secao-filtros", descricao: "Seção: faixa de filtros (categorias + ordenação) do catálogo", pagina: "catalogo", campos: [], capacidades: ["mover", "apagar"] },

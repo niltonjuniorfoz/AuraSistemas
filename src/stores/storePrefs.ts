@@ -1,9 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-// Única lista de moedas da loja — antes BRL/PYG/USD apareciam hardcoded aqui,
-// no dropdown do header (ShopLayout.tsx) e nos ifs do formatPrice, cada um
-// podendo ficar desatualizado sem os outros perceberem.
 export const CURRENCIES = [
   { code: 'BRL', flag: '🇧🇷', format: (v: number) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
   { code: 'PYG', flag: '🇵🇾', format: (v: number) => `Gs. ${Math.round(v).toLocaleString('es-PY')}` },
@@ -18,24 +15,34 @@ interface StorePrefsState {
   setCurrency: (c: string) => void;
   rates: Record<string, number>;
   setRates: (rates: Record<string, number>) => void;
+  allowedCurrencies: string[];
+  setAllowedCurrencies: (codes: string[]) => void;
 }
 
 export const useStorePrefs = create<StorePrefsState>()(
   persist(
     (set) => ({
       currency: 'BRL',
-      setCurrency: (c) => set({ currency: c }),
+      setCurrency: (currency) => set({ currency }),
       rates: defaultRates(),
-      setRates: (rates) => set({ rates })
+      setRates: (rates) => set({ rates }),
+      allowedCurrencies: ['BRL'],
+      setAllowedCurrencies: (codes) => set({ allowedCurrencies: codes.length ? codes : ['BRL'] }),
     }),
-    { name: 'store-prefs' }
+    {
+      name: 'store-prefs',
+      version: 2,
+      migrate: (persisted: any) => ({
+        ...persisted,
+        currency: persisted?.currency || 'BRL',
+        allowedCurrencies: Array.isArray(persisted?.allowedCurrencies) ? persisted.allowedCurrencies : ['BRL'],
+      }),
+    }
   )
 );
 
 export function formatPrice(brlPrice: number | string, currency: string, rates: Record<string, number>) {
   const val = Number(brlPrice) || 0;
-  // Preço vem sempre em R$ (products.salePriceA). rates[code] = quantas
-  // unidades daquela moeda valem 1 USD, então convertemos via USD como base.
   const brlRate = rates.BRL || 1;
   const targetRate = rates[currency] || brlRate;
   const converted = (val / brlRate) * targetRate;

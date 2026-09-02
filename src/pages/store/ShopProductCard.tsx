@@ -20,8 +20,8 @@ export const ShopProductCard: React.FC<{ p: any }> = ({ p }) => {
   const navigate = useNavigate();
   // null fora do editor — o ⤷ "abrir esta página no editor" só existe lá.
   const editCtx = useEditMode();
-  const { currency, rates } = useStorePrefs();
-  const { items, add } = useShopCart();
+  const { currency, rates, allowedCurrencies } = useStorePrefs();
+  const { items, add, setOpen } = useShopCart();
   const inCart = items.find((i) => i.productId === p.id);
   // Sem isso, um produto esgotado que ainda não está no carrinho (inCart
   // undefined) escapava da checagem e virava item fantasma de quantidade 0.
@@ -85,15 +85,15 @@ export const ShopProductCard: React.FC<{ p: any }> = ({ p }) => {
 
   // Segunda linha de preço: BRL como referência (ou USD, se a moeda ativa já
   // for BRL) — sempre as DUAS moedas juntas, uma embaixo da outra.
-  const secondaryCurrency = currency === "BRL" ? "USD" : "BRL";
+  const secondaryCurrency = allowedCurrencies.length > 1 ? (currency === "BRL" ? allowedCurrencies.find((code) => code !== "BRL") || null : "BRL") : null;
 
   return (
     <Link to={`/loja/produto/${p.id}`} onMouseEnter={startPhotoCycle} onMouseLeave={stopPhotoCycle}
-      className="group relative flex flex-col overflow-hidden rounded-2xl border border-[var(--store-accent,#C99C5A)]/25 bg-white transition hover:-translate-y-0.5 hover:border-[var(--store-accent,#C99C5A)] hover:bg-[var(--store-accent,#C99C5A)]/5 hover:shadow-lg hover:shadow-stone-200/60">
+      className="group relative flex flex-col overflow-hidden rounded-xl border border-[var(--store-accent,#C99C5A)]/20 bg-white transition duration-200 hover:-translate-y-0.5 hover:border-[var(--store-accent,#C99C5A)]/60 hover:shadow-md hover:shadow-stone-200/50">
       <div className="pointer-events-none absolute inset-0 z-10 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
         <BorderBeam colorFrom="var(--store-accent, #C99C5A)" colorTo="var(--store-accent, #C99C5A)" duration={4} size={80} />
       </div>
-      <div className="relative aspect-square overflow-hidden bg-white p-5">
+      <div className="relative aspect-square overflow-hidden bg-white p-3 sm:p-4">
         {images.length > 0
           ? <img src={images[photoIdx] || images[0]} alt={p.name} loading="lazy" className="h-full w-full object-contain transition duration-500 group-hover:scale-105" />
           : <div className="flex h-full items-center justify-center"><Package className="h-10 w-10 text-stone-300" /></div>}
@@ -117,24 +117,26 @@ export const ShopProductCard: React.FC<{ p: any }> = ({ p }) => {
           </button>
         )}
       </div>
-      <div className="flex flex-1 flex-col items-center px-3 pb-3 text-center">
-        {p.groupName && <div className="text-[10px] font-semibold uppercase tracking-widest text-stone-400">{translateCategoryName(p.groupName, i18n.language)}</div>}
-        <div className="mt-1 line-clamp-2 min-h-[2.4rem] text-sm font-bold text-stone-800" style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif" }}>{p.name}</div>
-        <div className="mt-2 flex flex-col items-center gap-0.5">
-          <div className="flex items-center gap-1 text-lg font-black text-[var(--store-accent,#C99C5A)]">
+      <div className="flex flex-1 flex-col items-center px-2.5 pb-2.5 text-center sm:px-3 sm:pb-3">
+        {p.groupName && <div className="text-[8px] font-semibold uppercase tracking-[0.12em] text-stone-400 sm:text-[9px]">{translateCategoryName(p.groupName, i18n.language)}</div>}
+        <div className="mt-1 line-clamp-2 min-h-[2rem] text-[11px] font-bold leading-[1.15] text-stone-800 sm:text-xs" style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif" }}>{p.name}</div>
+        <div className="mt-1.5 flex flex-col items-center gap-0.5">
+          <div className="flex items-center gap-1 text-sm font-black text-[var(--store-accent,#C99C5A)] sm:text-base">
             {p.hasVariants && <span className="text-xs font-semibold text-stone-500">{t("product.aPartirDe")}</span>}
             <CodeFlag code={currency} className="h-3 w-[18px] shrink-0 rounded-[1px]" />
             {formatPrice(p.price, currency, rates)}
           </div>
-          <div className="flex items-center gap-1 text-xs font-bold text-stone-400">
-            <CodeFlag code={secondaryCurrency} className="h-2.5 w-4 shrink-0 rounded-[1px]" />
-            {formatPrice(p.price, secondaryCurrency, rates)}
-          </div>
+          {secondaryCurrency && (
+            <div className="flex items-center gap-1 text-[10px] font-semibold text-stone-400">
+              <CodeFlag code={secondaryCurrency} className="h-2.5 w-4 shrink-0 rounded-[1px]" />
+              {formatPrice(p.price, secondaryCurrency, rates)}
+            </div>
+          )}
         </div>
         {!p.hasVariants && inCart && <span className="mt-1 text-[10px] font-bold text-[var(--store-accent,#C99C5A)]">{t("product.naSacola")} ({inCart.quantity})</span>}
         <div className="mt-3 flex w-full flex-col items-center gap-1.5">
           {p.sku && (
-            <button onClick={copySku} title={t("product.copiarCodigo", "Copiar código")} className="flex items-center gap-1 text-[9px] text-stone-300 transition hover:text-stone-500">
+            <button onClick={copySku} title={t("product.copiarCodigo", "Copiar código")} className="max-w-full truncate text-[7px] tracking-[0.04em] text-stone-300 transition hover:text-stone-500 sm:text-[8px]">
               {p.sku} {copied ? <Check className="h-2.5 w-2.5 text-emerald-600" /> : <Copy className="h-2.5 w-2.5" />}
             </button>
           )}
@@ -150,7 +152,7 @@ export const ShopProductCard: React.FC<{ p: any }> = ({ p }) => {
                 if (editCtx) { e.preventDefault(); e.stopPropagation(); navigate(`/store-settings/editor/produto/${p.id}`); }
                 return;
               }
-              e.preventDefault(); e.stopPropagation(); add(p);
+              e.preventDefault(); e.stopPropagation(); add(p); setOpen(true);
             }}
             disabled={soldOutForMe && !p.hasVariants}
           >

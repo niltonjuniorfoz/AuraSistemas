@@ -9,8 +9,8 @@ type PremiumCtaProps = React.ComponentPropsWithoutRef<"button"> & {
 };
 
 const SIZE_CLASSES: Record<"sm" | "md", string> = {
-  sm: "h-9 gap-1.5 px-4 text-xs",
-  md: "h-11 gap-2 px-6 text-sm",
+  sm: "h-8 gap-1.5 px-3 text-[11px]",
+  md: "h-10 gap-2 px-5 text-xs",
 };
 
 export const PremiumCta: React.FC<PremiumCtaProps> = ({ size = "md", className = "", children, ...props }) => {

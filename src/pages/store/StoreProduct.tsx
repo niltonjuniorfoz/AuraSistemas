@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { useTranslation } from "react-i18next";
-import { ChevronRight, Loader2, Minus, Package, Plus, ShieldCheck, ShoppingBag, Truck } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Minus, Package, Plus, ShieldCheck, ShoppingBag, Truck } from "lucide-react";
 import { useShopCart } from "../../stores/shopCart";
 import { useStorePrefs, formatPrice } from "../../stores/storePrefs";
 import { ShopProductCard } from "./ShopProductCard";
@@ -20,6 +20,7 @@ export function StoreProduct() {
   const [imgIdx, setImgIdx] = useState(0);
   const [qty, setQty] = useState(1);
   const [selectedVariant, setSelectedVariant] = useState<any>(null);
+  const relatedRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let alive = true;
@@ -76,10 +77,10 @@ export function StoreProduct() {
         {p.groupName && (<><ChevronRight className="h-3 w-3" /><Link to={`/loja/catalogo?cat=${p.groupId}`} className="hover:text-stone-700">{translateCategoryName(p.groupName, i18n.language)}</Link></>)}
       </nav>
 
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,560px)_minmax(0,1fr)] lg:justify-center lg:gap-12">
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,430px)_minmax(0,1fr)] lg:justify-center lg:gap-10">
         {/* Galeria */}
-        <div className="mx-auto w-full max-w-[560px] lg:mx-0">
-          <div className="aspect-[4/3] max-h-[500px] overflow-hidden rounded-2xl border border-stone-200 bg-white sm:rounded-3xl">
+        <div className="mx-auto w-full max-w-[430px] lg:mx-0">
+          <div className="flex h-[230px] items-center justify-center overflow-hidden rounded-xl border border-stone-200 bg-white p-3 sm:h-[320px] lg:h-[400px]">
             {img
               ? <img src={img} alt={p.name} className="h-full w-full object-contain" />
               : <div className="flex h-full items-center justify-center"><Package className="h-16 w-16 text-stone-200" /></div>}
@@ -88,7 +89,7 @@ export function StoreProduct() {
             <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
               {p.images.map((u: string, i: number) => (
                 <button key={i} onClick={() => setImgIdx(i)}
-                  className={`h-16 w-16 shrink-0 overflow-hidden rounded-xl border-2 transition ${i === imgIdx ? "border-amber-600" : "border-stone-200 hover:border-stone-400"}`}>
+                  className={`h-12 w-12 shrink-0 overflow-hidden rounded-lg border transition ${i === imgIdx ? "border-[var(--store-accent,#e96f95)]" : "border-stone-200 hover:border-stone-400"}`}>
                   <img src={u} alt="" className="h-full w-full object-cover" />
                 </button>
               ))}
@@ -99,13 +100,13 @@ export function StoreProduct() {
         {/* Info */}
         <div className="min-w-0 lg:sticky lg:top-24 lg:self-start">
           {p.groupName && <div className="text-[11px] font-bold uppercase tracking-widest text-amber-700">{translateCategoryName(p.groupName, i18n.language)}</div>}
-          <h1 className="mt-1 text-3xl font-bold leading-tight text-stone-900" style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif" }}>{p.name}</h1>
+          <h1 className="mt-1 text-2xl font-bold leading-[1.05] text-stone-900 sm:text-3xl" style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif" }}>{p.name}</h1>
           {(p.brand || p.model) && (
             <div className="mt-1 text-sm text-stone-500">{[p.brand, p.model].filter(Boolean).join(" · ")}</div>
           )}
 
           <div className="mt-5 flex items-end gap-3">
-            <div className="text-4xl font-black text-stone-900">{formatPrice(currentProduct.price, currency, rates)}</div>
+            <div className="text-3xl font-black text-stone-900 sm:text-4xl">{formatPrice(currentProduct.price, currency, rates)}</div>
             <span className={`mb-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold ${currentProduct.stockStatus === "available" ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-700"}`}>
               {translateStockStatus(t, currentProduct.stockStatus, currentProduct.stockQty)}
             </span>
@@ -179,13 +180,17 @@ export function StoreProduct() {
       {/* Relacionados */}
       {p.related?.length > 0 && (
         <section className="mt-12">
-          <div className="mb-4 flex items-end justify-between gap-3">
-            <h2 className="text-xl font-bold text-stone-900 sm:text-2xl" style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif" }}>{t("product.vocejaGostar")}</h2>
-            {p.groupId && <Link to={`/loja/catalogo?cat=${p.groupId}`} className="shrink-0 text-xs font-semibold text-[var(--store-accent,#e96f95)]">Ver mais</Link>}
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-base font-bold text-stone-900 sm:text-lg" style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif" }}>{t("product.vocejaGostar")}</h2>
+            <div className="flex items-center gap-1.5">
+              <button type="button" onClick={() => relatedRef.current?.scrollBy({ left: -360, behavior: "smooth" })} className="flex h-8 w-8 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-500 hover:border-[var(--store-accent,#e96f95)]"><ChevronLeft className="h-4 w-4" /></button>
+              <button type="button" onClick={() => relatedRef.current?.scrollBy({ left: 360, behavior: "smooth" })} className="flex h-8 w-8 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-500 hover:border-[var(--store-accent,#e96f95)]"><ChevronRight className="h-4 w-4" /></button>
+              {p.groupId && <Link to={`/loja/catalogo?cat=${p.groupId}`} className="ml-1 shrink-0 text-[10px] font-semibold text-[var(--store-accent,#e96f95)]">Ver mais</Link>}
+            </div>
           </div>
-          <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-3 scrollbar-hide">
+          <div ref={relatedRef} className="flex snap-x snap-mandatory gap-2.5 overflow-x-auto pb-3 scrollbar-hide">
             {p.related.map((r: any) => (
-              <div key={r.id} className="w-[64vw] max-w-56 shrink-0 snap-start sm:w-52 lg:w-[calc((100%_-_3.75rem)/6)]">
+              <div key={r.id} className="w-[44vw] min-w-[148px] max-w-[190px] shrink-0 snap-start sm:w-[180px] lg:w-[calc((100%_-_4rem)/7)]">
                 <ShopProductCard p={r} />
               </div>
             ))}
@@ -193,7 +198,7 @@ export function StoreProduct() {
         </section>
       )}
 
-      <div className="fixed inset-x-0 bottom-[3.45rem] z-30 border-t border-rose-100 bg-white/95 px-3 py-2 shadow-[0_-10px_30px_rgba(80,50,60,0.10)] backdrop-blur md:hidden">
+      <div className="fixed inset-x-0 bottom-[3.45rem] z-30 border-t border-rose-100 bg-white/96 px-3 py-1.5 shadow-[0_-8px_24px_rgba(80,50,60,0.08)] backdrop-blur md:hidden">
         <div className="mx-auto flex w-full max-w-lg items-center gap-3">
           <div className="min-w-0 flex-1">
             <div className="truncate text-[10px] font-semibold text-stone-500">{p.name}</div>

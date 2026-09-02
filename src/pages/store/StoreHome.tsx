@@ -111,7 +111,7 @@ function ProductSection({ title, link, products }: { title: string, link: string
 
   if (!products || products.length === 0) return null;
   return (
-    <section className="mx-auto w-[95%] max-w-[1600px] px-4 py-5">
+    <section className="mx-auto w-[95%] max-w-[1600px] px-1 py-3 sm:px-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 className="text-sm font-extrabold uppercase tracking-[0.08em] text-[var(--store-accent,#d46a86)]" style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif" }}>{title}</h2>
         <div className="flex shrink-0 items-center gap-2">
@@ -122,7 +122,7 @@ function ProductSection({ title, link, products }: { title: string, link: string
       </div>
       <div ref={scrollRef} className="flex gap-3 overflow-x-auto pb-2 pt-1 snap-x snap-mandatory scrollbar-hide">
         {products.map((p) => (
-          <div key={p.id} className="w-[62vw] max-w-56 shrink-0 snap-start sm:w-52 lg:w-[calc((100%_-_3.75rem)/6)]">
+          <div key={p.id} className="w-[44vw] min-w-[148px] max-w-[190px] shrink-0 snap-start sm:w-[180px] lg:w-[calc((100%_-_4rem)/7)]">
             <ShopProductCard p={p} />
           </div>
         ))}
@@ -184,6 +184,32 @@ function NewsletterBanner() {
   );
 }
 
+
+function PromoBannerPair({ banners }: { banners: any[] }) {
+  const editCtx = useEditMode();
+  const items = (Array.isArray(banners) && banners.length ? banners : [
+    { url: "/banners/db-cosmetics-hero.png", link: "/loja/catalogo" },
+    { url: "/banners/db-body-splash.png", link: "/loja/catalogo?busca=body%20splash" },
+  ]).slice(0, 2);
+
+  return (
+    <section className="relative mx-auto w-[95%] max-w-[1600px] px-1 py-2 sm:px-4">
+      <div className="grid gap-2.5 sm:grid-cols-2 sm:gap-3">
+        {items.map((banner: any, index: number) => (
+          <Link key={`${banner.url}-${index}`} to={banner.link || "/loja/catalogo"} className="group relative aspect-[19/7] overflow-hidden rounded-xl border border-stone-100 bg-[#fff7f8] shadow-sm">
+            <img src={banner.url} alt={`Destaque ${index + 1}`} className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.015]" />
+          </Link>
+        ))}
+      </div>
+      {editCtx && (
+        <button type="button" onClick={() => editCtx.openPanel("sideBanner")} className="absolute right-3 top-3 z-10 rounded-lg border border-white/70 bg-white/90 px-2.5 py-1.5 text-[10px] font-bold text-stone-700 shadow-sm backdrop-blur hover:text-[var(--store-accent,#d46a86)]">
+          Editar 2 banners
+        </button>
+      )}
+    </section>
+  );
+}
+
 // Faixa de logos de marca — mesma moldura/faixa de título da vitrine
 // (ProductSection acima), só troca o conteúdo por uma esteira infinita via
 // o componente Marquee (MagicUI), que já duplica o conteúdo internamente
@@ -238,10 +264,10 @@ const BANNER_SIZE_CLASSES: Record<string, string> = {
   // Frame fixo por tamanho: qualquer imagem enviada ocupa exatamente a mesma
   // altura visual. A arte principal usa object-contain (não corta) e o fundo
   // desfocado preenche eventuais diferenças de proporção sem criar borda vazia.
-  P: "h-[118px] sm:h-[165px] md:h-[205px]",
-  M: "h-[138px] sm:h-[195px] md:h-[245px]",
-  G: "h-[162px] sm:h-[225px] md:h-[285px]",
-  GG: "h-[188px] sm:h-[255px] md:h-[325px]",
+  P: "h-[100px] sm:h-[145px] md:h-[190px]",
+  M: "h-[120px] sm:h-[170px] md:h-[225px]",
+  G: "h-[140px] sm:h-[200px] md:h-[265px]",
+  GG: "h-[160px] sm:h-[225px] md:h-[305px]",
 };
 // Banner lateral: "M" (padrão) = sem classe extra, altura natural de hoje.
 const SIDEBANNER_SIZE_CLASSES: Record<string, string> = {
@@ -809,7 +835,7 @@ export function StoreHome() {
             ].map(([Icon, title, desc]: any) => (
               <div key={title} className="flex min-w-0 flex-col items-center justify-center gap-1.5 px-1 py-3 text-center sm:flex-row sm:gap-3 sm:px-3 sm:py-4 sm:text-left">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--store-accent,#d46a86)]/30 bg-white/70 text-[var(--store-accent,#d46a86)] sm:h-10 sm:w-10"><Icon className="h-4 w-4 sm:h-5 sm:w-5" strokeWidth={1.5} /></span>
-                <div className="min-w-0"><div className="text-[8px] font-bold leading-tight text-[#6b5b5a] min-[390px]:text-[9px] sm:text-[11px]">{title}</div><div className="mt-0.5 text-[7px] leading-tight text-[#8a797c] min-[390px]:text-[8px] sm:text-[10px]">{desc}</div></div>
+                <div className="min-w-0"><div className="text-[8px] font-bold leading-tight text-[#6b5b5a] sm:text-[10px]">{title}</div><div className="mt-0.5 text-[7px] leading-tight text-[#8a797c] sm:text-[9px]">{desc}</div></div>
               </div>
             ))}
           </div>
@@ -871,55 +897,33 @@ export function StoreHome() {
         products: allInStock.filter((product: any) => product.groupId === category.id).slice(0, 12),
       }))
       .filter((entry) => entry.products.length > 0)
-      .slice(0, 5)
+      .slice(0, 4)
   ), [categories, allInStock]);
 
   const renderVitrines = () => {
     if (loading) {
-      return <div className="flex items-center justify-center py-16 text-stone-400"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> {t("home.carregandoVitrine")}</div>;
+      return <div className="flex items-center justify-center py-12 text-stone-400"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> {t("home.carregandoVitrine")}</div>;
     }
-    let inner: React.ReactNode;
-    if (Array.isArray(cfg.vitrines) && cfg.vitrines.length > 0) {
-      inner = (
-        <div className="flex flex-col gap-2">
-          <ProductSection title="Produtos mais amados" link="/loja/catalogo?ord=popular" products={allInStock.slice(0, 12)} />
-          <NewsletterBanner />
-          {/* Cada vitrine configurada tem a própria barrinha (🗑️ ↑↓ ⧉ ✏️) — o
-              🗑️ confirma inline na barrinha, nada de modal. As 4 vitrines
-              padrão do fallback abaixo NÃO ganham barrinha própria: não
-              existem no rascunho, não há o que apagar/mover — o hover delas
-              continua caindo na seção secao-vitrines. */}
-          {cfg.vitrines.map((v: any) => (
-            <Editable key={v.id} elementId={`vitrine-${v.id}`} panelKey="vitrines" label={`Vitrine: ${v.title || t("home.vitrineEyebrow")}`}
-              onMove={(dir) => moveVitrine(v.id, dir)} onDelete={() => deleteVitrine(v.id)} onDuplicate={() => duplicateVitrine(v.id)}>
-              <ProductSection title={v.title || t("home.vitrineEyebrow")} link="/loja/catalogo" products={vitrineProducts[v.id] || []} />
-            </Editable>
-          ))}
-        </div>
-      );
-    } else {
-      const popularProducts = allInStock.length > 0 ? allInStock.slice(0, 12) : featured;
-      inner = popularProducts.length === 0 ? (
-        <><div className="py-12 text-center text-stone-400">{t("home.vitrinePreparando")}</div><NewsletterBanner /></>
-      ) : (
-        <div className="flex flex-col gap-2">
-          <ProductSection title="Produtos mais amados" link="/loja/catalogo?ord=popular" products={popularProducts} />
-          <NewsletterBanner />
-          {categoryShowcases.map(({ category, products }) => (
-            <ProductSection
-              key={category.id}
-              title={translateCategoryName(category.name, i18n.language)}
-              link={`/loja/catalogo?cat=${category.id}`}
-              products={products}
-            />
-          ))}
-          <ProductSection title={t("home.novidades")} link="/loja/catalogo?ord=newest" products={newest.length > 0 ? newest : popularProducts.slice().reverse()} />
-        </div>
-      );
-    }
+    const popularProducts = allInStock.slice(0, 12);
+    const firstRows = categoryShowcases.slice(0, 2);
+    const lastRows = categoryShowcases.slice(2, 4);
+    const inner = popularProducts.length === 0 ? (
+      <div className="py-10 text-center text-sm text-stone-400">{t("home.vitrinePreparando")}</div>
+    ) : (
+      <div className="flex flex-col gap-1">
+        <ProductSection title="Produtos mais amados" link="/loja/catalogo?ord=popular" products={popularProducts} />
+        <NewsletterBanner />
+        {firstRows.map(({ category, products }) => (
+          <ProductSection key={`before-${category.id}`} title={translateCategoryName(category.name, i18n.language)} link={`/loja/catalogo?cat=${category.id}`} products={products} />
+        ))}
+        <PromoBannerPair banners={cfg.promoBanners || []} />
+        {lastRows.map(({ category, products }) => (
+          <ProductSection key={`after-${category.id}`} title={translateCategoryName(category.name, i18n.language)} link={`/loja/catalogo?cat=${category.id}`} products={products} />
+        ))}
+      </div>
+    );
     return (
-      <Editable elementId={SECAO("vitrines")} panelKey="vitrines" label="Vitrines"
-        onMove={(dir) => moveSection("vitrines", dir)} onHide={() => hideSection("vitrines")}>
+      <Editable elementId={SECAO("vitrines")} panelKey="vitrines" label="Vitrines" onMove={(dir) => moveSection("vitrines", dir)} onHide={() => hideSection("vitrines")}>
         {inner}
       </Editable>
     );
