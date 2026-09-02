@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 
+const MIN_PASSWORD_LENGTH = 12;
 const secrets = [
   process.env.DATABASE_URL,
   process.env.JWT_SECRET,
@@ -36,24 +37,49 @@ function run(name, command) {
   };
 }
 
+function hasStrongPassword(name) {
+  return String(process.env[name] || '').trim().length >= MIN_PASSWORD_LENGTH;
+}
+
 const report = {
   generatedAt: new Date().toISOString(),
   environment: process.env.VERCEL_ENV || 'unknown',
   branch: process.env.VERCEL_GIT_COMMIT_REF || 'unknown',
   databaseConfigured: Boolean(process.env.DATABASE_URL),
-  requiredPasswordsConfigured: Boolean(process.env.AURA_MASTER_PASSWORD && process.env.AURA_ADMIN_PASSWORD),
+  requiredPasswordsConfigured:
+    hasStrongPassword('AURA_MASTER_PASSWORD') && hasStrongPassword('AURA_ADMIN_PASSWORD'),
   steps: [],
 };
 
-const push = run('db:push', 'npm run db:push');
-report.steps.push(push);
+if (!report.databaseConfigured) {
+  report.steps.push({
+    name: 'preflight',
+    ok: false,
+    exitCode: 1,
+    startedAt: report.generatedAt,
+    finishedAt: new Date().toISOString(),
+    output: 'DATABASE_URL não configurada.',
+  });
+} else if (!report.requiredPasswordsConfigured) {
+  report.steps.push({
+    name: 'preflight',
+    ok: false,
+    exitCode: 1,
+    startedAt: report.generatedAt,
+    finishedAt: new Date().toISOString(),
+    output: `AURA_MASTER_PASSWORD e AURA_ADMIN_PASSWORD devem ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`,
+  });
+} else {
+  const push = run('db:push', 'npm run db:push');
+  report.steps.push(push);
 
-if (push.ok) {
-  const seed = run('db:seed', 'npm run db:seed');
-  report.steps.push(seed);
+  if (push.ok) {
+    const seed = run('db:seed', 'npm run db:seed');
+    report.steps.push(seed);
 
-  if (seed.ok) {
-    report.steps.push(run('db:harden', 'npm run db:harden'));
+    if (seed.ok) {
+      report.steps.push(run('db:harden', 'npm run db:harden'));
+    }
   }
 }
 
@@ -62,3 +88,7 @@ mkdirSync('public', { recursive: true });
 writeFileSync('public/bootstrap-status.json', JSON.stringify(report, null, 2));
 
 console.log(`Vercel bootstrap diagnostic: ${report.ok ? 'SUCCESS' : 'FAILED'} (${report.steps.map((s) => `${s.name}:${s.ok ? 'ok' : 'fail'}`).join(', ')})`);
+
+if (!report.ok) {
+  process.exitCode = 1;
+}
