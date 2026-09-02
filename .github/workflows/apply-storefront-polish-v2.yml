@@ -53,12 +53,13 @@ jobs:
         shell: bash
         run: |
           python3 -m pip install --disable-pip-version-check graphifyy
-          graphify . --update --no-viz
+          graphify . --update --no-viz --code-only
 
       - name: Commit tested storefront
         shell: bash
         run: |
           rm -f .github/storefront_polish.py
+          rm -f .github/storefront-polish.trigger
           rm -f .github/workflows/apply-storefront-polish.yml
           rm -f .github/workflows/apply-storefront-polish-v2.yml
           git config user.name "github-actions[bot]"
