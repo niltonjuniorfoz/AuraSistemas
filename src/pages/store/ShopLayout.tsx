@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, Link, useNavigate, useLocation } from "react-router";
 import {
-  ShoppingBag, Search, Plus, Minus, Trash2, X, Package, Loader2, ArrowRight, MessageCircle, ShieldCheck, Store, User, Sparkles, ArrowLeftRight, Check,
-  Truck, Heart, Home, LayoutGrid, Tag,
+  ShoppingBag, Search, Plus, Minus, Trash2, X, Package, Loader2, ArrowRight, MessageCircle, ShieldCheck, Store, User, Sparkles,
+  Truck, Heart, Home, LayoutGrid, Tag, Instagram, Headphones, Menu, Gift, Award, Mail,
 } from "lucide-react";
 import { useShopCart, cartTotal, cartCount } from "../../stores/shopCart";
 import { useCustomerAuthStore } from "../../stores/customerAuth";
@@ -16,7 +16,7 @@ import { AssistantWidget } from "./AssistantWidget";
 import { PremiumCta } from "./PremiumCta";
 import { useTranslation } from "react-i18next";
 import i18nInstance, { translateCategoryName } from "./i18n";
-import { useStorePrefs, formatPrice, CURRENCIES, defaultRates } from "../../stores/storePrefs";
+import { useStorePrefs, formatPrice, defaultRates } from "../../stores/storePrefs";
 import { calcOrderTotal } from "../../lib/money";
 import { useEditMode } from "./editor/EditModeContext";
 import { Editable } from "./editor/Editable";
@@ -26,24 +26,17 @@ import { ColorsPanel } from "./editor/panels/ColorsPanel";
 import { FontsPanel } from "./editor/panels/FontsPanel";
 import { applyStoreColors } from "./editor/storeTheme";
 import { applyStoreFonts } from "./editor/applyStoreFonts";
-import { BrazilFlag, ParaguayFlag, CodeFlag } from "./flagIcons";
+
+function normalizeInstagramUrl(value: unknown): string | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  if (/^https?:\/\//i.test(raw)) return raw;
+  const handle = raw.replace(/^@/, "").replace(/^instagram\.com\//i, "").replace(/[^a-zA-Z0-9._]/g, "");
+  return handle ? `https://instagram.com/${handle}` : null;
+}
 
 // Casca da loja pública: visual PRÓPRIO claro (separado do ERP), carrinho e
 // checkout disponíveis em todas as páginas da vitrine.
-const LANGS = [
-  { code: "es", flag: "🇵🇾", label: "Español" },
-  { code: "pt", flag: "🇧🇷", label: "Português" },
-  { code: "en", flag: "🇺🇸", label: "English" },
-];
-
-// Idioma escolhido já define a moeda principal (pedido do usuário: um seletor
-// só, não dois) — Espanhol→Guarani, Português→Real, Inglês→Dólar. O cliente
-// ainda pode sobrescrever a moeda manualmente pelas opções secundárias do
-// mesmo seletor; só a troca de IDIOMA reseta pra este padrão.
-const LANG_DEFAULT_CURRENCY: Record<string, string> = { es: "PYG", pt: "BRL", en: "USD" };
-
-const CURRENCY_SYMBOL: Record<string, string> = { BRL: "R$", PYG: "G$", USD: "$" };
-
 // ID anônimo por navegador (aba Análises: visitante único/taxa de rejeição/sessão) — só um
 // UUID aleatório salvo no aparelho, nunca ligado a nome/CPF/telefone do comprador.
 function getVisitorId(): string {
@@ -120,15 +113,7 @@ export function ShopLayout() {
   // publicadas em /loja normal).
   const editCtx = useEditMode();
   const rootRef = useRef<HTMLDivElement>(null);
-  const [selectorOpen, setSelectorOpen] = useState(false);
-  const currentLang = LANGS.find((l) => l.code === i18nInstance.language) || LANGS[0];
-  const { currency, setCurrency, rates, setRates } = useStorePrefs();
-  const changeLang = (lng: string) => {
-    i18nInstance.changeLanguage(lng);
-    localStorage.setItem("storeLang", lng);
-    if (LANG_DEFAULT_CURRENCY[lng]) setCurrency(LANG_DEFAULT_CURRENCY[lng]);
-    setSelectorOpen(false);
-  };
+  const { currency, rates, setRates } = useStorePrefs();
   const navigate = useNavigate();
   // Dentro do editor, navegação programática também precisa ficar sob
   // /store-settings/editor/... — links <a> são tratados pelo interceptador
@@ -390,6 +375,7 @@ export function ShopLayout() {
   };
 
   const wa = info?.whatsapp ? `https://wa.me/${String(info.whatsapp).replace(/\D/g, "")}` : null;
+  const instagram = normalizeInstagramUrl(info?.instagramUrl);
 
   return (
     <div ref={rootRef} className="h-[100dvh] overflow-y-auto bg-[var(--store-bg,#fff9fa)] pb-16 text-[var(--store-text,#2f2729)] md:pb-0" style={{ fontFamily: "var(--store-font-body, 'Inter'), system-ui, sans-serif" }}>
@@ -403,203 +389,84 @@ export function ShopLayout() {
         </div>
       )}
 
-      {/* Fecha o seletor ao clicar fora. PRECISA ter z-index MENOR que o do
-          <header> (z-30) — o header cria seu próprio contexto de empilhamento
-          (sticky + z-index), então um irmão do header com z maior "ganha" do
-          header inteiro, inclusive do painel z-50 lá dentro, mesmo o painel
-          aparecendo por cima visualmente (esse overlay é transparente). Isso
-          deixava o menu impossível de clicar de verdade (só funcionava
-          chamando o onClick direto por código) — bug real, não achado antes
-          porque só aparece em clique de ponteiro de verdade, não em teste
-          automatizado que invoca o handler direto. */}
-      {selectorOpen && (
-        <div className="fixed inset-0 z-20" onClick={() => setSelectorOpen(false)} />
-      )}
-
-      {/* Topo — tudo numa linha só (pedido explícito: nada acima da logo).
-          Cotações + Falar com Vendas ficam discretos colados na logo; busca
-          continua sendo a prioridade visual, com o selo de aviso ao lado;
-          moeda/idioma (antes numa barra separada) entram discretos perto dos
-          ícones da direita. Dúvidas/Sobre nós mudou pro rodapé (pedido do
-          usuário), junto dos outros links de rodapé. */}
       <header className="sticky top-0 z-30 bg-[var(--store-header-bg,#ffffff)]/95 shadow-sm backdrop-blur">
         <div className="border-b border-rose-100 bg-[var(--store-accent,#e96f95)]/12">
-          <div className="mx-auto flex min-h-8 w-[95%] max-w-[1600px] items-center justify-center gap-4 px-4 sm:justify-between">
+          <div className="mx-auto flex min-h-8 w-[96%] max-w-[1440px] items-center justify-center gap-4 px-3 sm:justify-between">
             <EditableAnnouncementBar announcement={announcement} pages={pagesFromInfo} />
-            <div className="hidden items-center gap-4 text-[10px] font-semibold text-[var(--store-header-text,#2f2729)] md:flex">
+            <div className="hidden items-center gap-5 text-[10px] font-semibold text-[var(--store-header-text,#2f2729)] md:flex">
+              <a href="#atendimento" className="inline-flex items-center gap-1 hover:text-[var(--store-accent,#e96f95)]"><Headphones className="h-3 w-3" /> Atendimento</a>
               {wa && <a href={wa} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-[var(--store-accent,#e96f95)]"><MessageCircle className="h-3 w-3" /> WhatsApp</a>}
+              {instagram && <a href={instagram} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-[var(--store-accent,#e96f95)]"><Instagram className="h-3 w-3" /> Instagram</a>}
               <Link to="/loja/conta/pedidos" className="hover:text-[var(--store-accent,#e96f95)]">Meus pedidos</Link>
               <Link to="/loja/conta" className="hover:text-[var(--store-accent,#e96f95)]">Minha conta</Link>
             </div>
           </div>
         </div>
-        <div className="border-b border-stone-200">
-          <div className="mx-auto flex w-[95%] max-w-[1600px] items-center gap-3 px-4 py-3 lg:gap-6">
-          <Link to="/loja" className="flex shrink-0 items-center gap-2.5">
+        <div className="border-b border-stone-100 bg-white">
+          <div className="mx-auto flex w-[96%] max-w-[1440px] items-center gap-3 px-3 py-2.5 lg:gap-8">
+          <Link to="/loja/catalogo" className="flex h-11 w-11 shrink-0 items-center justify-center text-[#6b5b5a] md:hidden" aria-label="Abrir categorias">
+            <Menu className="h-6 w-6" />
+          </Link>
+          <Link to="/loja" className="flex shrink-0 items-center">
             {infoLoading ? (
-              <span className="h-14 w-32 shrink-0 animate-pulse rounded-xl bg-rose-100" />
+              <span className="h-20 w-32 shrink-0 animate-pulse rounded-xl bg-rose-100 md:h-28 md:w-44" />
             ) : (
               <img
                 src={info?.logoUrl || "/branding/db-cosmetics-logo.png"}
                 alt={info?.storeName || "Cosmetics by Jessica Ferreira"}
-                className="h-16 w-28 shrink-0 object-contain sm:h-20 sm:w-36"
+                className="h-20 w-32 shrink-0 object-contain md:h-28 md:w-44"
               />
             )}
           </Link>
-
-          {/* Cotações + Falar com Vendas — discretos, colados na logo.
-              Bandeira sozinha, sem fundo dourado atrás (pedido do usuário:
-              o círculo dourado só faz sentido pros ícones da Categorias/
-              Entrar/Carrito, na bandeira ele sobrava). Espaçamento maior
-              entre os grupos pra não ficar tudo colado (outro pedido). */}
-          <div className="hidden shrink-0 items-center gap-5 border-l border-stone-200 pl-4 xl:flex">
-            {/* Caixa única "Cotação do dia" (pedido do usuário) - rótulo
-                traduzido por idioma, cada moeda na sua caixinha por dentro. */}
-            <div className="flex flex-col items-center gap-1.5 rounded-lg border border-stone-200 bg-stone-50/60 px-2.5 py-1.5">
-              <span className="text-[9px] font-bold uppercase tracking-wider text-stone-400">{t("header.cotacaoDoDia")}</span>
-              <div className="flex items-center gap-2">
-                <div className="flex w-[86px] flex-col items-center gap-1 rounded-md border border-stone-200 bg-white px-2 py-1 text-stone-600">
-                  <ParaguayFlag className="h-6 w-9 rounded-[3px] shadow-[0_0_0_1px_rgba(0,0,0,0.08)]" />
-                  <span className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide">G$ {rates.PYG ? rates.PYG.toLocaleString('es-PY') : '---'}</span>
-                </div>
-                <div className="flex w-[86px] flex-col items-center gap-1 rounded-md border border-stone-200 bg-white px-2 py-1 text-stone-600">
-                  <BrazilFlag className="h-6 w-9 rounded-[3px] shadow-[0_0_0_1px_rgba(0,0,0,0.08)]" />
-                  <span className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide">R$ {rates.BRL ? rates.BRL.toFixed(2) : '---'}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="hidden flex-1 items-center justify-center gap-2 sm:flex">
-            <form onSubmit={submitSearch} className="relative w-full max-w-xs lg:max-w-sm">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
+          <div className="hidden flex-1 items-center justify-center sm:flex">
+            <form onSubmit={submitSearch} className="relative flex w-full max-w-3xl overflow-hidden rounded-lg border border-rose-100 bg-white shadow-sm focus-within:border-[var(--store-accent,#e96f95)]">
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
               <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder={t("header.buscarPlaceholder")}
-                className="h-10 w-full rounded-full border border-stone-200 bg-stone-100 pl-10 pr-4 text-sm outline-none transition focus:border-[var(--store-accent,#C99C5A)] focus:bg-white" />
+                className="h-12 min-w-0 flex-1 bg-white pl-11 pr-4 text-sm outline-none" />
+              <button type="submit" className="w-24 shrink-0 bg-[var(--store-accent,#e96f95)] text-sm font-semibold text-white transition hover:brightness-95">Buscar</button>
             </form>
           </div>
-
-          <div className="ml-auto flex items-center gap-3 sm:ml-0 sm:gap-[25px]">
-
-            {/* Idioma + moeda num seletor só (pedido do usuário): o idioma já
-                define a moeda principal (es→PYG, pt→BRL, en→USD); a seção
-                "Outras moedas", menor e embaixo, deixa trocar a moeda na mão
-                sem mexer no idioma. Badge fechado mostra bandeira da moeda
-                atual (o que o cliente vai ver nos preços) + o código. */}
-            <div className="relative flex h-11 items-center">
-              {/* Ícone sozinho no fluxo (h-11, igual aos vizinhos) e o rótulo
-                  posicionado absoluto embaixo — antes o rótulo dentro do fluxo
-                  empurrava esse botão pra ~11px acima da linha da busca/logo,
-                  os 4 ícones da direita ficavam desalinhados com o resto do
-                  header (achado real, não só a bandeira). */}
-              <button type="button" onClick={() => setSelectorOpen((v) => !v)} aria-expanded={selectorOpen} aria-haspopup="menu" aria-label={t("header.idiomaMoeda", "Idioma e moeda")}
-                className="relative flex h-11 items-center text-stone-600 hover:text-stone-900">
-                <span className={`relative flex h-11 w-11 items-center justify-center rounded-full transition ${selectorOpen ? "ring-2 ring-[var(--store-accent,#C99C5A)] ring-offset-2" : ""}`}>
-                  <CodeFlag code={currency} className="h-11 w-11 rounded-full shadow-[0_0_0_1px_rgba(0,0,0,0.08)]" />
-                  <ArrowLeftRight className="absolute -bottom-1.5 -right-1.5 h-4 w-4 rounded-full border border-stone-200 bg-white p-0.5 text-[var(--store-accent,#C99C5A)] shadow-sm" />
-                </span>
-                <span className="absolute left-1/2 top-full mt-1.5 hidden -translate-x-1/2 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide sm:block">{currency} / {CURRENCY_SYMBOL[currency]}</span>
-              </button>
-              {selectorOpen && (
-                <div className="absolute right-0 top-[64px] z-50 w-48 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-xl">
-                  <div className="flex flex-col py-1.5">
-                    {LANGS.map((l) => (
-                      <button key={l.code} onClick={() => changeLang(l.code)} className={`flex items-center gap-2 px-3 py-2 text-left text-sm font-medium transition ${l.code === currentLang.code ? "bg-[var(--store-accent,#C99C5A)]/10 text-stone-900" : "text-stone-600 hover:bg-stone-50"}`}>
-                        <CodeFlag code={l.code} className="h-3.5 w-5 shrink-0 rounded-[1px]" />
-                        <span className="flex-1">{l.label}</span>
-                        {l.code === currentLang.code && <Check className="h-3.5 w-3.5 text-[var(--store-accent,#C99C5A)]" />}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="border-t border-stone-100 bg-stone-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-400">{t("header.outrasMoedas", "Outras moedas")}</div>
-                  <div className="flex flex-col py-1.5">
-                    {CURRENCIES.map((c) => (
-                      <button key={c.code} onClick={() => { setCurrency(c.code); setSelectorOpen(false); }} className={`flex items-center gap-2 px-3 py-1.5 text-left text-xs font-medium transition ${c.code === currency ? "bg-[var(--store-accent,#C99C5A)]/10 text-stone-900" : "text-stone-500 hover:bg-stone-50"}`}>
-                        <CodeFlag code={c.code} className="h-3 w-[18px] shrink-0 rounded-[1px]" />
-                        <span className="flex-1 tracking-wide">{c.code} <span className="text-stone-400">({CURRENCY_SYMBOL[c.code]})</span></span>
-                        {c.code === currency && <Check className="h-3 w-3 text-[var(--store-accent,#C99C5A)]" />}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-            <Link to="/loja/catalogo" className="relative hidden h-11 items-center text-stone-600 hover:text-stone-900 sm:flex">
-              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--store-accent,#C99C5A)] text-[var(--store-accent-text,#ffffff)] shadow-sm transition hover:brightness-95">
-                <Package className="h-5 w-5" />
-              </span>
-              <span className="absolute left-1/2 top-full mt-1.5 -translate-x-1/2 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide">{t("header.categorias")}</span>
+          <div className="ml-auto flex shrink-0 items-center gap-4 md:gap-6">
+            <Link to="/loja/conta/favoritos" className="hidden items-center gap-2 text-sm font-semibold text-[#6b5b5a] transition hover:text-[var(--store-accent,#e96f95)] md:flex">
+              <Heart className="h-6 w-6" />
+              <span>Favoritos</span>
             </Link>
-            <Link to="/loja/conta" className="relative hidden h-11 items-center text-stone-600 hover:text-stone-900 sm:flex">
-              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--store-accent,#C99C5A)] text-[var(--store-accent-text,#ffffff)] shadow-sm transition hover:brightness-95">
-                <User className="h-5 w-5" />
-              </span>
-              <span className="absolute left-1/2 top-full mt-1.5 max-w-[70px] -translate-x-1/2 truncate whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide">{customer ? customer.name.split(" ")[0] : t("account.entrar")}</span>
-            </Link>
-            <Link to="/loja/conta/favoritos" className="relative hidden h-11 items-center text-stone-600 hover:text-stone-900 lg:flex">
-              <span className="flex h-11 w-11 items-center justify-center rounded-full border border-rose-100 bg-white text-[var(--store-accent,#e96f95)] shadow-sm transition hover:bg-rose-50">
-                <Heart className="h-5 w-5" />
-              </span>
-              <span className="absolute left-1/2 top-full mt-1.5 -translate-x-1/2 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide">Favoritos</span>
-            </Link>
-            <button onClick={() => setOpen(true)} className="relative flex h-11 items-center text-stone-600 hover:text-stone-900">
-              <span className="relative flex h-11 w-11 items-center justify-center rounded-full bg-[var(--store-accent,#C99C5A)] text-[var(--store-accent-text,#ffffff)] shadow-sm transition hover:brightness-95">
-                <ShoppingBag className="h-5 w-5" />
+            <button onClick={() => setOpen(true)} className="flex items-center gap-2 text-sm font-semibold text-[#6b5b5a] transition hover:text-[var(--store-accent,#e96f95)]">
+              <span className="relative">
+                <ShoppingBag className="h-6 w-6" />
                 {count > 0 && (
-                  <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-stone-900 px-1 text-[10px] font-black text-white">
+                  <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--store-accent,#e96f95)] px-1 text-[9px] font-bold text-white">
                     {count}
                   </span>
                 )}
               </span>
-              <span className="absolute left-1/2 top-full mt-1.5 hidden -translate-x-1/2 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide sm:block">{t("header.carrinho")}</span>
+              <span className="hidden md:inline">{t("header.carrinho")}</span>
             </button>
           </div>
           </div>
         </div>
-        <form onSubmit={submitSearch} className="px-4 pb-3 sm:hidden">
-          <div className="relative border-b border-stone-200">
+        <form onSubmit={submitSearch} className="bg-white px-4 pb-3 sm:hidden">
+          <div className="relative flex overflow-hidden rounded-md border border-rose-100">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
             <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder={t("header.buscarPlaceholder")}
-              className="h-10 w-full rounded-sm border border-stone-200 bg-stone-100 pl-9 pr-4 text-sm outline-none focus:border-[var(--store-accent,#C99C5A)] focus:bg-white" />
+              className="h-10 min-w-0 flex-1 bg-white pl-9 pr-3 text-sm outline-none" />
+            <button type="submit" className="w-12 bg-[var(--store-accent,#e96f95)] text-white" aria-label="Buscar"><Search className="mx-auto h-4 w-4" /></button>
           </div>
         </form>
-
-        {/* Sub-header Categorias — barra dourada. Editorial, não SaaS: sem
-            caixa/fundo nenhum no item — só o texto, e no hover uma linha
-            fina desliza da esquerda pra direita por baixo (scale-x-0 →
-            scale-x-100 com origin-left), com o texto ganhando leve
-            letter-spacing extra. */}
-        <div className="hidden bg-[var(--store-accent,#e96f95)] md:block">
-          <div className="mx-auto flex w-[95%] max-w-[1600px] items-center gap-6 overflow-x-auto whitespace-nowrap px-4 py-3 text-[0.825rem] font-bold uppercase tracking-wider text-[var(--store-accent-text,#ffffff)] scrollbar-hide">
-            <Link to="/loja/catalogo" className="group relative inline-block pb-1">
-              <span className="transition-all duration-300 group-hover:tracking-[0.15em]">{t("header.categorias")}</span>
-              <span className="absolute bottom-0 left-0 h-px w-full origin-left scale-x-0 bg-white transition-transform duration-300 ease-out group-hover:scale-x-100" />
+        <div className="hidden border-y border-rose-100 bg-white md:block">
+          <div className="mx-auto flex w-[96%] max-w-[1440px] items-center justify-center gap-2 overflow-x-auto whitespace-nowrap px-3 py-2 text-[11px] font-semibold text-[#4f4544] scrollbar-hide lg:gap-5">
+            <Link to="/loja/catalogo" className="inline-flex items-center gap-1.5 rounded-md bg-[var(--store-accent,#e96f95)] px-4 py-2 font-semibold text-white transition hover:brightness-95">
+              <LayoutGrid className="h-4 w-4" /> Todas categorias
             </Link>
-            <div className="h-4 w-px shrink-0 bg-white/30"></div>
             {[...categories]
               .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || translateCategoryName(a.name, i18nInstance.language).localeCompare(translateCategoryName(b.name, i18nInstance.language)))
               .slice(0, 8).map(c => (
-              <Link key={c.id} to={`/loja/catalogo?cat=${c.id}`} className="group relative inline-block pb-1">
-                <span className="transition-all duration-300 group-hover:tracking-[0.15em]">{translateCategoryName(c.name, i18nInstance.language)}</span>
-                <span className="absolute bottom-0 left-0 h-px w-full origin-left scale-x-0 bg-white transition-transform duration-300 ease-out group-hover:scale-x-100" />
+              <Link key={c.id} to={`/loja/catalogo?cat=${c.id}`} className="rounded-md px-2 py-2 transition hover:bg-rose-50 hover:text-[var(--store-accent,#e96f95)]">
+                {translateCategoryName(c.name, i18nInstance.language)}
               </Link>
             ))}
-            {categories.length > 8 && (
-              <Link to="/loja/catalogo" className="group relative inline-block pb-1">
-                <span className="transition-all duration-300 group-hover:tracking-[0.15em]">{t("header.verTodas")}</span>
-                <span className="absolute bottom-0 left-0 h-px w-full origin-left scale-x-0 bg-white transition-transform duration-300 ease-out group-hover:scale-x-100" />
-              </Link>
-            )}
             {ofertaOutlet.hasOferta && (
-              <Link to="/loja/catalogo?canal=oferta" className="group relative inline-block pb-1">
-                <span className="transition-all duration-300 group-hover:tracking-[0.15em]">🔥 Ofertas</span>
-                <span className="absolute bottom-0 left-0 h-px w-full origin-left scale-x-0 bg-white transition-transform duration-300 ease-out group-hover:scale-x-100" />
-              </Link>
-            )}
-            {ofertaOutlet.hasOutlet && (
-              <Link to="/loja/catalogo?canal=outlet" className="group relative inline-block pb-1">
-                <span className="transition-all duration-300 group-hover:tracking-[0.15em]">📦 Outlet</span>
-                <span className="absolute bottom-0 left-0 h-px w-full origin-left scale-x-0 bg-white transition-transform duration-300 ease-out group-hover:scale-x-100" />
-              </Link>
+              <Link to="/loja/catalogo?canal=oferta" className="rounded-md px-2 py-2 transition hover:bg-rose-50 hover:text-[var(--store-accent,#e96f95)]">Ofertas</Link>
             )}
           </div>
         </div>
@@ -845,41 +712,59 @@ export function ShopLayout() {
         </div>
       )}
 
-      {/* Rodapé / Footer */}
-      <footer className="mt-auto border-t border-white/10 bg-[var(--store-footer-bg,#2f2729)] py-6 text-[var(--store-footer-text,#fff7f9)]">
-        <div className="mx-auto w-[95%] max-w-[1600px] px-4">
-          
-          <div className="flex flex-col items-center justify-between gap-6 sm:flex-row">
-            
-            {/* Trust Badges Minimal */}
-            <div className="flex flex-wrap justify-center gap-6 text-[10px] uppercase tracking-wider text-[var(--store-footer-text,#fff7f9)]/75 sm:justify-start">
-              <div className="flex items-center gap-1.5"><ShieldCheck className="h-4 w-4 text-[var(--store-accent,#e96f95)]" /> {t("footer.compraSegura")}</div>
-              <div className="flex items-center gap-1.5"><Package className="h-4 w-4 text-[var(--store-accent,#e96f95)]" /> {t("footer.entregaRapida")}</div>
-              <div className="flex items-center gap-1.5"><Store className="h-4 w-4 text-[var(--store-accent,#e96f95)]" /> {t("footer.qualidadeGarantida")}</div>
+      {/* Rodapé editorial inspirado na organização da DroidStore, com a identidade da loja. */}
+      <footer id="atendimento" className="relative mt-auto overflow-hidden border-t border-rose-100 bg-white py-10 text-[#6b5b5a]">
+        <div className="pointer-events-none absolute -bottom-28 left-1/2 select-none text-[15rem] font-black tracking-[0.18em] text-[#f8dde5]/30">DB</div>
+        <div className="relative mx-auto w-[94%] max-w-[1440px] px-4">
+          <div className="grid gap-9 md:grid-cols-[1.25fr_.8fr_1fr_1fr]">
+            <div>
+              <img src={info?.logoUrl || "/branding/db-cosmetics-logo.png"} alt={info?.storeName || "Logo da loja"} className="h-28 w-44 object-contain object-left" />
+              <p className="mt-3 max-w-sm text-sm leading-6 text-[#6b5b5a]/75">Beleza, cuidado e fragrâncias selecionadas para valorizar cada momento.</p>
             </div>
-
-            {/* Links */}
-            <div className="flex flex-wrap justify-center gap-4 text-xs font-medium text-[var(--store-footer-text,#fff7f9)]/70">
-              <Link to="/loja" className="hover:text-stone-900 transition">{t("header.dudas")}</Link>
-              <Link to="/loja" className="hover:text-stone-900 transition">{t("header.sobre")}</Link>
-              <Link to="/loja/catalogo" className="hover:text-stone-900 transition">{t("footer.comoComprar")}</Link>
-              <Link to="/loja/catalogo" className="hover:text-stone-900 transition">{t("footer.metodosPagamento")}</Link>
-              <Link to="/loja/catalogo" className="hover:text-stone-900 transition">{t("footer.enviosDevolucoes")}</Link>
-              <Link to="/loja/catalogo" className="hover:text-stone-900 transition">{t("footer.perguntas")}</Link>
+            <div>
+              <h3 className="mb-4 text-sm font-bold text-[#463c3b]">Categorias</h3>
+              <div className="space-y-2 text-sm text-[#6b5b5a]/80">
+                {categories.slice(0, 6).map((category) => (
+                  <Link key={category.id} to={`/loja/catalogo?cat=${category.id}`} className="block transition hover:text-[var(--store-accent,#e96f95)]">{translateCategoryName(category.name, i18nInstance.language)}</Link>
+                ))}
+              </div>
             </div>
-
+            <div>
+              <h3 className="mb-4 text-sm font-bold text-[#463c3b]">Pagamento seguro</h3>
+              <p className="mb-4 text-sm text-[#6b5b5a]/75">Ambiente protegido para suas compras.</p>
+              <div className="flex flex-wrap gap-2">
+                {["VISA", "MASTER", "PIX", "AMEX"].map((method) => <span key={method} className="rounded-md border border-stone-200 bg-white px-3 py-2 text-[10px] font-extrabold text-[#6b5b5a] shadow-sm">{method}</span>)}
+              </div>
+            </div>
+            <div>
+              <h3 className="mb-4 text-sm font-bold text-[#463c3b]">Atendimento</h3>
+              <p className="mb-4 text-sm text-[#6b5b5a]/75">Fale com a {info?.storeName || "nossa loja"}.</p>
+              <div className="flex gap-2">
+                {wa && <a href={wa} target="_blank" rel="noreferrer" aria-label="WhatsApp" className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--store-accent,#e96f95)] text-[var(--store-accent,#e96f95)] transition hover:bg-rose-50"><MessageCircle className="h-5 w-5" /></a>}
+                {instagram && <a href={instagram} target="_blank" rel="noreferrer" aria-label="Instagram" className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--store-accent,#e96f95)] text-[var(--store-accent,#e96f95)] transition hover:bg-rose-50"><Instagram className="h-5 w-5" /></a>}
+                {info?.email && <a href={`mailto:${info.email}`} aria-label="E-mail" className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--store-accent,#e96f95)] text-[var(--store-accent,#e96f95)] transition hover:bg-rose-50"><Mail className="h-5 w-5" /></a>}
+              </div>
+            </div>
           </div>
 
-          <div className="mt-6 flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-4 sm:flex-row">
+          <div className="mt-9 grid border-y border-rose-100 py-4 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              [ShieldCheck, "Compra 100% segura", "Seus dados protegidos"],
+              [Award, "Produtos de qualidade", "Seleção e procedência"],
+              [Truck, "Envio para todo o Brasil", "Entrega rápida e rastreada"],
+              [Headphones, "Atendimento especializado", "Antes e depois da compra"],
+            ].map(([Icon, title, description]: any, index) => (
+              <div key={title} className={`flex items-center gap-3 px-5 py-3 ${index > 0 ? "sm:border-l sm:border-rose-100" : ""}`}>
+                <Icon className="h-6 w-6 shrink-0 text-[var(--store-accent,#e96f95)]" />
+                <div><div className="text-xs font-bold text-[#463c3b]">{title}</div><div className="text-[10px] text-[#6b5b5a]/65">{description}</div></div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 flex flex-col items-center justify-between gap-3 text-center sm:flex-row sm:text-left">
             <EditableFooterText footerText={footerText} storeName={info?.storeName} />
-
-            <div className="flex items-center gap-4 opacity-75 grayscale transition hover:grayscale-0">
-              <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-600"><span className="text-sm italic">pix</span></div>
-              <div className="h-3 w-px bg-stone-300"></div>
-              <div className="text-[10px] text-stone-500 flex items-center gap-1"><ShieldCheck className="h-3 w-3" /> SSL 256-bit</div>
-            </div>
+            <div className="flex items-center gap-2 text-[10px] text-[#6b5b5a]/60"><ShieldCheck className="h-3.5 w-3.5" /> Compra protegida por SSL</div>
           </div>
-          
         </div>
       </footer>
 

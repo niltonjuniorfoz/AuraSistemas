@@ -25,7 +25,8 @@ export function CompanySettings() {
     pixKey: '',
     pixExchangeRate: '5.50',
     logoUrl: '',
-    whatsappGateway: ''
+    whatsappGateway: '',
+    instagramUrl: ''
   });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -61,7 +62,8 @@ export function CompanySettings() {
           pixKey: data.pixKey || '',
           pixExchangeRate: data.pixExchangeRate || '5.50',
           logoUrl: data.logoUrl || '',
-          whatsappGateway: data.whatsappGateway || ''
+          whatsappGateway: data.whatsappGateway || '',
+          instagramUrl: data.instagramUrl || ''
         });
       } else {
         const err = await res.json().catch(() => ({}));
@@ -194,6 +196,12 @@ export function CompanySettings() {
               <label className="text-sm font-medium text-gray-300">WhatsApp do gateway (comprovantes)</label>
               <input type="text" name="whatsappGateway" value={formData.whatsappGateway} onChange={handleChange} placeholder="Ex.: 41 99876-5432" className="w-full bg-[#171717] border border-gray-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-brand-gold transition-colors" />
               <p className="text-xs text-gray-500">Número fixo para onde os comprovantes PIX são enviados no PC. No celular, o menu de compartilhar deixa escolher o contato.</p>
+            </div>
+
+            <div className="space-y-2 col-span-1 md:col-span-2">
+              <label className="text-sm font-medium text-gray-300">Instagram da loja</label>
+              <input type="text" name="instagramUrl" value={formData.instagramUrl} onChange={handleChange} placeholder="https://instagram.com/sualoja ou @sualoja" className="w-full bg-[#171717] border border-gray-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-brand-gold transition-colors" />
+              <p className="text-xs text-gray-500">Quando preenchido, o Instagram aparece automaticamente no cabeçalho e no rodapé do site.</p>
             </div>
 
             <div className="space-y-2 col-span-1 md:col-span-2">

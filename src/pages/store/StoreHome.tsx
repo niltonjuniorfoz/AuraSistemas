@@ -235,10 +235,10 @@ function MarcasSection({ brands }: { brands: { name: string; logoUrl: string }[]
 // a classes no componente, nunca px salvos). "M" reproduz EXATAMENTE o visual
 // de hoje (aspect-[5/2] max-h-[420px] era o valor fixo do carrossel).
 const BANNER_SIZE_CLASSES: Record<string, string> = {
-  P: "aspect-[4/3] sm:aspect-[4/1] max-h-[280px]",
-  M: "aspect-[4/3] sm:aspect-[16/5] max-h-[430px]",
-  G: "aspect-[4/3] sm:aspect-[3/1] max-h-[500px]",
-  GG: "aspect-[4/3] sm:aspect-[5/2] max-h-[580px]",
+  P: "aspect-[2/1] max-h-[520px]",
+  M: "aspect-[2/1] max-h-[720px]",
+  G: "aspect-[2/1] max-h-[780px]",
+  GG: "aspect-[2/1] max-h-[840px]",
 };
 // Banner lateral: "M" (padrão) = sem classe extra, altura natural de hoje.
 const SIDEBANNER_SIZE_CLASSES: Record<string, string> = {
@@ -649,7 +649,7 @@ export function StoreHome() {
     return (
       <Editable elementId={SECAO("banners")} panelKey="banners" label="Banners do topo"
         onMove={(dir) => moveSection("banners", dir)} onHide={() => hideSection("banners")}>
-        <section className="mx-auto w-[95%] max-w-[1600px] px-4 py-4">
+        <section className="mx-auto w-[96%] max-w-[1440px] px-3 py-3">
           {/* Largura sempre acompanha a seção (igual ao header/categorias/produtos).
               A altura agora vem do passo de tamanho (P/M/G/GG) — "M" é o valor
               fixo antigo (aspect-[5/2] max-h-[420px]). */}
@@ -686,7 +686,7 @@ export function StoreHome() {
                     src={b.url}
                     alt={`Banner ${i + 1}`}
                     style={{ objectPosition: `${b.posX ?? 50}% 50%` }}
-                    className="h-full w-full object-cover"
+                    className="h-full w-full bg-[#fff7f8] object-contain"
                   />
                   {b.title && (
                     // Título melhor combina com banner "M"/"G"/"GG" — em "P"
@@ -823,13 +823,13 @@ export function StoreHome() {
     return (
       <Editable elementId={SECAO("categories")} panelKey="categories" label="Categorias"
         onMove={(dir) => moveSection("categories", dir)} onHide={() => hideSection("categories")}>
-        <section className="mx-auto w-[95%] max-w-[1600px] px-4 py-5">
-          <div className="mb-3 flex items-center justify-between">
+        <section className="mx-auto w-[96%] max-w-[1440px] px-3 py-5">
+          <div className="relative mb-3 flex items-center justify-center">
             <h2 className="text-sm font-extrabold uppercase tracking-[0.08em] text-[var(--store-accent,#d46a86)]">Categorias em destaque</h2>
-            <Link to="/loja/catalogo" className="text-xs font-semibold text-[var(--store-accent,#d46a86)]">Ver todas</Link>
+            <Link to="/loja/catalogo" className="absolute right-0 text-xs font-semibold text-[var(--store-accent,#d46a86)]">Ver todas</Link>
           </div>
           <div className="relative">
-            <div ref={catScrollRef} className="flex gap-3 overflow-x-auto pb-2 pt-1 scrollbar-hide">
+            <div ref={catScrollRef} className="flex gap-3 overflow-x-auto pb-2 pt-1 scrollbar-hide md:justify-center">
               {[...categories]
                 .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || translateCategoryName(a.name, i18n.language).localeCompare(translateCategoryName(b.name, i18n.language)))
                 .map((c) => {
@@ -847,7 +847,7 @@ export function StoreHome() {
             {categories.length > 6 && (
               <button
                 onClick={() => catScrollRef.current?.scrollBy({ left: 240, behavior: "smooth" })}
-                className="absolute -right-3 top-1/2 hidden h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-600 shadow-md transition hover:text-[var(--store-accent,#C99C5A)] sm:flex"
+                className="absolute -right-3 top-1/2 hidden h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-600 shadow-md transition hover:text-[var(--store-accent,#C99C5A)] sm:flex lg:hidden"
                 aria-label={t("home.proximasCategorias")}
               >
                 <ChevronRight className="h-4 w-4" />

@@ -14,6 +14,7 @@ export const companySettings = pgTable("company_settings", {
   country: text("country"),
   logoUrl: text("logo_url"),
   whatsappGateway: text("whatsapp_gateway"), // WhatsApp fixo p/ enviar comprovantes de pagamento
+  instagramUrl: text("instagram_url"), // perfil público exibido no cabeçalho e rodapé da loja
   defaultCurrency: text("default_currency").default("BRL"),
   defaultIvaPercentage: text("default_iva_percentage").default("0"),
   updatedAt: timestamp("updated_at").defaultNow(),

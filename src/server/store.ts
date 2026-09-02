@@ -85,6 +85,8 @@ async function getStoreConfig() {
     logoUrl: cs?.logoUrl || "",
     city: cs?.city || "",
     whatsapp: cs?.whatsappGateway || "",
+    instagramUrl: cs?.instagramUrl || "",
+    email: cs?.email || "",
     pixKey: pix.pixKey || "",
     currencies,
   };
@@ -99,7 +101,7 @@ router.get("/info", async (_req, res) => {
     // appVersion: a loja aberta há dias no navegador compara com a sua e avisa
     // pra recarregar — senão o formulário velho bate num servidor novo.
     const { APP_VERSION } = await import("../lib/version");
-    res.json({ storeName: c.storeName, logoUrl: c.logoUrl, city: c.city, whatsapp: c.whatsapp, pixEnabled: !!c.pixKey, appVersion: APP_VERSION, currencies: c.currencies });
+    res.json({ storeName: c.storeName, logoUrl: c.logoUrl, city: c.city, whatsapp: c.whatsapp, instagramUrl: c.instagramUrl, email: c.email, pixEnabled: !!c.pixKey, appVersion: APP_VERSION, currencies: c.currencies });
   } catch (err: any) { res.status(500).json({ error: "Loja indisponível." }); }
 });
 

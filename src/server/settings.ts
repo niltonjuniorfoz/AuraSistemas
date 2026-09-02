@@ -30,6 +30,7 @@ async function ensureCompanySettingsCompat() {
   // Mantém compatibilidade com bancos já publicados antes do campo RUC/CNPJ.
   // Assim a tela de Dados da Empresa não quebra mesmo se o db:push ainda não tiver sido executado.
   await db.execute(sql`ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS document_type text DEFAULT 'RUC'`);
+  await db.execute(sql`ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS instagram_url text`);
   companySettingsCompatReady = true;
 }
 
@@ -129,6 +130,7 @@ router.put("/company", requirePermission("settings", "manage"), async (req: Auth
        country: data.country,
        logoUrl: data.logoUrl,
        whatsappGateway: data.whatsappGateway,
+       instagramUrl: data.instagramUrl,
        defaultCurrency: data.defaultCurrency,
        defaultIvaPercentage: data.defaultIvaPercentage,
        updatedAt: new Date(),
@@ -210,6 +212,7 @@ router.get("/company-public", async (req: AuthRequest, res) => {
         pixKey: pix.pixKey || "",
         pixExchangeRate: pix.pixExchangeRate || "5.50",
         whatsappGateway: company.whatsappGateway || "",
+        instagramUrl: company.instagramUrl || "",
         defaultCurrency: company.defaultCurrency || "USD",
         brlRateToUsd: brlRows[0]?.rateToUsd || pix.pixExchangeRate || "5.50",
       };

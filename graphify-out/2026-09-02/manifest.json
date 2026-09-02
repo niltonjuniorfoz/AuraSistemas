@@ -330,13 +330,13 @@
     "semantic_hash": "12907f9ded47d7a49431bf83098154be"
   },
   "src/db/schema.ts": {
-    "mtime": 1788312505.9587557,
-    "ast_hash": "c7552935e5d867d99bf87e2c762f2445",
-    "semantic_hash": "c7552935e5d867d99bf87e2c762f2445"
+    "mtime": 1788320489.2919667,
+    "ast_hash": "1d1359e27f8b9f7807192d4c7519c0e1",
+    "semantic_hash": ""
   },
   "src/db/seed.ts": {
-    "mtime": 1788316334.2025359,
-    "ast_hash": "7ddc904117c4810b4cd44074c5ae6c93",
+    "mtime": 1788320506.5142648,
+    "ast_hash": "652d474def1b51e0a3f96524e565788d",
     "semantic_hash": ""
   },
   "src/lib/api.ts": {
@@ -670,8 +670,8 @@
     "semantic_hash": "d904fba1d9c56b64a4e23b29a22aea74"
   },
   "src/pages/store/ShopLayout.tsx": {
-    "mtime": 1788316211.0354004,
-    "ast_hash": "b490cf2320e3ecd1d237fc05018228db",
+    "mtime": 1788320763.2234924,
+    "ast_hash": "797dcaf50a3122b0d2a7a5c90511eafc",
     "semantic_hash": ""
   },
   "src/pages/store/ShopProductCard.tsx": {
@@ -685,9 +685,9 @@
     "semantic_hash": "97aa67896a2087a115c38f5e39fed8d8"
   },
   "src/pages/store/StoreHome.tsx": {
-    "mtime": 1788312506.9475286,
-    "ast_hash": "2ca3e11562a7217b26130695c2988273",
-    "semantic_hash": "2ca3e11562a7217b26130695c2988273"
+    "mtime": 1788320942.5915687,
+    "ast_hash": "39187632d97e1c828498f668239b2305",
+    "semantic_hash": ""
   },
   "src/pages/store/StoreProduct.tsx": {
     "mtime": 1788312506.9571655,
@@ -730,9 +730,9 @@
     "semantic_hash": "b35e1312b3a6d46f1c2df67975e01c07"
   },
   "src/pages/store/categoryIcons.tsx": {
-    "mtime": 1788312506.965379,
-    "ast_hash": "5534577aa5b0ae69df280e110ebd6137",
-    "semantic_hash": "5534577aa5b0ae69df280e110ebd6137"
+    "mtime": 1788320882.9939115,
+    "ast_hash": "1480957b0bebffdf0c63771b9c257571",
+    "semantic_hash": ""
   },
   "src/pages/store/editor/EditModeContext.tsx": {
     "mtime": 1788312507.0786324,
@@ -765,9 +765,9 @@
     "semantic_hash": "319c189d91f9b28298b5fec0ee809e96"
   },
   "src/pages/store/editor/elementCatalog.ts": {
-    "mtime": 1788312507.1385415,
-    "ast_hash": "e80347ff6a19d4f85b8e3373b0a13804",
-    "semantic_hash": "e80347ff6a19d4f85b8e3373b0a13804"
+    "mtime": 1788320461.9983914,
+    "ast_hash": "f343957d693c523f464fb448373120ee",
+    "semantic_hash": ""
   },
   "src/pages/store/editor/panels/BannerPanel.tsx": {
     "mtime": 1788312507.1703413,
@@ -825,8 +825,8 @@
     "semantic_hash": "2a6860540469a2f885fe30bd8b630650"
   },
   "src/pages/store/editor/storeTheme.ts": {
-    "mtime": 1788315209.6382394,
-    "ast_hash": "8d4058603e3dec213c1031468ac79fa0",
+    "mtime": 1788320461.9983914,
+    "ast_hash": "8390940f0ae1486b9703e65785e47437",
     "semantic_hash": ""
   },
   "src/pages/store/flagIcons.tsx": {
@@ -835,9 +835,9 @@
     "semantic_hash": "f0049da3206ead5bcdb27fbe3486151f"
   },
   "src/pages/store/i18n.ts": {
-    "mtime": 1788312506.9863622,
-    "ast_hash": "7a1822a986254d6866a08ec56f6af964",
-    "semantic_hash": "7a1822a986254d6866a08ec56f6af964"
+    "mtime": 1788321252.300854,
+    "ast_hash": "2346a00bed13a8d98366a6a53bf67240",
+    "semantic_hash": ""
   },
   "src/server/aiReports.ts": {
     "mtime": 1788312507.3219502,
@@ -1050,8 +1050,8 @@
     "semantic_hash": "f5bd13d38cd48d8fd303bc2767cc6020"
   },
   "src/server/store.ts": {
-    "mtime": 1788316196.2091935,
-    "ast_hash": "61b2502064b1d3019f06de17e012d108",
+    "mtime": 1788320848.008559,
+    "ast_hash": "a7633e12df2882276c531e72e7dcf5e1",
     "semantic_hash": ""
   },
   "src/server/storeOrderSync.ts": {
@@ -1237,6 +1237,31 @@
   "public/icons/omegapy-logo.png": {
     "mtime": 1788312505.4394553,
     "ast_hash": "7dfee7cfaeec8fd97c2b0af1287021f7",
+    "semantic_hash": ""
+  },
+  "public/banners/db-body-splash.png": {
+    "mtime": 1788320865.0801418,
+    "ast_hash": "25db9745cba56dca22956c6785c04a96",
+    "semantic_hash": ""
+  },
+  "public/banners/db-cosmetics-hero.png": {
+    "mtime": 1788320212.9351878,
+    "ast_hash": "df768bd322459f8dee2b5659e9cdc6a4",
+    "semantic_hash": ""
+  },
+  "public/banners/db-first-order.png": {
+    "mtime": 1788320235.7584753,
+    "ast_hash": "309a5b21480369b962683dd6554bf9c3",
+    "semantic_hash": ""
+  },
+  "public/banners/db-realce-beleza.png": {
+    "mtime": 1788320856.188302,
+    "ast_hash": "208743dbdd8a2235d3b56258f63500be",
+    "semantic_hash": ""
+  },
+  "public/branding/db-cosmetics-logo.png": {
+    "mtime": 1788318521.7408588,
+    "ast_hash": "d05baa84a84b29707205979b23f7e1ec",
     "semantic_hash": ""
   }
 }
