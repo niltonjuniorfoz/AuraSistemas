@@ -1,154 +1,79 @@
-import express from "express";
-import cors, { type CorsOptions } from "cors";
+const modulesToCheck = [
+  "../src/db",
+  "../src/server/auth",
+  "../src/server/users",
+  "../src/server/products",
+  "../src/server/customers",
+  "../src/server/groups",
+  "../src/server/shelves",
+  "../src/server/auditRouter",
+  "../src/server/sales",
+  "../src/server/reports",
+  "../src/server/health",
+  "../src/server/archived",
+  "../src/server/cash",
+  "../src/server/separation",
+  "../src/server/delivery",
+  "../src/server/serials",
+  "../src/server/settings",
+  "../src/server/receipts",
+  "../src/server/suppliers",
+  "../src/server/purchases",
+  "../src/server/expenses",
+  "../src/server/dashboard",
+  "../src/server/notifications",
+  "../src/server/analytics",
+  "../src/server/transfers",
+  "../src/server/aiReports",
+  "../src/server/master",
+  "../src/server/lots",
+  "../src/server/receivables",
+  "../src/server/payables",
+  "../src/server/finance",
+  "../src/server/fx",
+  "../src/server/costLayers",
+  "../src/server/personal",
+  "../src/server/store",
+  "../src/server/customerAuth",
+  "../src/server/intelligence",
+  "../src/server/statements",
+  "../src/server/maintenance",
+  "../src/server/performance"
+] as const;
 
-import authRouter from "../src/server/auth";
-import usersRouter from "../src/server/users";
-import productsRouter from "../src/server/products";
-import customersRouter from "../src/server/customers";
-import groupsRouter from "../src/server/groups";
-import shelvesRouter from "../src/server/shelves";
-import auditRouter from "../src/server/auditRouter";
-import salesRouter from "../src/server/sales";
-import reportsRouter from "../src/server/reports";
-import healthRouter from "../src/server/health";
-import archivedRouter from "../src/server/archived";
-import cashRouter from "../src/server/cash";
-import { separationRouter } from "../src/server/separation";
-import { deliveryRouter } from "../src/server/delivery";
-import { serialsRouter } from "../src/server/serials";
-import settingsRouter from "../src/server/settings";
-import receiptsRouter from "../src/server/receipts";
-import suppliersRouter from "../src/server/suppliers";
-import purchasesRouter from "../src/server/purchases";
-import expensesRouter from "../src/server/expenses";
-import dashboardRouter from "../src/server/dashboard";
-import notificationsRouter from "../src/server/notifications";
-import analyticsRouter from "../src/server/analytics";
-import transfersRouter from "../src/server/transfers";
-import aiReportsRouter from "../src/server/aiReports";
-import masterRouter from "../src/server/master";
-import lotsRouter from "../src/server/lots";
-import receivablesRouter from "../src/server/receivables";
-import payablesRouter from "../src/server/payables";
-import financeRouter from "../src/server/finance";
-import fxRouter from "../src/server/fx";
-import costLayersRouter from "../src/server/costLayers";
-import personalRouter from "../src/server/personal";
-import storeRouter from "../src/server/store";
-import customerAuthRouter from "../src/server/customerAuth";
-import intelligenceRouter from "../src/server/intelligence";
-import statementsRouter from "../src/server/statements";
-import { router as maintenanceRouter } from "../src/server/maintenance";
-import { apiPerformanceLogger, markResponseStart } from "../src/server/performance";
-
-function buildCorsOptions(): CorsOptions {
-  const allowedOrigins = (process.env.CORS_ORIGINS || "")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-
-  if (!allowedOrigins.length) return { origin: false };
-
-  return {
-    origin(origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-        return;
-      }
-      callback(null, false);
-    },
-  };
+function sanitize(value: unknown) {
+  return String(value || "Unknown error")
+    .replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "[DATABASE_URL_REDACTED]")
+    .slice(0, 500);
 }
 
-const app = express();
-app.disable("x-powered-by");
-app.set("trust proxy", 1);
+export default async function handler(_req: any, res: any) {
+  const checked: string[] = [];
 
-app.use((req, res, next) => {
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.setHeader("Permissions-Policy", "microphone=(), geolocation=(), payment=()");
-  res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
-
-  if (req.path.endsWith(".map")) {
-    res.status(404).end();
-    return;
-  }
-
-  next();
-});
-
-app.use(cors(buildCorsOptions()));
-app.use(express.json({ limit: "4mb" }));
-app.use("/api", markResponseStart, apiPerformanceLogger);
-
-app.use("/api/auth", authRouter);
-app.use("/api/users", usersRouter);
-app.use("/api/products", productsRouter);
-app.use("/api/customers", customersRouter);
-app.use("/api/groups", groupsRouter);
-app.use("/api/shelves", shelvesRouter);
-app.use("/api/audit", auditRouter);
-app.use("/api/sales", receiptsRouter);
-app.use("/api/sales", salesRouter);
-app.use("/api/reports", reportsRouter);
-app.use("/api/health", healthRouter);
-app.use("/api/archived", archivedRouter);
-app.use("/api/cash", cashRouter);
-app.use("/api/separation", separationRouter);
-app.use("/api/delivery", deliveryRouter);
-app.use("/api/serials", serialsRouter);
-app.use("/api/settings", settingsRouter);
-app.use("/api/suppliers", suppliersRouter);
-app.use("/api/purchases", purchasesRouter);
-app.use("/api/expenses", expensesRouter);
-app.use("/api/dashboard", dashboardRouter);
-app.use("/api/notifications", notificationsRouter);
-app.use("/api/analytics", analyticsRouter);
-app.use("/api/transfers", transfersRouter);
-app.use("/api/lots", lotsRouter);
-app.use("/api/receivables", receivablesRouter);
-app.use("/api/payables", payablesRouter);
-app.use("/api/finance", financeRouter);
-app.use("/api/fx", fxRouter);
-app.use("/api/cost", costLayersRouter);
-app.use("/api/personal", personalRouter);
-app.use("/api/store", storeRouter);
-app.use("/api/store/account", customerAuthRouter);
-app.use("/api/intel", intelligenceRouter);
-app.use("/api/statements", statementsRouter);
-app.use("/api/ai-reports", aiReportsRouter);
-app.use("/api/maintenance", maintenanceRouter);
-app.use("/api/master", masterRouter);
-
-app.get("/api/ping", (_req, res) => {
-  res.json({ status: "ok", runtime: "vercel" });
-});
-
-function rebuildApiUrl(req: any) {
-  const rawPath = req.query?.__path;
-  const pathParts = Array.isArray(rawPath)
-    ? rawPath.map(String)
-    : String(rawPath || "")
-        .split("/")
-        .filter(Boolean);
-
-  const query = new URLSearchParams();
-  for (const [key, value] of Object.entries(req.query || {})) {
-    if (key === "__path" || value === undefined || value === null) continue;
-    if (Array.isArray(value)) {
-      value.forEach((item) => query.append(key, String(item)));
-    } else {
-      query.append(key, String(value));
+  try {
+    for (const modulePath of modulesToCheck) {
+      await import(modulePath);
+      checked.push(modulePath);
     }
+
+    return res.status(200).json({
+      status: "ok",
+      runtime: "vercel-diagnostic",
+      checkedModules: checked.length,
+      databaseConfigured: Boolean(process.env.DATABASE_URL),
+      jwtConfigured: Boolean(process.env.JWT_SECRET)
+    });
+  } catch (error: any) {
+    const failedModule = modulesToCheck[checked.length] || "unknown";
+    return res.status(500).json({
+      status: "error",
+      runtime: "vercel-diagnostic",
+      failedModule,
+      checkedModules: checked.length,
+      databaseConfigured: Boolean(process.env.DATABASE_URL),
+      jwtConfigured: Boolean(process.env.JWT_SECRET),
+      errorName: sanitize(error?.name),
+      errorMessage: sanitize(error?.message)
+    });
   }
-
-  const pathname = `/api/${pathParts.map((part) => encodeURIComponent(part)).join("/")}`;
-  const search = query.toString();
-  return search ? `${pathname}?${search}` : pathname;
-}
-
-export default function handler(req: any, res: any) {
-  req.url = rebuildApiUrl(req);
-  return app(req, res);
 }
