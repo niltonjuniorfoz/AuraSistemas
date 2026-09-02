@@ -192,7 +192,7 @@ export const ShopProductCard: React.FC<{ p: any }> = ({ p }) => {
       </div>
       <div className="flex flex-1 flex-col items-center px-2.5 pb-2.5 text-center sm:px-3 sm:pb-3">
         <div className="min-h-[12px] text-[8px] font-semibold uppercase tracking-[0.12em] text-stone-400 sm:min-h-[14px] sm:text-[9px]">
-          {p.groupName ? translateCategoryName(p.groupName, i18n.language) : "\u00a0"}
+          {p.groupName ? translateCategoryName(p.groupName, i18n.language) : null}
         </div>
         <div className="mt-1 line-clamp-2 min-h-[2.2rem] text-[11px] font-bold leading-[1.15] text-stone-800 sm:min-h-[2.35rem] sm:text-xs" style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif" }}>{p.name}</div>
         <div className="mt-1.5 flex min-h-[2.2rem] flex-col items-center justify-start gap-0.5 sm:min-h-[2.5rem]">
@@ -209,20 +209,24 @@ export const ShopProductCard: React.FC<{ p: any }> = ({ p }) => {
           )}
         </div>
         <div className="mt-0.5 min-h-[14px] text-[10px] font-bold text-[var(--store-accent,#C99C5A)]">
-          {!p.hasVariants && inCart ? <>{t("product.naSacola")} ({inCart.quantity})</> : <span aria-hidden="true">\u00a0</span>}
+          {!p.hasVariants && inCart ? <>{t("product.naSacola")} ({inCart.quantity})</> : null}
         </div>
-        <div className="mt-1 flex min-h-[12px] w-full items-center justify-center">
+
+        {/* SKU não agrega valor no card mobile e o Safari pode inflar textos
+            muito pequenos. Mantemos o código somente no desktop, onde também
+            continua disponível para copiar. */}
+        <div className="mt-1 hidden min-h-[12px] w-full items-center justify-center sm:flex">
           {p.sku ? (
             <button
               onClick={copySku}
               title={t("product.copiarCodigo", "Copiar código")}
-              style={{ WebkitTextSizeAdjust: "none" }}
-              className="flex max-w-full items-center justify-center gap-0.5 truncate text-[5px] leading-none tracking-[0.02em] text-stone-300 transition hover:text-stone-500 sm:text-[7px]"
+              className="flex max-w-full items-center justify-center gap-0.5 truncate text-[7px] leading-none tracking-[0.02em] text-stone-300 transition hover:text-stone-500"
             >
-              {p.sku} {copied ? <Check className="h-1.5 w-1.5 text-emerald-600 sm:h-2.5 sm:w-2.5" /> : <Copy className="h-1.5 w-1.5 sm:h-2.5 sm:w-2.5" />}
+              {p.sku} {copied ? <Check className="h-2.5 w-2.5 text-emerald-600" /> : <Copy className="h-2.5 w-2.5" />}
             </button>
-          ) : <span aria-hidden="true">\u00a0</span>}
+          ) : null}
         </div>
+
         {/* Botão de sacola: CTA premium compartilhado (preenchido + shimmer),
             coerente com o resto da loja. */}
         <div className="mt-auto w-full pt-1.5">
