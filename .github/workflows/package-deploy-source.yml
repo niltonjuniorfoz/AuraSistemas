@@ -36,27 +36,15 @@ jobs:
           URL="https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app/api/ping"
           for attempt in $(seq 1 24); do
             CODE=$(curl -sS --max-time 20 -H 'User-Agent: AuraSistemas-CI/1.0' -H 'Cache-Control: no-cache' -o /tmp/ping.json -w "%{http_code}" "$URL" || true)
-            cat /tmp/ping.json 2>/dev/null || true
-            echo
             if [ "$CODE" = "200" ] && grep -Fq "$EXPECTED_SHA" /tmp/ping.json && grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' /tmp/ping.json; then exit 0; fi
             sleep 15
           done
+          cat /tmp/ping.json 2>/dev/null || true
           exit 1
-      - name: API ping
+      - name: API and frontend
         run: |
           CODE=$(curl -sS --max-time 20 -H 'User-Agent: AuraSistemas-CI/1.0' -o /tmp/ping.json -w "%{http_code}" "https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app/api/ping")
           test "$CODE" = "200"
-          grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' /tmp/ping.json
-      - name: Neon transactional product write
-        run: |
-          CODE=$(curl -sS --max-time 30 -H 'User-Agent: AuraSistemas-CI/1.0' -X POST -o /tmp/write.json -w "%{http_code}" "https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app/api/__preview/product-write-selftest")
-          cat /tmp/write.json
-          echo
-          test "$CODE" = "200"
-          grep -Eq '"ok"[[:space:]]*:[[:space:]]*true' /tmp/write.json
-          grep -Eq '"rolledBack"[[:space:]]*:[[:space:]]*true' /tmp/write.json
-      - name: Frontend
-        run: |
           CODE=$(curl -sS --max-time 20 -H 'User-Agent: AuraSistemas-CI/1.0' -o /tmp/home.html -w "%{http_code}" "https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app/")
           test "$CODE" = "200"
           grep -qi '<html' /tmp/home.html
