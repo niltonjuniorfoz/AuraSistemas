@@ -238,10 +238,10 @@ const BANNER_SIZE_CLASSES: Record<string, string> = {
   // Frame fixo por tamanho: qualquer imagem enviada ocupa exatamente a mesma
   // altura visual. A arte principal usa object-contain (não corta) e o fundo
   // desfocado preenche eventuais diferenças de proporção sem criar borda vazia.
-  P: "h-[145px] sm:h-[175px] md:h-[205px]",
-  M: "h-[165px] sm:h-[205px] md:h-[245px]",
-  G: "h-[185px] sm:h-[235px] md:h-[285px]",
-  GG: "h-[205px] sm:h-[265px] md:h-[325px]",
+  P: "h-[118px] sm:h-[165px] md:h-[205px]",
+  M: "h-[138px] sm:h-[195px] md:h-[245px]",
+  G: "h-[162px] sm:h-[225px] md:h-[285px]",
+  GG: "h-[188px] sm:h-[255px] md:h-[325px]",
 };
 // Banner lateral: "M" (padrão) = sem classe extra, altura natural de hoje.
 const SIDEBANNER_SIZE_CLASSES: Record<string, string> = {
@@ -303,8 +303,6 @@ export function StoreHome() {
   const [newest, setNewest] = useState<any[]>([]);
   const [allInStock, setAllInStock] = useState<any[]>([]);
   const [brands, setBrands] = useState<{ name: string; logoUrl: string }[]>([]);
-  const [emagrecimento, setEmagrecimento] = useState<any[]>([]);
-  const [performance, setPerformance] = useState<any[]>([]);
   const [vitrineProducts, setVitrineProducts] = useState<Record<string, any[]>>({});
   // Cache produto-por-id compartilhado entre o load inicial (vitrines da
   // config PUBLICADA) e o efeito de hidratação do rascunho abaixo — evita
@@ -473,7 +471,7 @@ export function StoreHome() {
           return Array.isArray(j.data) ? j.data : [];
         };
 
-        const [cats, newestList, brandsList, allInStockList] = await Promise.all([
+        const [, newestList, brandsList, allInStockList] = await Promise.all([
           loadCategories(),
           fetchList("/api/store/products?limit=8&sort=newest"),
           fetch("/api/store/brands").then((r) => (r.ok ? r.json() : { data: [] })).then((j) => j.data || []).catch(() => []),
@@ -485,19 +483,6 @@ export function StoreHome() {
         setNewest(newestList);
         setBrands(brandsList);
         setAllInStock(allInStockList);
-
-        // Emagrecimento/Performance: busca pela categoria de verdade quando ela
-        // existir — antes dependia da palavra estar literalmente no nome do
-        // produto, então um produto certo mas sem essa palavra nunca aparecia.
-        const findGroup = (kw: string) => cats.find((c: any) => String(c.name || "").toLowerCase().includes(kw));
-        const emagrecimentoGroup = findGroup("emagre");
-        const performanceGroup = findGroup("performance");
-        const [emagrecimentoList, performanceList] = await Promise.all([
-          fetchList(emagrecimentoGroup ? `/api/store/products?group=${emagrecimentoGroup.id}&limit=8` : "/api/store/products?search=emagrecimento&limit=8"),
-          fetchList(performanceGroup ? `/api/store/products?group=${performanceGroup.id}&limit=8` : "/api/store/products?search=performance&limit=8"),
-        ]);
-        setEmagrecimento(emagrecimentoList);
-        setPerformance(performanceList);
 
         // Config da vitrine (banners, hero, destaques) fica em /api/store/config —
         // NÃO em /api/store/info (esse só tem dados da empresa/PIX).
@@ -652,7 +637,7 @@ export function StoreHome() {
     return (
       <Editable elementId={SECAO("banners")} panelKey="banners" label="Banners do topo"
         onMove={(dir) => moveSection("banners", dir)} onHide={() => hideSection("banners")}>
-        <section className="mx-auto w-[94%] max-w-[1380px] px-1 py-2.5 sm:px-2">
+        <section className="mx-auto w-[95%] max-w-[1600px] px-1 py-2 sm:px-4">
           {/* Largura sempre acompanha a seção (igual ao header/categorias/produtos).
               A altura agora vem do passo de tamanho (P/M/G/GG) — "M" é o valor
               fixo antigo (aspect-[5/2] max-h-[420px]). */}
@@ -814,8 +799,8 @@ export function StoreHome() {
     return (
       <Editable elementId={SECAO("howToBuy")} panelKey="howToBuy" label="Como comprar"
         onMove={(dir) => moveSection("howToBuy", dir)} onHide={() => hideSection("howToBuy")}>
-        <section className="px-4 pb-3">
-          <div className="mx-auto grid w-[95%] max-w-[1600px] grid-cols-4 divide-x divide-rose-200/70 overflow-hidden rounded-xl border border-rose-100 bg-gradient-to-r from-[#fff5f7] to-[#f8dde5]">
+        <section className="mx-auto w-[95%] max-w-[1600px] px-1 pb-3 sm:px-4">
+          <div className="grid w-full grid-cols-4 divide-x divide-rose-200/70 overflow-hidden rounded-xl border border-rose-100 bg-gradient-to-r from-[#fff5f7] to-[#f8dde5]">
             {[
               [BadgeCheck, "Produtos Originais", "Selo de garantia"],
               [Truck, "Entrega Rápida", "Para todo o Brasil"],
@@ -879,6 +864,16 @@ export function StoreHome() {
     return <MarcasSection brands={brands} />;
   };
 
+  const categoryShowcases = useMemo(() => (
+    categories
+      .map((category: any) => ({
+        category,
+        products: allInStock.filter((product: any) => product.groupId === category.id).slice(0, 12),
+      }))
+      .filter((entry) => entry.products.length > 0)
+      .slice(0, 5)
+  ), [categories, allInStock]);
+
   const renderVitrines = () => {
     if (loading) {
       return <div className="flex items-center justify-center py-16 text-stone-400"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> {t("home.carregandoVitrine")}</div>;
@@ -902,16 +897,23 @@ export function StoreHome() {
           ))}
         </div>
       );
-    } else if (featured.length === 0) {
-      inner = <><div className="py-12 text-center text-stone-400">{t("home.vitrinePreparando")}</div><NewsletterBanner /></>;
     } else {
-      inner = (
+      const popularProducts = allInStock.length > 0 ? allInStock.slice(0, 12) : featured;
+      inner = popularProducts.length === 0 ? (
+        <><div className="py-12 text-center text-stone-400">{t("home.vitrinePreparando")}</div><NewsletterBanner /></>
+      ) : (
         <div className="flex flex-col gap-2">
-          <ProductSection title="Produtos mais amados" link="/loja/catalogo?ord=popular" products={allInStock.length > 0 ? allInStock.slice(0, 12) : featured} />
+          <ProductSection title="Produtos mais amados" link="/loja/catalogo?ord=popular" products={popularProducts} />
           <NewsletterBanner />
-          <ProductSection title={t("home.emagrecimento")} link="/loja/catalogo?q=emagrecimento" products={emagrecimento.length > 0 ? emagrecimento : featured.slice().reverse()} />
-          <ProductSection title={t("home.performance")} link="/loja/catalogo?q=performance" products={performance.length > 0 ? performance : featured} />
-          <ProductSection title={t("home.novidades")} link="/loja/catalogo?ord=newest" products={newest.length > 0 ? newest : featured.slice().reverse()} />
+          {categoryShowcases.map(({ category, products }) => (
+            <ProductSection
+              key={category.id}
+              title={translateCategoryName(category.name, i18n.language)}
+              link={`/loja/catalogo?cat=${category.id}`}
+              products={products}
+            />
+          ))}
+          <ProductSection title={t("home.novidades")} link="/loja/catalogo?ord=newest" products={newest.length > 0 ? newest : popularProducts.slice().reverse()} />
         </div>
       );
     }

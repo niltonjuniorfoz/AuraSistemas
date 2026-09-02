@@ -1104,8 +1104,13 @@ router.get("/:id/cost-history", async (req: AuthRequest, res) => {
 router.post("/ai/description", requirePermission("product", "manage"), async (req: AuthRequest, res) => {
   try {
     const { name, brand, model, group, subgroup, upc } = req.body;
-    const prompt = `Escreva uma descrição curta, clara e objetiva para cadastro interno do produto abaixo.
-Use português do Brasil. Máximo de 3 a 5 linhas. Não use markdown, não invente características e evite texto publicitário exagerado.
+    const prompt = `Crie uma descrição comercial pronta para a página de produto de uma loja online.
+Use português do Brasil, com linguagem natural, profissional e convincente, sem exageros.
+Explique o que é o produto, para que ele serve e quais benefícios ou experiência de uso podem ser comunicados com segurança a partir dos dados fornecidos.
+Priorize valor para o cliente e situações de uso. Não descreva apenas embalagem, cor do frasco, tampa ou aparência visual, a menos que isso seja realmente relevante para a compra.
+Não invente composição, dosagem, certificações, resultados garantidos, indicação médica, fragrância, tamanho ou especificações que não estejam nos dados.
+Se faltarem detalhes, escreva um texto útil usando somente o que é possível afirmar pelo nome, marca, modelo e categoria, sem preencher lacunas com suposições.
+Entregue apenas o texto final, sem título, sem markdown e sem mencionar que foi gerado por IA. Use de 1 a 3 parágrafos curtos, aproximadamente 450 a 850 caracteres.
 Nome: ${name || ""}
 Marca: ${brand || ""}
 Modelo: ${model || ""}
@@ -1115,10 +1120,10 @@ UPC: ${upc || ""}`;
 
     const description = await ollamaChat({
       messages: [
-        { role: "system", content: "Você auxilia no cadastro de produtos de um ERP. Seja preciso, curto e não invente dados." },
+        { role: "system", content: "Você é um redator de e-commerce cuidadoso. Produza copy comercial útil e verdadeira, nunca invente atributos ausentes e evite descrever somente a aparência da embalagem." },
         { role: "user", content: prompt },
       ],
-      temperature: 0.2,
+      temperature: 0.35,
     });
 
     res.json({ description });

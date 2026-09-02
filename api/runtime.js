@@ -3402,8 +3402,13 @@ router6.get("/:id/cost-history", async (req, res) => {
 router6.post("/ai/description", requirePermission("product", "manage"), async (req, res) => {
   try {
     const { name, brand, model, group, subgroup, upc } = req.body;
-    const prompt = `Escreva uma descri\xE7\xE3o curta, clara e objetiva para cadastro interno do produto abaixo.
-Use portugu\xEAs do Brasil. M\xE1ximo de 3 a 5 linhas. N\xE3o use markdown, n\xE3o invente caracter\xEDsticas e evite texto publicit\xE1rio exagerado.
+    const prompt = `Crie uma descri\xE7\xE3o comercial pronta para a p\xE1gina de produto de uma loja online.
+Use portugu\xEAs do Brasil, com linguagem natural, profissional e convincente, sem exageros.
+Explique o que \xE9 o produto, para que ele serve e quais benef\xEDcios ou experi\xEAncia de uso podem ser comunicados com seguran\xE7a a partir dos dados fornecidos.
+Priorize valor para o cliente e situa\xE7\xF5es de uso. N\xE3o descreva apenas embalagem, cor do frasco, tampa ou apar\xEAncia visual, a menos que isso seja realmente relevante para a compra.
+N\xE3o invente composi\xE7\xE3o, dosagem, certifica\xE7\xF5es, resultados garantidos, indica\xE7\xE3o m\xE9dica, fragr\xE2ncia, tamanho ou especifica\xE7\xF5es que n\xE3o estejam nos dados.
+Se faltarem detalhes, escreva um texto \xFAtil usando somente o que \xE9 poss\xEDvel afirmar pelo nome, marca, modelo e categoria, sem preencher lacunas com suposi\xE7\xF5es.
+Entregue apenas o texto final, sem t\xEDtulo, sem markdown e sem mencionar que foi gerado por IA. Use de 1 a 3 par\xE1grafos curtos, aproximadamente 450 a 850 caracteres.
 Nome: ${name || ""}
 Marca: ${brand || ""}
 Modelo: ${model || ""}
@@ -3412,10 +3417,10 @@ Subgrupo: ${subgroup || ""}
 UPC: ${upc || ""}`;
     const description = await ollamaChat({
       messages: [
-        { role: "system", content: "Voc\xEA auxilia no cadastro de produtos de um ERP. Seja preciso, curto e n\xE3o invente dados." },
+        { role: "system", content: "Voc\xEA \xE9 um redator de e-commerce cuidadoso. Produza copy comercial \xFAtil e verdadeira, nunca invente atributos ausentes e evite descrever somente a apar\xEAncia da embalagem." },
         { role: "user", content: prompt }
       ],
-      temperature: 0.2
+      temperature: 0.35
     });
     res.json({ description });
   } catch (error) {
@@ -12915,6 +12920,7 @@ async function getStoreConfig() {
     whatsapp: cs?.whatsappGateway || "",
     instagramUrl: cs?.instagramUrl || "",
     email: cs?.email || "",
+    defaultCurrency: cs?.defaultCurrency || "BRL",
     pixKey: pix.pixKey || "",
     currencies: currencies2
   };
@@ -12923,7 +12929,7 @@ router36.get("/info", async (_req, res) => {
   try {
     const c = await getStoreConfig();
     const { APP_VERSION: APP_VERSION2 } = await Promise.resolve().then(() => (init_version(), version_exports));
-    res.json({ storeName: c.storeName, logoUrl: c.logoUrl, city: c.city, whatsapp: c.whatsapp, instagramUrl: c.instagramUrl, email: c.email, pixEnabled: !!c.pixKey, appVersion: APP_VERSION2, currencies: c.currencies });
+    res.json({ storeName: c.storeName, logoUrl: c.logoUrl, city: c.city, whatsapp: c.whatsapp, instagramUrl: c.instagramUrl, email: c.email, defaultCurrency: c.defaultCurrency, pixEnabled: !!c.pixKey, appVersion: APP_VERSION2, currencies: c.currencies });
   } catch (err) {
     res.status(500).json({ error: "Loja indispon\xEDvel." });
   }
@@ -13256,7 +13262,7 @@ router36.get("/product/:id", async (req, res) => {
       imageUrl: products.imageUrl,
       price: products.salePriceA,
       available: availableStockExpr()
-    }).from(products).innerJoin(stockBalances, eq39(products.id, stockBalances.productId)).where(and33(catalogWhere(), eq39(products.groupId, p.groupId), sql25`${products.id} <> ${id}`)).orderBy(desc22(products.createdAt)).limit(4) : [];
+    }).from(products).innerJoin(stockBalances, eq39(products.id, stockBalances.productId)).where(and33(catalogWhere(), eq39(products.groupId, p.groupId), sql25`${products.id} <> ${id}`)).orderBy(desc22(products.createdAt)).limit(12) : [];
     const variantsRows = await db.select({
       id: products.id,
       variantName: products.variantName,

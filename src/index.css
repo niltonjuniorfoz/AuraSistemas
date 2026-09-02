@@ -99,11 +99,15 @@
   --chart-3: #2563eb;
   --chart-4: #7c3aed;
   --chart-5: #d97706;
-  /* --primary, --ring, --accent-foreground, --chart-1 e os --sidebar-*
-     ficam de fora de propósito: dourado não muda de matiz entre os modos
-     (é a cor da marca), e a barra lateral continua escura no modo claro
-     (mesmo padrão do template de referência) — por isso não precisam de
-     bloco aqui, herdam do :root em qualquer um dos dois modos. */
+  --sidebar: #ffffff;
+  --sidebar-foreground: #334155;
+  --sidebar-primary: #ffd700;
+  --sidebar-primary-foreground: #0f1b2e;
+  --sidebar-accent: #eef1f7;
+  --sidebar-accent-foreground: #0f1b2e;
+  --sidebar-border: #dde3ee;
+  --sidebar-ring: #d4af00;
+  /* No modo claro a navegação e os painéis administrativos também ficam claros. */
 }
 
 /* Dezenas de páginas (milhares de usos, grep confirmou: 788x text-white,
@@ -4386,4 +4390,47 @@ body {
 [data-theme="light"] .text-gray-800,
 [data-theme="light"] .text-gray-900 {
   color: #1e293b;
+}
+
+
+/* Superfícies legadas que ainda usam hex fixo no ERP. */
+[data-theme="light"] .bg-\[\#171717\],
+[data-theme="light"] .bg-\[\#1e1e1e\],
+[data-theme="light"] .bg-\[\#0a0a0a\],
+[data-theme="light"] .bg-\[\#262626\] {
+  background-color: #ffffff !important;
+}
+
+[data-theme="light"] .product-sale-price-panel,
+[data-theme="light"] .currency-entry-toggle,
+[data-theme="light"] .currency-entry-badge,
+[data-theme="light"] .product-price-input,
+[data-theme="light"] .product-margin-input {
+  background: #ffffff;
+  border-color: #dde3ee;
+}
+
+[data-theme="light"] .product-price-input,
+[data-theme="light"] .product-margin-input,
+[data-theme="light"] .product-sale-price-panel > h4,
+[data-theme="light"] .product-price-label {
+  color: #0f1b2e;
+}
+
+@keyframes store-cart-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes store-cart-drawer-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.store-cart-overlay { animation: store-cart-overlay-in 180ms ease-out both; }
+.store-cart-drawer { animation: store-cart-drawer-in 260ms cubic-bezier(.2,.8,.2,1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .store-cart-overlay,
+  .store-cart-drawer { animation: none; }
 }

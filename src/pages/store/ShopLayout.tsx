@@ -113,7 +113,7 @@ export function ShopLayout() {
   // publicadas em /loja normal).
   const editCtx = useEditMode();
   const rootRef = useRef<HTMLDivElement>(null);
-  const { currency, rates, setRates } = useStorePrefs();
+  const { currency, rates, setRates, setCurrency } = useStorePrefs();
   const navigate = useNavigate();
   // Dentro do editor, navegação programática também precisa ficar sob
   // /store-settings/editor/... — links <a> são tratados pelo interceptador
@@ -231,6 +231,7 @@ export function ShopLayout() {
   useEffect(() => {
     fetch("/api/store/info").then((r) => r.json()).then((j) => {
       setInfo(j);
+      if (j?.defaultCurrency === "BRL") setCurrency("BRL");
       // Página aberta antes de uma atualização: o formulário daqui pode não ter
       // campos que o servidor já exige. Avisa em vez de deixar o cliente travado.
       if (j?.appVersion && j.appVersion !== APP_VERSION) setPrecisaAtualizar(true);
@@ -392,7 +393,7 @@ export function ShopLayout() {
       )}
 
       <header className="sticky top-0 z-30 bg-[var(--store-header-bg,#ffffff)]/95 shadow-sm backdrop-blur">
-        <div className="border-b border-rose-100 bg-[var(--store-accent,#e96f95)]/12">
+        <div className="hidden border-b border-rose-100 bg-[var(--store-accent,#e96f95)]/12 md:block">
           <div className="mx-auto flex min-h-8 w-[96%] max-w-[1440px] items-center justify-center gap-4 px-3 sm:justify-between">
             <EditableAnnouncementBar announcement={announcement} pages={pagesFromInfo} />
             <div className="hidden items-center gap-5 text-[10px] font-semibold text-[var(--store-header-text,#2f2729)] md:flex">
@@ -405,18 +406,18 @@ export function ShopLayout() {
           </div>
         </div>
         <div className="border-b border-stone-100 bg-white">
-          <div className="relative mx-auto flex min-h-[74px] w-[96%] max-w-[1440px] items-center gap-3 px-3 py-1.5 lg:gap-8">
+          <div className="relative mx-auto flex min-h-[66px] w-[95%] max-w-[1600px] items-center gap-2 px-1 py-1 md:min-h-[74px] md:px-3 lg:gap-8">
           <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); setMobileMenuOpen((open) => !open); }} className="relative z-20 flex h-11 w-11 shrink-0 items-center justify-center text-[#6b5b5a] md:hidden" aria-label="Abrir categorias" aria-controls="mobile-store-menu" aria-expanded={mobileMenuOpen}>
             <Menu className="h-6 w-6" />
           </button>
           <Link to="/loja" className="absolute left-1/2 flex -translate-x-1/2 items-center md:static md:translate-x-0">
             {infoLoading ? (
-              <span className="h-20 w-36 shrink-0 animate-pulse rounded-xl bg-rose-100 md:h-28 md:w-44" />
+              <span className="h-16 w-44 shrink-0 animate-pulse rounded-xl bg-rose-100 md:h-28 md:w-44" />
             ) : (
               <img
                 src={info?.logoUrl || "/branding/db-cosmetics-logo.png"}
                 alt={info?.storeName || "Cosmetics by Jessica Ferreira"}
-                className="h-20 w-36 shrink-0 scale-[1.32] object-contain md:h-28 md:w-44 md:scale-100"
+                className="h-16 w-44 shrink-0 scale-[1.15] object-contain md:h-28 md:w-44 md:scale-100"
               />
             )}
           </Link>
@@ -447,7 +448,7 @@ export function ShopLayout() {
           </div>
           </div>
         </div>
-        <form onSubmit={submitSearch} className="bg-white px-4 pb-3 sm:hidden">
+        <form onSubmit={submitSearch} className="mx-auto w-[95%] max-w-[1600px] bg-white px-1 pb-2 sm:hidden">
           <div className="relative flex overflow-hidden rounded-md border border-rose-100">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
             <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder={t("header.buscarPlaceholder")}
@@ -522,8 +523,8 @@ export function ShopLayout() {
 
       {/* Carrinho / Checkout */}
       {open && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-stone-900/40 backdrop-blur-sm" onClick={() => !sending && setOpen(false)}>
-          <aside className="flex h-full w-full max-w-md flex-col bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="store-cart-overlay fixed inset-0 z-50 flex justify-end bg-stone-900/40 backdrop-blur-sm" onClick={() => !sending && setOpen(false)}>
+          <aside className="store-cart-drawer flex h-full w-full max-w-md flex-col bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-stone-200 p-4">
               <h2 className="flex items-center gap-2 text-lg font-bold" style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif", textTransform: "uppercase" }}>
                 <ShoppingBag className="h-5 w-5 text-stone-900" /> {checkout ? t("cart.finalizarPedidoTitulo") : t("cart.titulo")}
@@ -753,7 +754,7 @@ export function ShopLayout() {
 
       {/* Rodapé editorial inspirado na organização da DroidStore, com a identidade da loja. */}
       <footer id="atendimento" className="relative mt-auto overflow-hidden border-t border-rose-100 bg-white py-10 text-[#6b5b5a]">
-        <div className="pointer-events-none absolute -bottom-10 left-1/2 w-full -translate-x-1/2 select-none text-center text-[9rem] font-black leading-none tracking-[0.02em] text-[#f8dde5]/35 sm:-bottom-24 sm:text-[15rem]">DB</div>
+        <div className="pointer-events-none absolute inset-x-0 -bottom-3 select-none whitespace-nowrap text-center text-[6.5rem] font-black leading-none tracking-[0.02em] text-[#f8dde5]/35 sm:-bottom-20 sm:text-[15rem]">DB</div>
         <div className="relative mx-auto w-[94%] max-w-[1440px] px-4">
           <div className="hidden gap-9 md:grid md:grid-cols-[1.25fr_.8fr_1fr_1fr]">
             <div>
@@ -786,16 +787,16 @@ export function ShopLayout() {
             </div>
           </div>
 
-          <div className="mt-9 grid border-y border-rose-100 py-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-7 grid grid-cols-4 divide-x divide-rose-100 border-y border-rose-100 py-3">
             {[
               [ShieldCheck, "Compra 100% segura", "Seus dados protegidos"],
               [Award, "Produtos de qualidade", "Seleção e procedência"],
               [Truck, "Envio para todo o Brasil", "Entrega rápida e rastreada"],
               [Headphones, "Atendimento especializado", "Antes e depois da compra"],
-            ].map(([Icon, title, description]: any, index) => (
-              <div key={title} className={`flex items-center gap-3 px-5 py-3 ${index > 0 ? "sm:border-l sm:border-rose-100" : ""}`}>
-                <Icon className="h-6 w-6 shrink-0 text-[var(--store-accent,#e96f95)]" />
-                <div><div className="text-xs font-bold text-[#463c3b]">{title}</div><div className="text-[10px] text-[#6b5b5a]/65">{description}</div></div>
+            ].map(([Icon, title, description]: any) => (
+              <div key={title} className="flex min-w-0 flex-col items-center gap-1 px-1 py-2 text-center sm:flex-row sm:gap-3 sm:px-5 sm:text-left">
+                <Icon className="h-5 w-5 shrink-0 text-[var(--store-accent,#e96f95)] sm:h-6 sm:w-6" />
+                <div className="min-w-0"><div className="text-[7px] font-bold leading-tight text-[#463c3b] min-[390px]:text-[8px] sm:text-xs">{title}</div><div className="mt-0.5 hidden text-[10px] text-[#6b5b5a]/65 sm:block">{description}</div></div>
               </div>
             ))}
           </div>

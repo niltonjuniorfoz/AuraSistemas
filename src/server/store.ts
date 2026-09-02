@@ -88,6 +88,7 @@ async function getStoreConfig() {
     whatsapp: cs?.whatsappGateway || "",
     instagramUrl: cs?.instagramUrl || "",
     email: cs?.email || "",
+    defaultCurrency: cs?.defaultCurrency || "BRL",
     pixKey: pix.pixKey || "",
     currencies,
   };
@@ -102,7 +103,7 @@ router.get("/info", async (_req, res) => {
     // appVersion: a loja aberta há dias no navegador compara com a sua e avisa
     // pra recarregar — senão o formulário velho bate num servidor novo.
     const { APP_VERSION } = await import("../lib/version");
-    res.json({ storeName: c.storeName, logoUrl: c.logoUrl, city: c.city, whatsapp: c.whatsapp, instagramUrl: c.instagramUrl, email: c.email, pixEnabled: !!c.pixKey, appVersion: APP_VERSION, currencies: c.currencies });
+    res.json({ storeName: c.storeName, logoUrl: c.logoUrl, city: c.city, whatsapp: c.whatsapp, instagramUrl: c.instagramUrl, email: c.email, defaultCurrency: c.defaultCurrency, pixEnabled: !!c.pixKey, appVersion: APP_VERSION, currencies: c.currencies });
   } catch (err: any) { res.status(500).json({ error: "Loja indisponível." }); }
 });
 
@@ -545,7 +546,7 @@ router.get("/product/:id", async (req, res) => {
       .innerJoin(stockBalances, eq(products.id, stockBalances.productId))
       .where(and(catalogWhere(), eq(products.groupId, p.groupId), sql`${products.id} <> ${id}`))
       .orderBy(desc(products.createdAt))
-      .limit(4) : [];
+      .limit(12) : [];
 
     const variantsRows = await db.select({
       id: products.id, variantName: products.variantName, price: products.salePriceA,

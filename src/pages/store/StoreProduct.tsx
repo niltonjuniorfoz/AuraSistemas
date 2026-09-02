@@ -55,8 +55,19 @@ export function StoreProduct() {
   const remaining = currentProduct.maxQty - (inCart?.quantity || 0);
   const img = p.images[imgIdx] || null;
 
+  const addCurrentToCart = () => {
+    if (remaining <= 0 || (p.hasVariants && !selectedVariant)) return;
+    add({
+      ...currentProduct,
+      name: p.name + (p.hasVariants ? ` (${currentProduct.variantName})` : ""),
+      imageUrl: p.imageUrl,
+    }, Math.min(qty, remaining));
+    setQty(1);
+    setOpen(true);
+  };
+
   return (
-    <main className="mx-auto w-[95%] max-w-[1600px] px-4 py-8">
+    <main className="mx-auto w-[95%] max-w-[1600px] px-3 pt-5 pb-36 sm:px-4 md:py-8">
       {/* Migalha */}
       <nav className="mb-5 flex items-center gap-1 text-xs uppercase tracking-wide text-stone-400">
         <Link to="/loja" className="hover:text-stone-700">{t("product.inicio")}</Link>
@@ -65,10 +76,10 @@ export function StoreProduct() {
         {p.groupName && (<><ChevronRight className="h-3 w-3" /><Link to={`/loja/catalogo?cat=${p.groupId}`} className="hover:text-stone-700">{translateCategoryName(p.groupName, i18n.language)}</Link></>)}
       </nav>
 
-      <div className="grid gap-8 md:grid-cols-2">
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,560px)_minmax(0,1fr)] lg:justify-center lg:gap-12">
         {/* Galeria */}
-        <div>
-          <div className="aspect-square overflow-hidden rounded-3xl border border-stone-200 bg-white">
+        <div className="mx-auto w-full max-w-[560px] lg:mx-0">
+          <div className="aspect-[4/3] max-h-[500px] overflow-hidden rounded-2xl border border-stone-200 bg-white sm:rounded-3xl">
             {img
               ? <img src={img} alt={p.name} className="h-full w-full object-contain" />
               : <div className="flex h-full items-center justify-center"><Package className="h-16 w-16 text-stone-200" /></div>}
@@ -86,7 +97,7 @@ export function StoreProduct() {
         </div>
 
         {/* Info */}
-        <div>
+        <div className="min-w-0 lg:sticky lg:top-24 lg:self-start">
           {p.groupName && <div className="text-[11px] font-bold uppercase tracking-widest text-amber-700">{translateCategoryName(p.groupName, i18n.language)}</div>}
           <h1 className="mt-1 text-3xl font-bold leading-tight text-stone-900" style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif" }}>{p.name}</h1>
           {(p.brand || p.model) && (
@@ -133,11 +144,7 @@ export function StoreProduct() {
             <PremiumCta
               size="md"
               className="!w-auto flex-1 sm:flex-none"
-              onClick={() => {
-                // Passar o name e imageUrl do pai se a variante não tiver
-                add({ ...currentProduct, name: p.name + (p.hasVariants ? ` (${currentProduct.variantName})` : ''), imageUrl: p.imageUrl }, qty);
-                setQty(1);
-              }}
+              onClick={addCurrentToCart}
               disabled={remaining <= 0 || (p.hasVariants && !selectedVariant)}
             >
               <ShoppingBag className="h-4 w-4" /> {remaining <= 0 ? t("product.limiteSacola") : t("product.adicionarSacola")}
@@ -171,13 +178,38 @@ export function StoreProduct() {
 
       {/* Relacionados */}
       {p.related?.length > 0 && (
-        <section className="mt-14">
-          <h2 className="mb-4 text-2xl font-bold text-stone-900" style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif" }}>{t("product.vocejaGostar")}</h2>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            {p.related.map((r: any) => <ShopProductCard key={r.id} p={r} />)}
+        <section className="mt-12">
+          <div className="mb-4 flex items-end justify-between gap-3">
+            <h2 className="text-xl font-bold text-stone-900 sm:text-2xl" style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif" }}>{t("product.vocejaGostar")}</h2>
+            {p.groupId && <Link to={`/loja/catalogo?cat=${p.groupId}`} className="shrink-0 text-xs font-semibold text-[var(--store-accent,#e96f95)]">Ver mais</Link>}
+          </div>
+          <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-3 scrollbar-hide">
+            {p.related.map((r: any) => (
+              <div key={r.id} className="w-[64vw] max-w-56 shrink-0 snap-start sm:w-52 lg:w-[calc((100%_-_3.75rem)/6)]">
+                <ShopProductCard p={r} />
+              </div>
+            ))}
           </div>
         </section>
       )}
+
+      <div className="fixed inset-x-0 bottom-[3.45rem] z-30 border-t border-rose-100 bg-white/95 px-3 py-2 shadow-[0_-10px_30px_rgba(80,50,60,0.10)] backdrop-blur md:hidden">
+        <div className="mx-auto flex w-full max-w-lg items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[10px] font-semibold text-stone-500">{p.name}</div>
+            <div className="text-lg font-black text-stone-900">{formatPrice(currentProduct.price, currency, rates)}</div>
+          </div>
+          <button
+            type="button"
+            onClick={addCurrentToCart}
+            disabled={remaining <= 0 || (p.hasVariants && !selectedVariant)}
+            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-[var(--store-accent,#e96f95)] px-5 text-sm font-bold text-white shadow-sm transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <ShoppingBag className="h-4 w-4" />
+            {remaining <= 0 ? t("product.esgotado") : t("product.adicionarSacola")}
+          </button>
+        </div>
+      </div>
     </main>
   );
 }

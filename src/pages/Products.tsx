@@ -121,7 +121,7 @@ export function Products() {
     shelfId: '', initialPhysicalStock: 0, minStock: 0, hasSerialNumber: false, requiresLot: false, entryReason: 'Estoque Inicial',
     ofertaQty: 0, ofertaPrice: 0, outletQty: 0, outletPrice: 0,
     costPrice: 0, costCurrency: 'BRL', salePriceA: 0, salePriceB: 0, ivaPercentage: 0,
-    parentId: '', variantName: '', storeVisible: false
+    parentId: '', variantName: '', storeVisible: true
   };
   const [formData, setFormData] = useState(defaultFormData);
   // Estoque físico ATUAL do produto sendo editado — só pra feedback visual
