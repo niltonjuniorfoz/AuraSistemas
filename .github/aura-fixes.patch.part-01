@@ -1,0 +1,157 @@
++  background-color: #f1f5f9 !important;
++}
++[data-theme="light"] .text-gray-700,
++[data-theme="light"] .text-gray-800,
++[data-theme="light"] .text-gray-900 {
++  color: #1e293b;
++}
+diff --git a/src/lib/api.ts b/src/lib/api.ts
+index 1700733..304f873 100644
+--- a/src/lib/api.ts
++++ b/src/lib/api.ts
+@@ -7,11 +7,19 @@ export function extractList<T = any>(json: any): T[] {
+ }
+ 
+ export async function parseApiError(res: Response) {
+-  const data = await res.json().catch(() => ({}));
++  const raw = await res.text().catch(() => "");
++  let data: any = {};
++  try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
++
++  let fallback = raw && !raw.trim().startsWith("<") ? raw.trim().slice(0, 400) : "Erro desconhecido.";
++  if (res.status === 413) fallback = "O envio excedeu o limite de 4 MB. Reduza o arquivo/imagem e tente novamente.";
++  if (res.status >= 500 && (!raw || raw.trim().startsWith("<"))) fallback = "O servidor não conseguiu processar a operação. Tente novamente em instantes.";
++
+   return {
+     status: res.status,
+-    message: data.error || data.message || "Erro desconhecido.",
+-    fields: data.fields || {}
++    message: data.error || data.message || fallback,
++    fields: data.fields || {},
++    code: data.code || undefined,
+   };
+ }
+ 
+diff --git a/src/pages/Products.tsx b/src/pages/Products.tsx
+index 6a2c514..07a5d57 100644
+--- a/src/pages/Products.tsx
++++ b/src/pages/Products.tsx
+@@ -587,6 +587,7 @@ export function Products() {
+ 
+   const getAiErrorMessage = (data: any, fallback: string) => {
+     if (data?.code === "AI_RATE_LIMIT") return data.error || "Limite temporário da IA atingido. Aguarde um momento e tente novamente.";
++    if (data?.code === "AI_NOT_CONFIGURED") return data.error || "Ollama ainda não foi configurado no servidor.";
+     if (data?.code === "AI_UNAVAILABLE") return data.error || "A IA está temporariamente indisponível.";
+     return data?.error || fallback;
+   };
+diff --git a/src/pages/StockTransfers.tsx b/src/pages/StockTransfers.tsx
+index 2b3de25..b4b7592 100644
+--- a/src/pages/StockTransfers.tsx
++++ b/src/pages/StockTransfers.tsx
+@@ -202,8 +202,8 @@ export function StockTransfers() {
+   const selectInvoiceFile = (file: File | null, input?: HTMLInputElement) => {
+     if (input) input.value = "";
+     if (!file) return;
+-    if (file.size > 10 * 1024 * 1024) {
+-      alert("A nota deve ter no máximo 10 MB.");
++    if (file.size > 4 * 1024 * 1024) {
++      alert("A nota deve ter no máximo 4 MB.");
+       return;
+     }
+     setTransferInvoiceFile(file);
+diff --git a/src/pages/purchases/PurchaseOcr.tsx b/src/pages/purchases/PurchaseOcr.tsx
+index 5946e96..087f57e 100644
+--- a/src/pages/purchases/PurchaseOcr.tsx
++++ b/src/pages/purchases/PurchaseOcr.tsx
+@@ -357,9 +357,9 @@ export function PurchaseOcr() {
+       setError('Formato ou tipo de arquivo inválido. Formas suportadas: JPG, PNG, WEBP e PDF.');
+       return;
+     }
+-    // Limit to 10MB
+-    if (selectedFile.size > 10 * 1024 * 1024) {
+-      setError('O tamanho do arquivo excede o limite estipulado de 10 MB.');
++    // Limit to 4MB
++    if (selectedFile.size > 4 * 1024 * 1024) {
++      setError('O tamanho do arquivo excede o limite estipulado de 4 MB.');
+       return;
+     }
+ 
+@@ -869,7 +869,7 @@ export function PurchaseOcr() {
+ 
+             <h2 className="text-2xl font-bold text-white mb-2">Selecione o arquivo da Nota Fiscal ou Foto</h2>
+             <p className="text-gray-400 mb-6 text-center max-w-lg text-sm leading-relaxed">
+-              Arraste e solte o arquivo aqui ou faça upload manual. Suporta imagens <span className="text-brand-gold">JPG, PNG, WEBP</span> ou arquivos <span className="text-brand-gold">PDF</span> com tabelas ou notas legíveis de até 10 MB.
++              Arraste e solte o arquivo aqui ou faça upload manual. Suporta imagens <span className="text-brand-gold">JPG, PNG, WEBP</span> ou arquivos <span className="text-brand-gold">PDF</span> com tabelas ou notas legíveis de até 4 MB.
+             </p>
+ 
+             <input 
+diff --git a/src/pages/store/ShopLayout.tsx b/src/pages/store/ShopLayout.tsx
+index 6bc9d48..f6dfea1 100644
+--- a/src/pages/store/ShopLayout.tsx
++++ b/src/pages/store/ShopLayout.tsx
+@@ -120,6 +120,7 @@ export function ShopLayout() {
+   // do StoreEditor, mas navigate() não passa por clique.
+   const storePath = (p: string) => (editCtx ? p.replace(/^\/loja/, "/store-settings/editor") : p);
+   const location = useLocation();
++  const normalizedStorePath = location.pathname.replace(/\/+$/, "") || "/";
+   const [info, setInfo] = useState<any>(null);
+   const [infoLoading, setInfoLoading] = useState(true);
+   useEffect(() => {
+@@ -167,6 +168,7 @@ export function ShopLayout() {
+   const [sending, setSending] = useState(false);
+   const [error, setError] = useState("");
+   const [searchTerm, setSearchTerm] = useState("");
++  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+ 
+   const [announcement, setAnnouncement] = useState("");
+   const [footerText, setFooterText] = useState("");
+@@ -403,18 +405,18 @@ export function ShopLayout() {
+           </div>
+         </div>
+         <div className="border-b border-stone-100 bg-white">
+-          <div className="mx-auto flex w-[96%] max-w-[1440px] items-center gap-3 px-3 py-2.5 lg:gap-8">
+-          <Link to="/loja/catalogo" className="flex h-11 w-11 shrink-0 items-center justify-center text-[#6b5b5a] md:hidden" aria-label="Abrir categorias">
++          <div className="relative mx-auto flex min-h-[74px] w-[96%] max-w-[1440px] items-center gap-3 px-3 py-1.5 lg:gap-8">
++          <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); setMobileMenuOpen((open) => !open); }} className="relative z-20 flex h-11 w-11 shrink-0 items-center justify-center text-[#6b5b5a] md:hidden" aria-label="Abrir categorias" aria-controls="mobile-store-menu" aria-expanded={mobileMenuOpen}>
+             <Menu className="h-6 w-6" />
+-          </Link>
+-          <Link to="/loja" className="flex shrink-0 items-center">
++          </button>
++          <Link to="/loja" className="absolute left-1/2 flex -translate-x-1/2 items-center md:static md:translate-x-0">
+             {infoLoading ? (
+-              <span className="h-20 w-32 shrink-0 animate-pulse rounded-xl bg-rose-100 md:h-28 md:w-44" />
++              <span className="h-20 w-36 shrink-0 animate-pulse rounded-xl bg-rose-100 md:h-28 md:w-44" />
+             ) : (
+               <img
+                 src={info?.logoUrl || "/branding/db-cosmetics-logo.png"}
+                 alt={info?.storeName || "Cosmetics by Jessica Ferreira"}
+-                className="h-20 w-32 shrink-0 object-contain md:h-28 md:w-44"
++                className="h-20 w-36 shrink-0 scale-[1.32] object-contain md:h-28 md:w-44 md:scale-100"
+               />
+             )}
+           </Link>
+@@ -472,6 +474,43 @@ export function ShopLayout() {
+         </div>
+       </header>
+ 
++      {mobileMenuOpen && (
++        <div id="mobile-store-menu" className="fixed inset-0 z-[9999] md:hidden" role="dialog" aria-modal="true" aria-label="Categorias">
++          <button type="button" className="absolute inset-0 bg-stone-900/35 backdrop-blur-[1px]" onClick={() => setMobileMenuOpen(false)} aria-label="Fechar menu" />
++          <aside className="absolute inset-y-0 left-0 flex w-[86%] max-w-sm flex-col bg-white shadow-2xl">
++            <div className="flex items-center justify-between border-b border-rose-100 px-4 py-4">
++              <div>
++                <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--store-accent,#e96f95)]">Menu</div>
++                <div className="mt-0.5 text-lg font-bold text-[#463c3b]">Categorias</div>
++              </div>
++              <button type="button" onClick={() => setMobileMenuOpen(false)} className="flex h-10 w-10 items-center justify-center rounded-full border border-rose-100 text-stone-500" aria-label="Fechar">
++                <X className="h-5 w-5" />
++              </button>
++            </div>
++            <div className="flex-1 overflow-y-auto p-3">
++              <Link to="/loja/catalogo" onClick={() => setMobileMenuOpen(false)} className="mb-2 flex items-center gap-3 rounded-xl bg-[var(--store-accent,#e96f95)] px-4 py-3 text-sm font-bold text-white">
++                <LayoutGrid className="h-5 w-5" /> Todas as categorias
++              </Link>
++              <div className="grid grid-cols-1 gap-1">
++                {[...categories]
++                  .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || translateCategoryName(a.name, i18nInstance.language).localeCompare(translateCategoryName(b.name, i18nInstance.language)))
++                  .map((category) => (
