@@ -1225,9 +1225,9 @@ var init_db = __esm({
 
 // src/server/audit.ts
 import { v4 as uuidv4 } from "uuid";
-async function logAction(userId, action, tableName, recordId, oldValues, newValues) {
+async function logAction(userId, action, tableName, recordId, oldValues, newValues, executor = db) {
   try {
-    await db.insert(auditLogs).values({
+    await executor.insert(auditLogs).values({
       id: uuidv4(),
       userId,
       action,
@@ -2384,32 +2384,136 @@ function isValidCurrency(value) {
   return typeof value === "string" && CURRENCIES.includes(value);
 }
 
-// src/server/products.ts
-var router6 = Router6();
-router6.use(requireAuth);
-var AI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
-var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-function getAiErrorInfo(error) {
-  const rawMessage = String(error?.message || error || "");
-  const rawStatus = Number(error?.status || error?.code || 0);
-  const isRateLimit = rawStatus === 429 || /RESOURCE_EXHAUSTED|quota exceeded|rate.?limit|too many requests/i.test(rawMessage);
-  const isUnavailable = rawStatus === 503 || /UNAVAILABLE|temporarily unavailable|service unavailable/i.test(rawMessage);
-  const retryMatch = rawMessage.match(/retry(?:\s+in|Delay[^0-9]*)\s*([0-9]+(?:\.[0-9]+)?)s/i);
-  const retryAfterSeconds = retryMatch ? Math.max(1, Math.ceil(Number(retryMatch[1]))) : void 0;
-  return { rawMessage, rawStatus, isRateLimit, isUnavailable, retryAfterSeconds };
+// src/server/ollama.ts
+var OllamaRequestError = class extends Error {
+  constructor(message, status = 0, code = "OLLAMA_ERROR", retryAfterSeconds) {
+    super(message);
+    this.name = "OllamaRequestError";
+    this.status = status;
+    this.code = code;
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+};
+function normalizeBaseUrl(raw) {
+  const trimmed = raw.trim().replace(/\/+$/, "");
+  if (!trimmed) return "";
+  return trimmed.endsWith("/api") ? trimmed : `${trimmed}/api`;
 }
-async function generateAiContent(ai, prompt) {
+function getOllamaBaseUrl() {
+  const explicit = normalizeBaseUrl(process.env.OLLAMA_BASE_URL || "");
+  if (explicit) return explicit;
+  if (process.env.OLLAMA_API_KEY) return "https://ollama.com/api";
+  return "http://127.0.0.1:11434/api";
+}
+function getOllamaModel(kind = "text") {
+  if (kind === "vision") {
+    return process.env.OLLAMA_VISION_MODEL || process.env.OLLAMA_MODEL || "mistral-small3.2";
+  }
+  return process.env.OLLAMA_MODEL || "mistral-small3.2";
+}
+function isOllamaConfigured() {
+  if (process.env.OLLAMA_BASE_URL) return true;
+  if (process.env.OLLAMA_API_KEY) return true;
+  return !process.env.VERCEL;
+}
+function parseRetryAfter(value) {
+  if (!value) return void 0;
+  const seconds = Number(value);
+  return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : void 0;
+}
+function getOllamaErrorInfo(error) {
+  const status = Number(error?.status || 0);
+  const message = String(error?.message || error || "");
+  const code = String(error?.code || "OLLAMA_ERROR");
+  const rateLimited = status === 429 || /rate.?limit|too many requests|quota/i.test(message);
+  const unavailable = status === 503 || status >= 500 || /ECONNREFUSED|fetch failed|temporarily unavailable|service unavailable|timeout|timed out/i.test(message);
+  const notConfigured = code === "OLLAMA_NOT_CONFIGURED";
+  return {
+    status,
+    message,
+    code,
+    rateLimited,
+    unavailable,
+    notConfigured,
+    retryAfterSeconds: error?.retryAfterSeconds
+  };
+}
+async function requestOnce(options) {
+  if (!isOllamaConfigured()) {
+    throw new OllamaRequestError(
+      "Ollama n\xE3o configurado para este ambiente. Defina OLLAMA_API_KEY ou OLLAMA_BASE_URL.",
+      0,
+      "OLLAMA_NOT_CONFIGURED"
+    );
+  }
+  const baseUrl = getOllamaBaseUrl();
+  const apiKey = String(process.env.OLLAMA_API_KEY || "").trim();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Math.max(5e3, options.timeoutMs || 55e3));
+  try {
+    const body = {
+      model: options.model || getOllamaModel("text"),
+      messages: options.messages,
+      stream: false,
+      options: {
+        temperature: options.temperature ?? 0.2
+      }
+    };
+    if (options.json && !/https:\/\/ollama\.com\/api$/i.test(baseUrl)) {
+      body.format = "json";
+    }
+    const response = await fetch(`${baseUrl}/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...apiKey ? { Authorization: `Bearer ${apiKey}` } : {}
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal
+    });
+    const text2 = await response.text();
+    let data = {};
+    try {
+      data = text2 ? JSON.parse(text2) : {};
+    } catch {
+      data = {};
+    }
+    if (!response.ok) {
+      const message = String(data?.error || data?.message || text2 || `Ollama HTTP ${response.status}`);
+      throw new OllamaRequestError(
+        message.slice(0, 600),
+        response.status,
+        response.status === 429 ? "OLLAMA_RATE_LIMIT" : "OLLAMA_HTTP_ERROR",
+        parseRetryAfter(response.headers.get("retry-after"))
+      );
+    }
+    const content = String(data?.message?.content || data?.response || "").trim();
+    if (!content) {
+      throw new OllamaRequestError("Ollama respondeu sem conte\xFAdo.", 502, "OLLAMA_EMPTY_RESPONSE");
+    }
+    return content;
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new OllamaRequestError("Tempo limite ao consultar o Ollama.", 504, "OLLAMA_TIMEOUT");
+    }
+    if (error instanceof OllamaRequestError) throw error;
+    throw new OllamaRequestError(String(error?.message || error || "Falha ao consultar o Ollama."), 0, "OLLAMA_NETWORK_ERROR");
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+async function ollamaChat(options) {
   let lastError;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      return await ai.models.generateContent({ model: AI_MODEL, contents: prompt });
+      return await requestOnce(options);
     } catch (error) {
       lastError = error;
-      const info = getAiErrorInfo(error);
-      const canRetryRateLimit = info.isRateLimit && (info.retryAfterSeconds || 0) <= 4;
-      const canRetryTransient = info.isUnavailable || info.rawStatus >= 500;
-      if (attempt === 0 && (canRetryRateLimit || canRetryTransient)) {
-        await sleep(Math.min(4e3, Math.max(900, (info.retryAfterSeconds || 1) * 1e3)));
+      const info = getOllamaErrorInfo(error);
+      const retryable = info.rateLimited || info.unavailable;
+      if (attempt === 0 && retryable) {
+        const delayMs = Math.min(4e3, Math.max(800, (info.retryAfterSeconds || 1) * 1e3));
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
         continue;
       }
       break;
@@ -2417,9 +2521,32 @@ async function generateAiContent(ai, prompt) {
   }
   throw lastError;
 }
+function extractJsonObject(text2) {
+  const cleaned = String(text2 || "").replace(/```json/gi, "").replace(/```/g, "").trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+  }
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    return JSON.parse(cleaned.slice(start, end + 1));
+  }
+  throw new Error("Resposta da IA n\xE3o cont\xE9m JSON v\xE1lido.");
+}
+
+// src/server/products.ts
+var router6 = Router6();
+router6.use(requireAuth);
 function sendFriendlyAiError(res, error, operation) {
-  const info = getAiErrorInfo(error);
-  if (info.isRateLimit) {
+  const info = getOllamaErrorInfo(error);
+  if (info.notConfigured) {
+    return res.status(400).json({
+      code: "AI_NOT_CONFIGURED",
+      error: "Ollama n\xE3o configurado. Defina OLLAMA_API_KEY ou OLLAMA_BASE_URL no ambiente do sistema."
+    });
+  }
+  if (info.rateLimited) {
     const waitText = info.retryAfterSeconds ? ` Aguarde cerca de ${info.retryAfterSeconds} segundos e tente novamente.` : " Aguarde um momento e tente novamente.";
     return res.status(429).json({
       code: "AI_RATE_LIMIT",
@@ -2427,13 +2554,13 @@ function sendFriendlyAiError(res, error, operation) {
       retryAfterSeconds: info.retryAfterSeconds || null
     });
   }
-  if (info.isUnavailable) {
+  if (info.unavailable) {
     return res.status(503).json({
       code: "AI_UNAVAILABLE",
-      error: "A IA est\xE1 temporariamente indispon\xEDvel. Tente novamente em alguns instantes."
+      error: "O Ollama est\xE1 temporariamente indispon\xEDvel. Verifique o host/modelo configurado e tente novamente."
     });
   }
-  console.error(`AI ${operation} error:`, info.rawMessage);
+  console.error(`Ollama ${operation} error:`, info.message);
   return res.status(500).json({
     code: "AI_ERROR",
     error: `N\xE3o foi poss\xEDvel ${operation} com a IA agora. Tente novamente ou preencha o campo manualmente.`
@@ -2932,7 +3059,7 @@ router6.post("/", requirePermission("product", "manage"), async (req, res) => {
           }
         }
       }
-      await logAction(req.user.userId, "CREATE", "products", id, null, data);
+      await logAction(req.user.userId, "CREATE", "products", id, null, data, tx);
     });
     res.status(201).json({ id });
   } catch (error) {
@@ -3275,21 +3402,22 @@ router6.get("/:id/cost-history", async (req, res) => {
 router6.post("/ai/description", requirePermission("product", "manage"), async (req, res) => {
   try {
     const { name, brand, model, group, subgroup, upc } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return res.status(400).json({ error: "Recurso de IA n\xE3o configurado. Solicite a configura\xE7\xE3o ao administrador do sistema." });
-    }
-    const { GoogleGenAI: GoogleGenAI3 } = await import("@google/genai");
-    const ai = new GoogleGenAI3({ apiKey });
-    const prompt = `Escreva uma descri\xE7\xE3o curta, clara e objetiva para o seguinte produto. No m\xE1ximo 3 a 5 linhas. N\xE3o escreva um texto longo de propaganda ou marketing, seja direto, \xFAtil para cadastro interno e ficha t\xE9cnica.
-    Nome: ${name || ""}
-    Marca: ${brand || ""}
-    Modelo: ${model || ""}
-    Grupo: ${group || ""}
-    Subgrupo: ${subgroup || ""}
-    UPC: ${upc || ""}`;
-    const response = await generateAiContent(ai, prompt);
-    res.json({ description: response.text });
+    const prompt = `Escreva uma descri\xE7\xE3o curta, clara e objetiva para cadastro interno do produto abaixo.
+Use portugu\xEAs do Brasil. M\xE1ximo de 3 a 5 linhas. N\xE3o use markdown, n\xE3o invente caracter\xEDsticas e evite texto publicit\xE1rio exagerado.
+Nome: ${name || ""}
+Marca: ${brand || ""}
+Modelo: ${model || ""}
+Grupo: ${group || ""}
+Subgrupo: ${subgroup || ""}
+UPC: ${upc || ""}`;
+    const description = await ollamaChat({
+      messages: [
+        { role: "system", content: "Voc\xEA auxilia no cadastro de produtos de um ERP. Seja preciso, curto e n\xE3o invente dados." },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.2
+    });
+    res.json({ description });
   } catch (error) {
     return sendFriendlyAiError(res, error, "gerar a descri\xE7\xE3o");
   }
@@ -3297,46 +3425,35 @@ router6.post("/ai/description", requirePermission("product", "manage"), async (r
 router6.post("/ai/specs", requirePermission("product", "manage"), async (req, res) => {
   try {
     const { name, brand, model, group, subgroup, upc } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return res.status(400).json({ error: "Recurso de IA n\xE3o configurado. Solicite a configura\xE7\xE3o ao administrador do sistema." });
-    }
-    const { GoogleGenAI: GoogleGenAI3 } = await import("@google/genai");
-    const ai = new GoogleGenAI3({ apiKey });
-    const prompt = `Gere uma descri\xE7\xE3o curta (sem propaganda, objetiva, 3-5 linhas) e uma lista de especifica\xE7\xF5es t\xE9cnicas para o produto abaixo.
-    Retorne APENAS um JSON v\xE1lido. N\xE3o adicione nenhum markdown (\`\`\`json) na resposta, apenas o texto bruto do JSON.
-    Se o produto parecer um medicamento, n\xE3o invente dosagens espec\xEDficas e inclua "Apresenta\xE7\xE3o", "Finalidade geral", "Observa\xE7\xF5es" e "Aviso: Informa\xE7\xF5es para cadastro interno. Consulte bula/fornecedor." nas especifica\xE7\xF5es. Se n\xE3o tiver certeza de um detalhe, use termos gen\xE9ricos como "N\xE3o informado" ou "A confirmar".
-
-    Formato JSON esperado:
-    {
-      "description": "descri\xE7\xE3o curta do produto...",
-      "specs": [
-        {"label": "Processador", "value": "Intel Core i5"},
-        {"label": "Mem\xF3ria RAM", "value": "8GB"}
-      ]
-    }
-
-    Produto:
-    Nome: ${name || ""}
-    Marca: ${brand || ""}
-    Modelo: ${model || ""}
-    Grupo: ${group || ""}
-    Subgrupo: ${subgroup || ""}`;
-    const response = await generateAiContent(ai, prompt);
-    let text2 = response.text || "[]";
-    text2 = text2.replace(/```json/g, "").replace(/```/g, "").trim();
-    let parsed = { description: "", specs: [] };
+    const prompt = `Gere uma descri\xE7\xE3o curta e uma lista de especifica\xE7\xF5es t\xE9cnicas para o produto abaixo.
+Retorne APENAS JSON v\xE1lido no formato: {"description":"...","specs":[{"label":"...","value":"..."}]}.
+N\xE3o invente detalhes. Quando n\xE3o houver certeza, use "N\xE3o informado" ou "A confirmar".
+Se parecer medicamento, n\xE3o invente dosagens e inclua aviso de consulta \xE0 bula/fornecedor.
+Produto: ${name || ""}
+Marca: ${brand || ""}
+Modelo: ${model || ""}
+Grupo: ${group || ""}
+Subgrupo: ${subgroup || ""}
+UPC: ${upc || ""}`;
+    const text2 = await ollamaChat({
+      messages: [
+        { role: "system", content: "Voc\xEA auxilia no cadastro t\xE9cnico de produtos de um ERP. Responda somente o JSON solicitado e n\xE3o invente dados." },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.1,
+      json: true
+    });
+    let parsed;
     try {
-      parsed = JSON.parse(text2);
-    } catch (e) {
-      console.log("Failed to parse AI response:", text2);
+      parsed = extractJsonObject(text2);
+    } catch {
+      console.error("Failed to parse Ollama response:", text2.slice(0, 1e3));
       return res.status(502).json({ code: "AI_INVALID_RESPONSE", error: "A IA respondeu em um formato inesperado. Tente novamente." });
     }
-    let warning = "";
-    if (name?.toLowerCase().match(/comprimido|xarope|mg|gotas|pomada|gel|medicamento/)) {
-      warning = "Cuidado com informa\xE7\xF5es m\xE9dicas geradas.";
-    }
-    res.json({ description: parsed.description, specs: parsed.specs, warning });
+    const specs = Array.isArray(parsed?.specs) ? parsed.specs.filter((item) => item && typeof item.label === "string" && typeof item.value === "string").slice(0, 30) : [];
+    const description = typeof parsed?.description === "string" ? parsed.description : "";
+    const warning = name?.toLowerCase().match(/comprimido|xarope|mg|gotas|pomada|gel|medicamento/) ? "Cuidado com informa\xE7\xF5es m\xE9dicas geradas." : "";
+    res.json({ description, specs, warning });
   } catch (error) {
     return sendFriendlyAiError(res, error, "gerar as especifica\xE7\xF5es");
   }
@@ -6654,6 +6771,7 @@ init_schema();
 init_authMiddleware();
 import { Router as Router16 } from "express";
 import { eq as eq19, sql as sql15, and as and16, ne as ne2 } from "drizzle-orm";
+import { v4 as uuidv49 } from "uuid";
 var router16 = Router16();
 router16.get("/", async (_req, res) => {
   try {
@@ -6661,6 +6779,36 @@ router16.get("/", async (_req, res) => {
     res.json({ status: "ok", db: "connected", time: (/* @__PURE__ */ new Date()).toISOString() });
   } catch (err) {
     res.status(503).json({ status: "error", db: "unreachable", error: err.message });
+  }
+});
+router16.post("/product-write-smoke", async (_req, res) => {
+  if (process.env.VERCEL_ENV !== "preview") return res.status(404).json({ error: "Not found" });
+  const rollbackMarker = `AURA_SMOKE_ROLLBACK_${Date.now()}`;
+  try {
+    const [group] = await db.select({ id: productGroups.id }).from(productGroups).limit(1);
+    await db.transaction(async (tx) => {
+      const id = uuidv49();
+      await tx.insert(products).values({
+        id,
+        sku: `SMOKE-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`.toUpperCase(),
+        name: "AURA DEPLOYMENT WRITE SMOKE",
+        groupId: group?.id || null,
+        salePriceA: "1.00",
+        salePriceB: "1.00",
+        salePriceC: "1.00",
+        technicalSpecs: [{ label: "smoke", value: "ok" }],
+        storeVisible: false
+      });
+      await tx.insert(stockBalances).values({ productId: id, physicalStock: 0, reservedStock: 0 });
+      throw new Error(rollbackMarker);
+    });
+    return res.status(500).json({ status: "error", error: "Smoke transaction did not rollback" });
+  } catch (error) {
+    if (String(error?.message || "") === rollbackMarker) {
+      return res.json({ status: "ok", dbWrite: "verified", rolledBack: true });
+    }
+    console.error("Product write smoke failed:", error);
+    return res.status(500).json({ status: "error", dbWrite: "failed", error: String(error?.message || "unknown").slice(0, 300) });
   }
 });
 router16.get("/flow", requireAuth, requirePermission("admin", "manage"), async (req, res) => {
@@ -6773,7 +6921,7 @@ init_authMiddleware();
 import { Router as Router18 } from "express";
 import { eq as eq21, desc as desc10, and as and18, inArray as inArray8, notInArray as notInArray3, sql as sql16, gte as gte5, lte as lte5 } from "drizzle-orm";
 init_fx();
-import { v4 as uuidv49 } from "uuid";
+import { v4 as uuidv410 } from "uuid";
 var router18 = Router18();
 router18.use(requireAuth);
 function isPrivilegedRole2(roleName) {
@@ -7250,7 +7398,7 @@ router18.post("/sales/:saleId/payments", requirePermission("cash", "receive_paym
       await tx.update(sales).set({ paymentStatus: newStatus, ...orderStatusUpdate }).where(eq21(sales.id, saleId));
       await syncStoreOrderFromSale(tx, saleId, req.user.userId);
       await tx.insert(auditLogs).values({
-        id: uuidv49(),
+        id: uuidv410(),
         userId: req.user.userId,
         action: "RECEIVE_PAYMENT",
         tableName: "sales",
@@ -7326,7 +7474,7 @@ router18.post("/sales/:saleId/payments/split", requirePermission("cash", "receiv
       const orderStatusUpdate = newStatus === "PAID" && locked.fulfillmentStatus === "DELIVERED" ? { orderStatus: "COMPLETED" } : {};
       await tx.update(sales).set({ paymentStatus: newStatus, ...orderStatusUpdate }).where(eq21(sales.id, saleId));
       await syncStoreOrderFromSale(tx, saleId, req.user.userId);
-      await tx.insert(auditLogs).values({ id: uuidv49(), userId: req.user.userId, action: "RECEIVE_PAYMENT_SPLIT", tableName: "sales", recordId: saleId, newValues: JSON.stringify({ appliedTotal, newStatus, lines: lines.length }) });
+      await tx.insert(auditLogs).values({ id: uuidv410(), userId: req.user.userId, action: "RECEIVE_PAYMENT_SPLIT", tableName: "sales", recordId: saleId, newValues: JSON.stringify({ appliedTotal, newStatus, lines: lines.length }) });
       return { appliedTotal, newStatus };
     });
     res.status(201).json({ success: true, ...result });
@@ -7355,7 +7503,7 @@ router18.post("/misc-receipt", requirePermission("cash", "receive_payment"), asy
       const miscCurrency = companyRows[0]?.defaultCurrency === "BRL" ? "BRL" : "USD";
       const routed = await routePayment(tx, method, amt, { saleLabel: `Avulso: ${desc24}`, userId: req.user.userId, accountId: accountId || null, sourceCurrency: miscCurrency });
       if (!routed) throw new Error(`Nenhuma conta configurada para ${method} \u2014 mapeie em Financeiro > Mapear Contas antes de receber.`);
-      await tx.insert(auditLogs).values({ id: uuidv49(), userId: req.user.userId, action: "MISC_RECEIPT", tableName: "financial_accounts", recordId: accountId || "-", newValues: JSON.stringify({ method, amount: amt, description: desc24 }) });
+      await tx.insert(auditLogs).values({ id: uuidv410(), userId: req.user.userId, action: "MISC_RECEIPT", tableName: "financial_accounts", recordId: accountId || "-", newValues: JSON.stringify({ method, amount: amt, description: desc24 }) });
     });
     res.status(201).json({ success: true });
   } catch (err) {
@@ -7415,7 +7563,7 @@ init_schema();
 init_authMiddleware();
 import { Router as Router19 } from "express";
 import { eq as eq22, and as and19, desc as desc11, inArray as inArray9 } from "drizzle-orm";
-import { v4 as uuidv410 } from "uuid";
+import { v4 as uuidv411 } from "uuid";
 var router19 = Router19();
 router19.use(requireAuth);
 router19.get("/queue", requirePermission("separation", "view"), async (req, res) => {
@@ -7455,7 +7603,7 @@ router19.post("/sales/:saleId/start", requirePermission("separation", "process")
     if (existing.length > 0) {
       taskId = existing[0].id;
     } else {
-      taskId = uuidv410();
+      taskId = uuidv411();
       await db.transaction(async (tx) => {
         await tx.insert(separationTasks).values({
           id: taskId,
@@ -7467,7 +7615,7 @@ router19.post("/sales/:saleId/start", requirePermission("separation", "process")
         const items = await tx.select().from(saleItems).where(eq22(saleItems.saleId, saleId));
         if (items.length > 0) {
           await tx.insert(separationItems).values(items.map((item) => ({
-            id: uuidv410(),
+            id: uuidv411(),
             separationTaskId: taskId,
             saleItemId: item.id,
             productId: item.productId,
@@ -7588,7 +7736,7 @@ init_schema();
 init_authMiddleware();
 import { Router as Router20 } from "express";
 import { eq as eq23, and as and20, desc as desc12, inArray as inArray10 } from "drizzle-orm";
-import { v4 as uuidv411 } from "uuid";
+import { v4 as uuidv412 } from "uuid";
 import bcrypt5 from "bcryptjs";
 var router20 = Router20();
 router20.use(requireAuth);
@@ -7658,7 +7806,7 @@ router20.post("/sales/:saleId/start", requirePermission("delivery", "process"), 
     if (existing.length > 0) {
       taskId = existing[0].id;
     } else {
-      taskId = uuidv411();
+      taskId = uuidv412();
       await db.transaction(async (tx) => {
         await tx.insert(deliveryTasks).values({
           id: taskId,
@@ -7670,7 +7818,7 @@ router20.post("/sales/:saleId/start", requirePermission("delivery", "process"), 
         const items = await tx.select().from(saleItems).where(eq23(saleItems.saleId, saleId));
         if (items.length > 0) {
           await tx.insert(deliveryItems).values(items.map((item) => ({
-            id: uuidv411(),
+            id: uuidv412(),
             deliveryTaskId: taskId,
             saleItemId: item.id,
             productId: item.productId,
@@ -7695,7 +7843,7 @@ router20.post("/sales/:saleId/skip-separation", requirePermission("separation", 
     if (s.length > 0 && s[0].fulfillmentStatus === "PENDING") {
       const existing = await db.select().from(deliveryTasks).where(eq23(deliveryTasks.saleId, saleId)).limit(1);
       if (existing.length === 0) {
-        const taskId = uuidv411();
+        const taskId = uuidv412();
         await db.transaction(async (tx) => {
           await tx.insert(deliveryTasks).values({
             id: taskId,
@@ -7705,7 +7853,7 @@ router20.post("/sales/:saleId/skip-separation", requirePermission("separation", 
           const items = await tx.select().from(saleItems).where(eq23(saleItems.saleId, saleId));
           if (items.length > 0) {
             await tx.insert(deliveryItems).values(items.map((item) => ({
-              id: uuidv411(),
+              id: uuidv412(),
               deliveryTaskId: taskId,
               saleItemId: item.id,
               productId: item.productId,
@@ -7799,7 +7947,7 @@ router20.post("/tasks/:taskId/items/:itemId/scan-serial", requirePermission("del
         throw Object.assign(new Error(msg), { statusCode: 400 });
       }
       await tx.insert(deliverySerials).values({
-        id: uuidv411(),
+        id: uuidv412(),
         deliveryItemId: itemId,
         productId: dItem[0].productId,
         saleItemId: dItem[0].saleItemId,
@@ -7842,7 +7990,7 @@ router20.post("/sales/:saleId/authorize-unpaid", requirePermission("delivery", "
         createdBy: req.user.userId
       });
       await tx.insert(auditLogs).values({
-        id: uuidv411(),
+        id: uuidv412(),
         userId: req.user.userId,
         action: "AUTHORIZE_UNPAID_DELIVERY",
         tableName: "sales",
@@ -7906,7 +8054,7 @@ router20.post("/tasks/:taskId/complete", requirePermission("delivery", "complete
         }).where(eq23(stockBalances.productId, item.productId));
         await consumeFifo(tx, item.productId, item.quantityDelivered, { saleId, reason: "SALE" });
         await tx.insert(stockMovements).values({
-          id: uuidv411(),
+          id: uuidv412(),
           productId: item.productId,
           quantity: -item.quantityDelivered,
           // delivery is an outward movement
@@ -7930,7 +8078,7 @@ router20.post("/tasks/:taskId/complete", requirePermission("delivery", "complete
       await tx.update(deliveryTasks).set({ status: "COMPLETED", completedAt: /* @__PURE__ */ new Date() }).where(eq23(deliveryTasks.id, taskId));
       await tx.update(sales).set({ fulfillmentStatus: "DELIVERED", orderStatus: orderSt }).where(eq23(sales.id, saleId));
       await tx.insert(auditLogs).values({
-        id: uuidv411(),
+        id: uuidv412(),
         userId: req.user.userId,
         action: orderSt === "COMPLETED" ? "DELIVER_SALE" : "DELIVER_UNPAID_AUTHORIZED",
         tableName: "sales",
@@ -7949,7 +8097,7 @@ init_schema();
 init_authMiddleware();
 import { Router as Router21 } from "express";
 import { eq as eq24, desc as desc13, and as and21, inArray as inArray11 } from "drizzle-orm";
-import { v4 as uuidv412 } from "uuid";
+import { v4 as uuidv413 } from "uuid";
 var router21 = Router21();
 router21.use(requireAuth);
 router21.get("/:productId", requirePermission("product", "manage"), async (req, res) => {
@@ -7970,7 +8118,7 @@ router21.post("/:productId", requirePermission("product", "manage"), async (req,
     if (pr.length === 0 || !pr[0].hasSerialNumber) return res.status(400).json({ error: "Este produto n\xE3o usa controle de n\xFAmero de s\xE9rie." });
     const ex = await db.select().from(productSerials).where(and21(eq24(productSerials.productId, productId), eq24(productSerials.serialNumber, serialNumber))).limit(1);
     if (ex.length > 0) return res.status(400).json({ error: "Serial number already registered for this product." });
-    const id = uuidv412();
+    const id = uuidv413();
     await db.insert(productSerials).values({ id, productId, serialNumber, status: "AVAILABLE" });
     res.json({ id });
   } catch (e) {
@@ -7992,7 +8140,7 @@ router21.post("/:productId/bulk", requirePermission("product", "manage"), async 
     if (existing.length > 0) return res.status(409).json({ error: "Um ou mais n\xFAmeros de s\xE9rie j\xE1 constam neste produto." });
     let inserted = 0;
     for (const sn of unique2) {
-      await db.insert(productSerials).values({ id: uuidv412(), productId, serialNumber: sn, status: "AVAILABLE" });
+      await db.insert(productSerials).values({ id: uuidv413(), productId, serialNumber: sn, status: "AVAILABLE" });
       inserted++;
     }
     res.json({ success: true, inserted });
@@ -9565,11 +9713,11 @@ import { eq as eq28, ilike as ilike5, or as or5, and as and23, isNull as isNull7
 import multer2 from "multer";
 import fs3 from "fs";
 import path3 from "path";
-import { v4 as uuidv413 } from "uuid";
+import { v4 as uuidv414 } from "uuid";
 var router24 = Router24();
 router24.use(requireAuth);
 var upload2 = multer2({ storage: multer2.memoryStorage() });
-var SUPPLIER_INVOICE_MAX_BYTES = 10 * 1024 * 1024;
+var SUPPLIER_INVOICE_MAX_BYTES = 4 * 1024 * 1024;
 var SUPPLIER_INVOICE_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"];
 function toSafeDate(value) {
   if (!value) return null;
@@ -9649,9 +9797,9 @@ router24.post("/:id/invoices", requirePermission("supplier", "edit"), upload2.si
       return res.status(400).json({ error: "Formato inv\xE1lido. Use JPG, PNG, WEBP ou PDF." });
     }
     if (req.file.size > SUPPLIER_INVOICE_MAX_BYTES) {
-      return res.status(400).json({ error: "Arquivo maior que 10 MB." });
+      return res.status(400).json({ error: "Arquivo maior que 4 MB." });
     }
-    const id = uuidv413();
+    const id = uuidv414();
     const persistentFilePath = `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`;
     const [created] = await db.insert(supplierInvoiceFiles).values({
       id,
@@ -9766,132 +9914,83 @@ import { eq as eq30, or as or6, and as and25, desc as desc16 } from "drizzle-orm
 import multer3 from "multer";
 
 // src/server/ocrService.ts
-import { GoogleGenAI, Type } from "@google/genai";
-var aiClient = null;
-function getAiClient() {
-  if (!aiClient) {
-    const key = process.env.GEMINI_API_KEY;
-    if (!key) {
-      throw new Error("GEMINI_API_KEY_MISSING");
-    }
-    aiClient = new GoogleGenAI({
-      apiKey: key,
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build"
-        }
-      }
-    });
-  }
-  return aiClient;
+var OCR_JSON_SHAPE = `{
+  "supplier": {"name":"string","document":"string opcional"},
+  "invoice": {"number":"string","date":"YYYY-MM-DD opcional","total":0},
+  "items": [{"sku":"opcional","upc":"opcional","name":"string","quantity":1,"unitCost":0,"totalCost":0,"confidence":0.0,"rawText":"opcional"}],
+  "rawText":"texto detectado opcional",
+  "warnings":["avisos opcionais"]
+}`;
+function normalizeOcrResult(value) {
+  const supplier = value?.supplier && typeof value.supplier === "object" ? value.supplier : {};
+  const invoice = value?.invoice && typeof value.invoice === "object" ? value.invoice : {};
+  const items = Array.isArray(value?.items) ? value.items : [];
+  return {
+    supplier: {
+      name: String(supplier.name || "N\xE3o informado"),
+      ...supplier.document ? { document: String(supplier.document) } : {}
+    },
+    invoice: {
+      number: String(invoice.number || "N\xE3o informado"),
+      ...invoice.date ? { date: String(invoice.date) } : {},
+      ...Number.isFinite(Number(invoice.total)) ? { total: Number(invoice.total) } : {}
+    },
+    items: items.filter((item) => item && typeof item === "object").slice(0, 250).map((item) => ({
+      ...item.sku ? { sku: String(item.sku) } : {},
+      ...item.upc ? { upc: String(item.upc) } : {},
+      name: String(item.name || "Item n\xE3o identificado"),
+      quantity: Math.max(0, Math.round(Number(item.quantity) || 0)),
+      unitCost: Number(item.unitCost) || 0,
+      ...Number.isFinite(Number(item.totalCost)) ? { totalCost: Number(item.totalCost) } : {},
+      confidence: Math.min(1, Math.max(0, Number(item.confidence) || 0)),
+      ...item.rawText ? { rawText: String(item.rawText) } : {}
+    })),
+    ...value?.rawText ? { rawText: String(value.rawText) } : {},
+    ...Array.isArray(value?.warnings) ? { warnings: value.warnings.map(String).slice(0, 30) } : {}
+  };
+}
+async function processImageWithOllama(fileBuffer, language) {
+  const outputLanguage = language?.toLowerCase().startsWith("es") ? "Spanish (Paraguay)" : "Brazilian Portuguese";
+  const base64Data = fileBuffer.toString("base64");
+  const prompt = `Analise esta imagem de nota fiscal, fatura comercial ou recibo de compra.
+Extraia fornecedor, documento fiscal, n\xFAmero/data/total da nota e todos os itens vis\xEDveis com SKU/c\xF3digo, UPC/EAN/GTIN, descri\xE7\xE3o, quantidade, custo unit\xE1rio, total da linha, confian\xE7a de 0 a 1 e texto bruto quando \xFAtil.
+N\xE3o invente valores que n\xE3o estejam leg\xEDveis. Se algo estiver incerto, registre um aviso.
+Todos os avisos e observa\xE7\xF5es devem estar em ${outputLanguage}.
+Retorne APENAS JSON v\xE1lido neste formato: ${OCR_JSON_SHAPE}`;
+  const text2 = await ollamaChat({
+    model: getOllamaModel("vision"),
+    messages: [{ role: "user", content: prompt, images: [base64Data] }],
+    temperature: 0,
+    json: true,
+    timeoutMs: 58e3
+  });
+  return normalizeOcrResult(extractJsonObject(text2));
+}
+async function processPdfWithOllama() {
+  throw new Error("OCR_PDF_NEEDS_IMAGE");
 }
 async function processInvoiceOcr(fileBuffer, mimeType, language = "pt") {
   try {
-    getAiClient();
-  } catch (error) {
-    if (error.message === "GEMINI_API_KEY_MISSING") {
-      throw new Error("OCR n\xE3o configurado. Configure a chave em Configura\xE7\xF5es > Sistema ou no .env.");
+    if (mimeType === "application/pdf") {
+      return await processPdfWithOllama();
     }
-    throw error;
-  }
-  const base64Data = fileBuffer.toString("base64");
-  const outputLanguage = language?.toLowerCase().startsWith("es") ? "Spanish (Paraguay)" : "Brazilian Portuguese";
-  const prompt = `
-    Analyze the uploaded document which is a commercial invoice or purchase receipt.
-    Extract the following details:
-    1. Supplier Corporate Name or Trade Name.
-    2. Supplier Tax ID / Document Number (like CNPJ, CPF, RUC, RUT, NIT, etc.).
-    3. Invoice Number.
-    4. Invoice Date in standard YYYY-MM-DD format (if only partial date is shown, estimate or complete it relative to year 2026 if context suggests).
-    5. Invoice Total numeric amount.
-    6. Main tabular products/items, including:
-       - SKU/Code (Part Number, reference, etc.)
-       - UPC/EAN/GTIN barcode number if printed
-       - Product description/name (completely and cleanly capitalized)
-       - Quantity purchased
-       - Unit cost price
-       - Total cost price for that line item (Quantity * Unit Cost)
-       - Your confidence level (between 0.0 and 1.0) for this item extraction
-       - Raw description line text from the document for auditing
-
-    Language setting requested: ${language}.
-    All warnings, notices, observations and any explanatory text in the JSON must be written only in ${outputLanguage}. Do not write warnings or notes in English.
-    Product names may remain as printed on the document, but warnings must respect the requested language.
-    Verify that the item totals sum up correctly and flag any warnings if math differences arise.
-    If quantities for weighted products must be rounded to integers because of the schema, explain that warning in ${outputLanguage}.
-    Provide the detailed output parsed into the strictly matched JSON schema object.
-  `;
-  try {
-    const response = await getAiClient().models.generateContent({
-      model: "gemini-3.6-flash",
-      contents: [
-        {
-          inlineData: {
-            mimeType,
-            data: base64Data
-          }
-        },
-        prompt
-      ],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            supplier: {
-              type: Type.OBJECT,
-              properties: {
-                name: { type: Type.STRING, description: "Supplier corporate name or trade name found on the invoice" },
-                document: { type: Type.STRING, description: "Supplier document or tax number (RUC/CNPJ/CPF/RUT/etc)" }
-              },
-              required: ["name"]
-            },
-            invoice: {
-              type: Type.OBJECT,
-              properties: {
-                number: { type: Type.STRING, description: "Invoice number or document identifier" },
-                date: { type: Type.STRING, description: "Invoice date in YYYY-MM-DD format" },
-                total: { type: Type.NUMBER, description: "Total amount on the invoice" }
-              },
-              required: ["number"]
-            },
-            items: {
-              type: Type.ARRAY,
-              description: "List of products or items listed in the invoice table",
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  sku: { type: Type.STRING, description: "Part Number, SKU, reference code or code internal to the supplier" },
-                  upc: { type: Type.STRING, description: "UPC, EAN, GTIN barcode number if present" },
-                  name: { type: Type.STRING, description: "Description or name of the item" },
-                  quantity: { type: Type.INTEGER, description: "Quantity purchased" },
-                  unitCost: { type: Type.NUMBER, description: "Unit price or unit cost of the item" },
-                  totalCost: { type: Type.NUMBER, description: "Total price/total cost of this item line" },
-                  confidence: { type: Type.NUMBER, description: "A confidence score between 0.0 and 1.0 for this item extraction" },
-                  rawText: { type: Type.STRING, description: "Original raw text/description line of the item from the invoice" }
-                },
-                required: ["name", "quantity", "unitCost"]
-              }
-            },
-            rawText: { type: Type.STRING, description: "The full detected text content of the invoice for verification" },
-            warnings: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: "Any warnings or notices (e.g. calculation mismatch, blurry parts)"
-            }
-          },
-          required: ["supplier", "invoice", "items"]
-        }
-      }
-    });
-    if (!response.text) {
-      throw new Error("N\xE3o foi poss\xEDvel obter texto estruturado do modelo Gemini.");
+    if (!mimeType.startsWith("image/")) {
+      throw new Error("OCR_UNSUPPORTED_TYPE");
     }
-    const result = JSON.parse(response.text.trim());
-    return result;
+    return await processImageWithOllama(fileBuffer, language);
   } catch (error) {
-    console.error("Gemini OCR extraction failed:", error);
-    throw new Error(error.message || "Erro no processamento OCR com Gemini API.");
+    if (error?.message === "OCR_PDF_NEEDS_IMAGE") {
+      throw new Error("PDF ainda precisa ser convertido para imagem antes do OCR com Ollama. Envie JPG, PNG ou WEBP.");
+    }
+    if (error?.message === "OCR_UNSUPPORTED_TYPE") {
+      throw new Error("Formato n\xE3o suportado para OCR.");
+    }
+    const info = getOllamaErrorInfo(error);
+    if (info.notConfigured) {
+      throw new Error("OCR com Ollama n\xE3o configurado. Defina OLLAMA_API_KEY ou OLLAMA_BASE_URL.");
+    }
+    console.error("OCR extraction failed:", info.message || error?.message || error);
+    throw new Error(error?.message || "Erro no processamento OCR.");
   }
 }
 
@@ -10059,7 +10158,7 @@ var payables_default = router25;
 
 // src/server/purchases.ts
 init_fx();
-import { v4 as uuidv414 } from "uuid";
+import { v4 as uuidv415 } from "uuid";
 import fs4 from "fs";
 import path4 from "path";
 import xlsx from "xlsx";
@@ -10111,7 +10210,7 @@ router26.post("/import/spreadsheet", requirePermission("purchase", "import"), up
   }
 });
 router26.post("/ocr", requirePermission("purchase", "ocr"), upload3.single("file"), async (req, res) => {
-  const jobId = uuidv414();
+  const jobId = uuidv415();
   try {
     if (!req.file) {
       return res.status(400).json({ error: "Nenhum arquivo enviado" });
@@ -10813,7 +10912,7 @@ init_schema();
 init_authMiddleware();
 import { Router as Router27 } from "express";
 import { eq as eq31, desc as desc17, and as and26, gte as gte6, lte as lte6 } from "drizzle-orm";
-import { v4 as uuidv415 } from "uuid";
+import { v4 as uuidv416 } from "uuid";
 var router27 = Router27();
 router27.get("/categories", requireAuth, async (req, res) => {
   try {
@@ -10827,7 +10926,7 @@ router27.post("/categories", requireAuth, requirePermission("expenses", "manage"
   try {
     const { name, type } = req.body;
     const result = await db.insert(expenseCategories).values({
-      id: uuidv415(),
+      id: uuidv416(),
       name,
       type: type || "FIXED"
     }).returning();
@@ -10872,7 +10971,7 @@ router27.post("/", requireAuth, requirePermission("expenses", "manage"), async (
       }
     }
     const result = await db.insert(expenses).values({
-      id: uuidv415(),
+      id: uuidv416(),
       categoryId,
       description,
       expenseDate: new Date(expenseDate || Date.now()),
@@ -11543,12 +11642,12 @@ init_schema();
 init_authMiddleware();
 import { Router as Router30 } from "express";
 import { and as and29, desc as desc19, eq as eq34, ilike as ilike7, inArray as inArray14, or as or7 } from "drizzle-orm";
-import { v4 as uuidv416 } from "uuid";
+import { v4 as uuidv417 } from "uuid";
 import multer4 from "multer";
 var router30 = Router30();
 router30.use(requireAuth);
 var upload4 = multer4({ storage: multer4.memoryStorage() });
-var TRANSFER_INVOICE_MAX_BYTES = 10 * 1024 * 1024;
+var TRANSFER_INVOICE_MAX_BYTES = 4 * 1024 * 1024;
 var TRANSFER_INVOICE_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"];
 function asDate(value) {
   if (!value) return null;
@@ -11665,7 +11764,7 @@ router30.post("/:id/invoice", requirePermission("purchase", "create"), upload4.s
       return res.status(400).json({ error: "Formato inv\xE1lido. Use JPG, PNG, WEBP ou PDF." });
     }
     if (req.file.size > TRANSFER_INVOICE_MAX_BYTES) {
-      return res.status(400).json({ error: "Arquivo maior que 10 MB." });
+      return res.status(400).json({ error: "Arquivo maior que 4 MB." });
     }
     const [updated] = await db.update(stockTransfers).set({
       invoiceFileName: req.file.originalname,
@@ -11741,7 +11840,7 @@ router30.post("/", requirePermission("purchase", "create"), async (req, res) => 
         const missingProduct = productIds.find((productId) => !existingProductIds.has(productId));
         if (missingProduct) throw new Error("Um dos produtos cadastrados n\xE3o foi encontrado.");
       }
-      const transferId = uuidv416();
+      const transferId = uuidv417();
       const code = transferCode();
       await tx.insert(stockTransfers).values({
         id: transferId,
@@ -11760,7 +11859,7 @@ router30.post("/", requirePermission("purchase", "create"), async (req, res) => 
       });
       for (const item of normalizedItems) {
         await tx.insert(stockTransferItems).values({
-          id: uuidv416(),
+          id: uuidv417(),
           transferId,
           productId: item.productId,
           productName: item.productName,
@@ -11870,26 +11969,8 @@ var transfers_default = router30;
 // src/server/aiReports.ts
 init_authMiddleware();
 import { Router as Router31 } from "express";
-import { GoogleGenAI as GoogleGenAI2 } from "@google/genai";
 var router31 = Router31();
 router31.use(requireAuth);
-function getAiFailure(error) {
-  const message = String(error?.message || error || "");
-  const status = Number(error?.status || error?.code || 0);
-  const rateLimited = status === 429 || /RESOURCE_EXHAUSTED|quota exceeded|rate.?limit|too many requests/i.test(message);
-  const unavailable = status === 503 || /UNAVAILABLE|temporarily unavailable|service unavailable/i.test(message);
-  const retryMatch = message.match(/retry(?:\s+in|Delay[^0-9]*)\s*([0-9]+(?:\.[0-9]+)?)s/i);
-  return { message, status, rateLimited, unavailable, retryAfterSeconds: retryMatch ? Math.ceil(Number(retryMatch[1])) : null };
-}
-var aiClient2 = null;
-function getAiClient2() {
-  if (!aiClient2) {
-    const key = process.env.GEMINI_API_KEY;
-    if (!key) throw new Error("GEMINI_API_KEY_MISSING");
-    aiClient2 = new GoogleGenAI2({ apiKey: key });
-  }
-  return aiClient2;
-}
 var cleanData = (data) => {
   const json = JSON.stringify(data ?? {}, (_key, value) => {
     if (typeof value === "string" && value.length > 400) return `${value.slice(0, 400)}...`;
@@ -11923,24 +12004,29 @@ Rules:
 - Use short sections, clear bullets and currency formatting.
 - Keep it concise but useful for decision-making.
 `;
-    const response = await getAiClient2().models.generateContent({
-      model: process.env.GEMINI_REPORT_MODEL || "gemini-3.6-flash",
-      contents: prompt
+    const analysis = await ollamaChat({
+      messages: [
+        { role: "system", content: "Voc\xEA \xE9 um auditor financeiro s\xEAnior e analista de ERP. N\xE3o invente n\xFAmeros nem fatos ausentes." },
+        { role: "user", content: prompt }
+      ],
+      model: process.env.OLLAMA_REPORT_MODEL || process.env.OLLAMA_MODEL,
+      temperature: 0.15,
+      timeoutMs: 58e3
     });
-    res.json({ analysis: response.text || "N\xE3o foi poss\xEDvel gerar an\xE1lise." });
+    res.json({ analysis: analysis || "N\xE3o foi poss\xEDvel gerar an\xE1lise." });
   } catch (error) {
-    if (error.message === "GEMINI_API_KEY_MISSING") {
-      return res.status(400).json({ error: "Recurso de IA n\xE3o configurado. Solicite a configura\xE7\xE3o ao administrador do sistema." });
+    const failure = getOllamaErrorInfo(error);
+    if (failure.notConfigured) {
+      return res.status(400).json({ code: "AI_NOT_CONFIGURED", error: "Ollama n\xE3o configurado. Defina OLLAMA_API_KEY ou OLLAMA_BASE_URL." });
     }
-    const failure = getAiFailure(error);
     if (failure.rateLimited) {
       const wait = failure.retryAfterSeconds ? ` Aguarde cerca de ${failure.retryAfterSeconds} segundos e tente novamente.` : " Aguarde um momento e tente novamente.";
       return res.status(429).json({ code: "AI_RATE_LIMIT", error: `Limite tempor\xE1rio da IA atingido.${wait}`, retryAfterSeconds: failure.retryAfterSeconds });
     }
     if (failure.unavailable) {
-      return res.status(503).json({ code: "AI_UNAVAILABLE", error: "A IA est\xE1 temporariamente indispon\xEDvel. Tente novamente em alguns instantes." });
+      return res.status(503).json({ code: "AI_UNAVAILABLE", error: "O Ollama est\xE1 temporariamente indispon\xEDvel. Tente novamente em alguns instantes." });
     }
-    console.error("AI report error:", failure.message);
+    console.error("Ollama report error:", failure.message);
     res.status(500).json({ code: "AI_ERROR", error: "N\xE3o foi poss\xEDvel gerar a an\xE1lise com IA agora. Tente novamente mais tarde." });
   }
 });
@@ -12330,7 +12416,7 @@ init_authMiddleware();
 init_audit();
 import { Router as Router36 } from "express";
 import { and as and33, desc as desc22, eq as eq39, inArray as inArray15, isNotNull as isNotNull4, isNull as isNull10, or as or9, sql as sql25 } from "drizzle-orm";
-import { v4 as uuidv417 } from "uuid";
+import { v4 as uuidv418 } from "uuid";
 
 // src/lib/cpf.ts
 var onlyDigits = (v) => String(v || "").replace(/\D/g, "");
@@ -12815,7 +12901,7 @@ import geoip from "geoip-lite";
 var router36 = Router36();
 var availableStockExpr = () => sql25`greatest(${stockBalances.physicalStock} - ${stockBalances.reservedStock}, 0)`;
 var PIX_SETTINGS_KEY2 = "company_pix";
-var MAX_PROOF_BYTES = 5 * 1024 * 1024;
+var MAX_PROOF_BYTES = 3 * 1024 * 1024;
 var MAX_FONT_URL_CHARS = 4e5;
 var MAX_ITEMS = 40;
 var MAX_QTY_PER_ITEM = 99;
@@ -13136,90 +13222,44 @@ router36.post("/assistant/chat", async (req, res) => {
     if (!message) return res.status(400).json({ error: "Mensagem vazia." });
     const lang = ["es", "pt", "en"].includes(req.body?.lang) ? req.body.lang : "es";
     const historyRaw = Array.isArray(req.body?.history) ? req.body.history : [];
-    const history = historyRaw.filter((h) => h && (h.role === "user" || h.role === "model") && typeof h.text === "string").slice(-10).map((h) => ({ role: h.role, text: String(h.text).slice(0, 500) }));
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return res.status(503).json({ code: "AI_UNAVAILABLE", error: "Assistente n\xE3o configurado." });
+    const history = historyRaw.filter((h) => h && (h.role === "user" || h.role === "model" || h.role === "assistant") && typeof h.text === "string").slice(-8).map((h) => ({ role: h.role === "model" ? "assistant" : h.role, content: String(h.text).slice(0, 500) }));
     const [company] = await db.select({ tradeName: companySettings.tradeName, companyName: companySettings.companyName }).from(companySettings).limit(1);
     const categoryRows = await db.select({ name: productGroups.name }).from(products).innerJoin(stockBalances, eq39(products.id, stockBalances.productId)).innerJoin(productGroups, eq39(products.groupId, productGroups.id)).where(and33(catalogWhere(), eq39(productGroups.storeVisible, true))).groupBy(productGroups.id, productGroups.name);
     const categoryNames = [...new Set(categoryRows.map((r) => r.name))];
+    const words = message.replace(/[^\p{L}\p{N}\-]+/gu, " ").split(/\s+/).map((word) => word.trim()).filter((word) => word.length >= 3).filter((word) => !["tem", "uma", "uns", "com", "para", "por", "qual", "quanto", "preco", "pre\xE7o", "produto", "voc\xEAs", "voces"].includes(word.toLowerCase())).slice(0, 5);
+    let productContext = await buscarProdutoImpl(message);
+    if (productContext.encontrados.length === 0) {
+      for (const word of words) {
+        productContext = await buscarProdutoImpl(word);
+        if (productContext.encontrados.length > 0) break;
+      }
+    }
     const langName = { es: "espa\xF1ol", pt: "portugu\xEAs", en: "English" }[lang];
     const storeName = company?.tradeName || company?.companyName || "a loja";
     const systemPrompt = `Voc\xEA \xE9 a assistente de vendas da loja online "${storeName}".
 Responda SEMPRE em ${langName}, em no m\xE1ximo 3 frases, com tom simp\xE1tico de atendente.
-Categorias de produto que a loja vende hoje: ${categoryNames.length > 0 ? categoryNames.join(", ") : "(nenhuma cadastrada ainda)"}.
-Como funciona a compra: o cliente escolhe o produto na vitrine, adiciona ao carrinho, paga via PIX (QR Code gerado na hora), envia o comprovante pelo WhatsApp, e combina retirada ou entrega.
-Voc\xEA TEM uma function "buscarProduto" pra consultar pre\xE7o e disponibilidade real de um produto espec\xEDfico \u2014 use ela sempre que o cliente perguntar sobre um produto por nome. Nunca invente pre\xE7o ou disponibilidade sem chamar a function.
-Se o cliente perguntar algo sem rela\xE7\xE3o com a loja (pol\xEDtica, concorrentes, assuntos pessoais, etc.), recuse educadamente e sugira uma das perguntas r\xE1pidas ou o cat\xE1logo do site \u2014 n\xE3o tente responder o assunto fora do escopo.
-S\xF3 sugira falar no WhatsApp com um atendente humano quando voc\xEA genuinamente n\xE3o souber responder (ex.: reclama\xE7\xE3o, negocia\xE7\xE3o, pedido j\xE1 feito, pergunta fora do que voc\xEA tem acesso) \u2014 n\xE3o repita essa sugest\xE3o em toda resposta.`;
-    const { GoogleGenAI: GoogleGenAI3, Type: Type2, createUserContent, createPartFromFunctionResponse } = await import("@google/genai");
-    const ai = new GoogleGenAI3({ apiKey });
-    const model = process.env.GEMINI_MODEL || "gemini-3.6-flash";
-    const buscarProdutoTool = {
-      name: "buscarProduto",
-      description: "Busca produtos da loja pelo nome ou parte do nome. Devolve at\xE9 5 produtos com pre\xE7o e disponibilidade (faixa, n\xE3o quantidade exata).",
-      parameters: {
-        type: Type2.OBJECT,
-        properties: {
-          nome: { type: Type2.STRING, description: "Nome ou parte do nome do produto buscado pelo cliente" }
-        },
-        required: ["nome"]
-      }
-    };
-    const genConfig = { systemInstruction: systemPrompt, tools: [{ functionDeclarations: [buscarProdutoTool] }] };
-    let contents = [
-      ...history.map((h) => ({ role: h.role, parts: [{ text: h.text }] })),
-      { role: "user", parts: [{ text: message }] }
-    ];
-    const callGemini = async () => {
-      let lastErr;
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        try {
-          const result2 = await ai.models.generateContent({ model, contents, config: genConfig });
-          return { result: result2 };
-        } catch (err2) {
-          lastErr = err2;
-          const status = err2?.status || err2?.rawStatus || 0;
-          const isTransient = status === 429 || status >= 500 || status === 503;
-          if (attempt === 0 && isTransient) {
-            await new Promise((r) => setTimeout(r, 1e3));
-            continue;
-          }
-          break;
-        }
-      }
-      return { err: lastErr };
-    };
-    const respondWithError = (err2) => {
-      const status = err2?.status || err2?.rawStatus || 0;
-      if (status === 429) return res.status(429).json({ code: "AI_RATE_LIMIT", error: "Assistente ocupado agora. Tente de novo em instantes." });
-      if (status >= 500 || status === 503) return res.status(503).json({ code: "AI_UNAVAILABLE", error: "Assistente temporariamente indispon\xEDvel." });
-      console.error("assistant chat error:", err2?.message || err2);
-      return res.status(500).json({ code: "AI_ERROR", error: "N\xE3o consegui responder agora." });
-    };
-    let { result, err } = await callGemini();
-    if (err) return respondWithError(err);
-    const calls = result.functionCalls;
-    if (calls && calls.length > 0 && calls[0].name === "buscarProduto") {
-      const call = calls[0];
-      const funcResult = await buscarProdutoImpl(String(call.args?.nome || ""));
-      const modelTurn = result.candidates?.[0]?.content ?? { role: "model", parts: [{ functionCall: call }] };
-      contents = [
-        ...contents,
-        modelTurn,
-        createUserContent(createPartFromFunctionResponse(call.id ?? call.name ?? "buscarProduto", call.name, funcResult))
-      ];
-      ({ result, err } = await callGemini());
-      if (err) return respondWithError(err);
-      if (result.functionCalls && result.functionCalls.length > 0) {
-        console.error("assistant chat error: segunda function-call encadeada, abortando");
-        return res.status(500).json({ code: "AI_ERROR", error: "N\xE3o consegui responder agora." });
-      }
-    }
-    const reply = String(result?.text || "").trim();
-    if (!reply) return res.status(500).json({ code: "AI_ERROR", error: "N\xE3o consegui responder agora." });
-    res.json({ reply });
+Categorias atuais: ${categoryNames.length > 0 ? categoryNames.join(", ") : "(nenhuma cadastrada ainda)"}.
+Como funciona a compra: o cliente escolhe o produto, adiciona ao carrinho, paga via PIX, envia o comprovante pelo WhatsApp e combina retirada ou entrega.
+Dados reais de produtos possivelmente relacionados \xE0 pergunta: ${JSON.stringify(productContext.encontrados)}.
+Nunca invente pre\xE7o ou disponibilidade. S\xF3 informe pre\xE7o/estoque se aparecer nos dados reais acima; se n\xE3o aparecer, diga que n\xE3o localizou esse produto no cat\xE1logo.
+Se a pergunta n\xE3o tiver rela\xE7\xE3o com a loja, recuse educadamente e redirecione para cat\xE1logo/atendimento.`;
+    const reply = await ollamaChat({
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...history,
+        { role: "user", content: message }
+      ],
+      temperature: 0.25,
+      timeoutMs: 55e3
+    });
+    res.json({ reply: String(reply || "").trim() });
   } catch (err) {
-    res.status(500).json({ error: "Erro no assistente." });
+    const info = getOllamaErrorInfo(err);
+    if (info.notConfigured) return res.status(503).json({ code: "AI_UNAVAILABLE", error: "Assistente n\xE3o configurado. Configure o Ollama no servidor." });
+    if (info.rateLimited) return res.status(429).json({ code: "AI_RATE_LIMIT", error: "Assistente ocupado agora. Tente de novo em instantes." });
+    if (info.unavailable) return res.status(503).json({ code: "AI_UNAVAILABLE", error: "Assistente temporariamente indispon\xEDvel." });
+    console.error("assistant Ollama error:", info.message);
+    res.status(500).json({ code: "AI_ERROR", error: "N\xE3o consegui responder agora." });
   }
 });
 router36.get("/product/:id", async (req, res) => {
@@ -13429,7 +13469,7 @@ router36.post("/orders", requireCustomerAuth, async (req, res) => {
       const map = new Map(prods.map((p) => [p.id, p]));
       let subtotal = 0;
       const toInsert = [];
-      const saleId = uuidv417();
+      const saleId = uuidv418();
       for (const raw of items) {
         const p = map.get(String(raw.productId));
         const qty = Math.floor(Number(raw.quantity) || 0);
@@ -13441,7 +13481,7 @@ router36.post("/orders", requireCustomerAuth, async (req, res) => {
         const total = round23(unit * qty);
         subtotal = round23(subtotal + total);
         toInsert.push({
-          id: uuidv417(),
+          id: uuidv418(),
           saleId,
           productId: p.id,
           quantity: qty,
@@ -13501,9 +13541,9 @@ router36.post("/orders", requireCustomerAuth, async (req, res) => {
         const beforeRes = Number(p.reserved);
         const newRes = beforeRes + Number(it.quantity);
         await tx.update(stockBalances).set({ reservedStock: newRes, updatedAt: /* @__PURE__ */ new Date() }).where(eq39(stockBalances.productId, it.productId));
-        await tx.insert(stockReservations).values({ id: uuidv417(), saleId, productId: it.productId, quantity: it.quantity, status: "ACTIVE" });
+        await tx.insert(stockReservations).values({ id: uuidv418(), saleId, productId: it.productId, quantity: it.quantity, status: "ACTIVE" });
         await tx.insert(stockMovements).values({
-          id: uuidv417(),
+          id: uuidv418(),
           productId: it.productId,
           movementType: "STORE_ORDER_RESERVE",
           quantity: it.quantity,
@@ -13567,7 +13607,7 @@ Declara\xE7\xE3o adicional: autorizo que o pagamento deste pedido seja feito por
         await tx.update(abandonedCarts2).set({ status: "RECOVERED", updatedAt: /* @__PURE__ */ new Date() }).where(eq39(abandonedCarts2.customerPhone, phone));
       }
       await tx.insert(auditLogs).values({
-        id: uuidv417(),
+        id: uuidv418(),
         userId: owner.id,
         action: "STORE_ORDER_CREATED",
         tableName: "store_orders",
@@ -13668,7 +13708,7 @@ router36.post("/orders/:code/proof", async (req, res) => {
     const okType = /^(image\/(png|jpe?g|webp)|application\/pdf)$/i.test(String(fileType || ""));
     if (!okType) return res.status(400).json({ error: "Formato inv\xE1lido. Envie imagem (JPG/PNG) ou PDF." });
     const approxBytes = Math.floor(data.length * 3 / 4);
-    if (approxBytes > MAX_PROOF_BYTES) return res.status(400).json({ error: "Arquivo muito grande (m\xE1x. 5 MB)." });
+    if (approxBytes > MAX_PROOF_BYTES) return res.status(400).json({ error: "Arquivo muito grande (m\xE1x. 3 MB)." });
     const [order] = await db.select().from(storeOrders).where(eq39(storeOrders.code, code)).limit(1);
     if (!order) return res.status(404).json({ error: "Pedido n\xE3o encontrado." });
     if (order.status === "CANCELED") return res.status(400).json({ error: "Este pedido foi cancelado." });
@@ -13759,7 +13799,7 @@ router36.post("/orders/:code/payments/:paymentId/proof", async (req, res) => {
     const okType = /^(image\/(png|jpe?g|webp)|application\/pdf)$/i.test(String(fileType || ""));
     if (!okType) return res.status(400).json({ error: "Formato inv\xE1lido. Envie imagem (JPG/PNG) ou PDF." });
     const approxBytes = Math.floor(data.length * 3 / 4);
-    if (approxBytes > MAX_PROOF_BYTES) return res.status(400).json({ error: "Arquivo muito grande (m\xE1x. 5 MB)." });
+    if (approxBytes > MAX_PROOF_BYTES) return res.status(400).json({ error: "Arquivo muito grande (m\xE1x. 3 MB)." });
     const code = String(req.params.code || "").toUpperCase().trim();
     const [order] = await db.select().from(storeOrders).where(eq39(storeOrders.code, code)).limit(1);
     if (!order) return res.status(404).json({ error: "Pedido n\xE3o encontrado." });
@@ -13934,7 +13974,7 @@ router36.post("/admin/orders/:id/confirm", requireAuth, requirePermission("cash"
         received,
         missing: missing > 0 ? missing : 0,
         payerName: req.body?.payerName || null
-      });
+      }, tx);
     });
     await createNotification(db, {
       type: "PAYMENT_CONFIRMED",
@@ -14551,7 +14591,7 @@ router36.put("/admin/config", requireAuth, requirePermission("settings", "manage
         }
       },
       vitrines: Array.isArray(b.vitrines) ? b.vitrines.map((vt) => ({
-        id: String(vt?.id || uuidv417()),
+        id: String(vt?.id || uuidv418()),
         title: String(vt?.title || "").slice(0, 60),
         productIds: Array.isArray(vt?.productIds) ? vt.productIds.map(String).slice(0, 12) : []
       })).slice(0, 20) : [],
@@ -14783,7 +14823,7 @@ router36.post("/admin/config/publish", requireAuth, requirePermission("settings"
         await tx.delete(systemSettings).where(eq39(systemSettings.key, STORE_CONFIG_DRAFT_KEY));
       }
       await tx.insert(auditLogs).values({
-        id: uuidv417(),
+        id: uuidv418(),
         userId: req.user.userId,
         action: "STORE_CONFIG_PUBLISH",
         tableName: "system_settings",
@@ -15505,6 +15545,10 @@ function markResponseStart(req, res, next) {
 }
 
 // api/handler.ts
+init_db();
+init_schema();
+init_audit();
+import { v4 as uuidv419 } from "uuid";
 function buildCorsOptions() {
   const allowedOrigins = (process.env.CORS_ORIGINS || "").split(",").map((origin) => origin.trim()).filter(Boolean);
   if (!allowedOrigins.length) return { origin: false };
@@ -15579,6 +15623,36 @@ app.get("/api/ping", (_req, res) => {
     runtime: "vercel",
     commit: process.env.VERCEL_GIT_COMMIT_SHA || null
   });
+});
+app.post("/api/__preview/product-write-selftest", async (_req, res) => {
+  if (process.env.VERCEL_ENV !== "preview") return res.status(404).json({ error: "Not found" });
+  let rolledBack = false;
+  try {
+    await db.transaction(async (tx) => {
+      const [actor] = await tx.select({ id: users.id }).from(users).limit(1);
+      if (!actor) throw new Error("SELFTEST_NO_USER");
+      const id = uuidv419();
+      await tx.insert(products).values({
+        id,
+        sku: `AURA-SELFTEST-${Date.now()}`,
+        name: "AURA PREVIEW WRITE SELFTEST",
+        unitMeasure: "UN",
+        salePriceA: "1.00",
+        salePriceB: "1.00",
+        salePriceC: "1.00"
+      });
+      await tx.insert(stockBalances).values({ productId: id, physicalStock: 0, reservedStock: 0 });
+      await logAction(actor.id, "SELF_TEST", "products", id, null, { preview: true }, tx);
+      throw new Error("__AURA_SELFTEST_ROLLBACK__");
+    });
+  } catch (error) {
+    if (error?.message === "__AURA_SELFTEST_ROLLBACK__") rolledBack = true;
+    else {
+      console.error("Preview product write selftest failed:", error);
+      return res.status(500).json({ ok: false, error: "Product write self-test failed" });
+    }
+  }
+  res.json({ ok: rolledBack, rolledBack });
 });
 app.use((error, _req, res, _next) => {
   console.error("Erro n\xE3o tratado na API:", error);
