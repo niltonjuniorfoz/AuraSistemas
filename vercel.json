@@ -3,11 +3,17 @@
   "buildCommand": "npm run build:vercel",
   "outputDirectory": "dist",
   "functions": {
-    "api/handler.ts": {
-      "maxDuration": 60
-    }
+    "api/handler.ts": { "maxDuration": 60 },
+    "api/check-a.ts": { "maxDuration": 15 },
+    "api/check-b.ts": { "maxDuration": 15 },
+    "api/check-c.ts": { "maxDuration": 15 },
+    "api/check-d.ts": { "maxDuration": 15 }
   },
   "rewrites": [
+    { "source": "/__diag/a", "destination": "/api/check-a" },
+    { "source": "/__diag/b", "destination": "/api/check-b" },
+    { "source": "/__diag/c", "destination": "/api/check-c" },
+    { "source": "/__diag/d", "destination": "/api/check-d" },
     {
       "source": "/api/:path*",
       "destination": "/api/handler?__path=:path*"
