@@ -49,10 +49,15 @@ jobs:
           URL="https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app/api/ping"
           ready=0
 
-          for attempt in $(seq 1 48); do
-            CODE=$(curl -sS --max-time 20 -o /tmp/aura-ping-body.txt -D /tmp/aura-ping-headers.txt -w "%{http_code}" "$URL" || true)
+          for attempt in $(seq 1 20); do
+            CODE=$(curl -sS --max-time 20 \
+              -H 'User-Agent: AuraSistemas-CI/1.0' \
+              -H 'Cache-Control: no-cache' \
+              -o /tmp/aura-ping-body.txt \
+              -D /tmp/aura-ping-headers.txt \
+              -w "%{http_code}" "$URL" || true)
             BODY=$(cat /tmp/aura-ping-body.txt 2>/dev/null || true)
-            echo "Probe ${attempt}/48 HTTP=$CODE body=${BODY:0:300}"
+            echo "Probe ${attempt}/20 HTTP=$CODE body=${BODY:0:300}"
 
             if [ "$CODE" = "200" ] \
               && grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' /tmp/aura-ping-body.txt \
@@ -60,7 +65,7 @@ jobs:
               ready=1
               break
             fi
-            sleep 5
+            sleep 15
           done
 
           if [ "$ready" != "1" ]; then
@@ -76,7 +81,7 @@ jobs:
         shell: bash
         run: |
           URL="https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app/api/ping"
-          CODE=$(curl -sS --max-time 20 -o /tmp/aura-final-ping.txt -w "%{http_code}" "$URL")
+          CODE=$(curl -sS --max-time 20 -H 'User-Agent: AuraSistemas-CI/1.0' -o /tmp/aura-final-ping.txt -w "%{http_code}" "$URL")
           cat /tmp/aura-final-ping.txt
           echo
           test "$CODE" = "200"
@@ -90,6 +95,7 @@ jobs:
             -o /tmp/aura-login-probe.txt \
             -w "%{http_code}" \
             -X POST \
+            -H 'User-Agent: AuraSistemas-CI/1.0' \
             -H 'content-type: application/json' \
             --data '{"username":"__aura_connectivity_probe__","password":"not-a-real-password"}' \
             "$URL")
@@ -104,7 +110,7 @@ jobs:
         shell: bash
         run: |
           URL="https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app/"
-          CODE=$(curl -sS --max-time 20 -o /tmp/aura-home.html -w "%{http_code}" "$URL")
+          CODE=$(curl -sS --max-time 20 -H 'User-Agent: AuraSistemas-CI/1.0' -o /tmp/aura-home.html -w "%{http_code}" "$URL")
           test "$CODE" = "200"
           grep -qi '<html' /tmp/aura-home.html
 
