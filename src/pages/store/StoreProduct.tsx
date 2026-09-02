@@ -8,6 +8,51 @@ import { ShopProductCard } from "./ShopProductCard";
 import { PremiumCta } from "./PremiumCta";
 import { translateCategoryName, translateStockStatus } from "./i18n";
 
+function shuffleProducts(items: any[]) {
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+// Recomendações da página de produto: primeiro tenta mostrar categorias
+// diferentes e depois completa a faixa com outros itens aleatórios. Assim a
+// seção não fica presa à categoria do produto aberto (que às vezes só tinha
+// um item relacionado) e continua útil mesmo em catálogos pequenos.
+function pickVariedRecommendations(items: any[], currentId: string | undefined, limit = 10) {
+  const unique = new Map<string, any>();
+  for (const item of items || []) {
+    if (!item?.id || item.id === currentId || Number(item.maxQty || 0) <= 0) continue;
+    if (!unique.has(item.id)) unique.set(item.id, item);
+  }
+
+  const pool = shuffleProducts([...unique.values()]);
+  const selected: any[] = [];
+  const usedIds = new Set<string>();
+  const usedGroups = new Set<string>();
+
+  // Uma opção de cada categoria primeiro.
+  for (const item of pool) {
+    const groupKey = item.groupId ? String(item.groupId) : `produto:${item.id}`;
+    if (usedGroups.has(groupKey)) continue;
+    selected.push(item);
+    usedIds.add(item.id);
+    usedGroups.add(groupKey);
+    if (selected.length >= limit) return selected;
+  }
+
+  // Se houver menos categorias que o limite, completa com outros produtos.
+  for (const item of pool) {
+    if (usedIds.has(item.id)) continue;
+    selected.push(item);
+    usedIds.add(item.id);
+    if (selected.length >= limit) break;
+  }
+  return selected;
+}
+
 // Página individual do produto: galeria, descrição, quantidade e relacionados.
 export function StoreProduct() {
   const { t, i18n } = useTranslation();
@@ -20,20 +65,60 @@ export function StoreProduct() {
   const [imgIdx, setImgIdx] = useState(0);
   const [qty, setQty] = useState(1);
   const [selectedVariant, setSelectedVariant] = useState<any>(null);
+  const pageRef = useRef<HTMLElement>(null);
   const relatedRef = useRef<HTMLDivElement>(null);
+
+  // O ERP global usa body escuro. No iOS/Safari o rubber-band/viewport dinâmico
+  // pode expor esse body por trás da rota pública e transformar a página em uma
+  // tela preta. Enquanto a página de produto estiver montada, sincroniza html e
+  // body com o fundo herdado da própria loja e força color-scheme claro.
+  useEffect(() => {
+    const body = document.body;
+    const html = document.documentElement;
+    const previous = {
+      bodyBackground: body.style.backgroundColor,
+      htmlBackground: html.style.backgroundColor,
+      colorScheme: html.style.colorScheme,
+    };
+    const inheritedStoreBg = pageRef.current
+      ? getComputedStyle(pageRef.current).getPropertyValue("--store-bg").trim()
+      : "";
+    const background = inheritedStoreBg || "#fff5f7";
+    body.style.backgroundColor = background;
+    html.style.backgroundColor = background;
+    html.style.colorScheme = "light";
+    return () => {
+      body.style.backgroundColor = previous.bodyBackground;
+      html.style.backgroundColor = previous.htmlBackground;
+      html.style.colorScheme = previous.colorScheme;
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
     setLoading(true); setNotFound(false); setImgIdx(0); setQty(1); setSelectedVariant(null);
-    fetch(`/api/store/product/${id}`)
-      .then(async (r) => { if (!r.ok) throw new Error(); return r.json(); })
-      .then((j) => {
-        if (alive) {
-          setP(j);
-          if (j.hasVariants && j.variants.length > 0) {
-             const firstAvailable = j.variants.find((v: any) => v.maxQty > 0) || j.variants[0];
-             setSelectedVariant(firstAvailable);
-          }
+
+    const detailRequest = fetch(`/api/store/product/${id}`)
+      .then(async (r) => { if (!r.ok) throw new Error(); return r.json(); });
+    const catalogRequest = fetch("/api/store/products?limit=120")
+      .then(async (r) => (r.ok ? r.json() : { data: [] }))
+      .catch(() => ({ data: [] }));
+
+    Promise.all([detailRequest, catalogRequest])
+      .then(([detail, catalog]) => {
+        if (!alive) return;
+        const catalogItems = Array.isArray(catalog?.data) ? catalog.data : [];
+        const legacyRelated = Array.isArray(detail?.related) ? detail.related : [];
+        const recommendations = pickVariedRecommendations(
+          [...catalogItems, ...legacyRelated],
+          detail?.id || id,
+          10,
+        );
+        const hydratedProduct = { ...detail, related: recommendations };
+        setP(hydratedProduct);
+        if (detail.hasVariants && detail.variants.length > 0) {
+          const firstAvailable = detail.variants.find((v: any) => v.maxQty > 0) || detail.variants[0];
+          setSelectedVariant(firstAvailable);
         }
       })
       .catch(() => { if (alive) setNotFound(true); })
@@ -42,9 +127,9 @@ export function StoreProduct() {
     return () => { alive = false; };
   }, [id]);
 
-  if (loading) return <main className="flex min-h-[50vh] items-center justify-center text-stone-400"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> {t("product.carregando")}</main>;
+  if (loading) return <main ref={pageRef} className="flex min-h-[70dvh] items-center justify-center bg-[var(--store-bg,#fff5f7)] text-stone-400" style={{ colorScheme: "light" }}><Loader2 className="mr-2 h-5 w-5 animate-spin" /> {t("product.carregando")}</main>;
   if (notFound || !p) return (
-    <main className="flex min-h-[50vh] flex-col items-center justify-center gap-3 text-stone-400">
+    <main ref={pageRef} className="flex min-h-[70dvh] flex-col items-center justify-center gap-3 bg-[var(--store-bg,#fff5f7)] text-stone-400" style={{ colorScheme: "light" }}>
       <Package className="h-12 w-12 text-stone-300" />
       {t("product.naoDisponivel")}
       <Link to="/loja/catalogo" className="text-sm font-semibold text-amber-700 hover:underline">{t("product.voltarCatalogo")}</Link>
@@ -68,7 +153,7 @@ export function StoreProduct() {
   };
 
   return (
-    <main className="mx-auto w-[95%] max-w-[1600px] px-3 pt-5 pb-36 sm:px-4 md:py-8">
+    <main ref={pageRef} className="mx-auto min-h-[100dvh] w-[95%] max-w-[1600px] bg-[var(--store-bg,#fff5f7)] px-3 pt-5 pb-36 text-[var(--store-text,#6b5b5a)] sm:px-4 md:py-8" style={{ colorScheme: "light" }}>
       {/* Migalha */}
       <nav className="mb-5 flex items-center gap-1 text-xs uppercase tracking-wide text-stone-400">
         <Link to="/loja" className="hover:text-stone-700">{t("product.inicio")}</Link>
@@ -177,15 +262,18 @@ export function StoreProduct() {
         </div>
       </div>
 
-      {/* Relacionados */}
+      {/* Recomendações variadas */}
       {p.related?.length > 0 && (
         <section className="mt-12">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="text-base font-bold text-stone-900 sm:text-lg" style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif" }}>{t("product.vocejaGostar")}</h2>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <span className="h-px w-7 shrink-0 bg-[var(--store-accent,#e96f95)]/45" />
+              <h2 className="font-serif text-base font-medium tracking-[0.035em] text-[var(--store-accent,#d46a86)] sm:text-lg">{t("product.vocejaGostar")}</h2>
+            </div>
             <div className="flex items-center gap-1.5">
-              <button type="button" onClick={() => relatedRef.current?.scrollBy({ left: -360, behavior: "smooth" })} className="flex h-8 w-8 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-500 hover:border-[var(--store-accent,#e96f95)]"><ChevronLeft className="h-4 w-4" /></button>
-              <button type="button" onClick={() => relatedRef.current?.scrollBy({ left: 360, behavior: "smooth" })} className="flex h-8 w-8 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-500 hover:border-[var(--store-accent,#e96f95)]"><ChevronRight className="h-4 w-4" /></button>
-              {p.groupId && <Link to={`/loja/catalogo?cat=${p.groupId}`} className="ml-1 shrink-0 text-[10px] font-semibold text-[var(--store-accent,#e96f95)]">Ver mais</Link>}
+              <button type="button" onClick={() => relatedRef.current?.scrollBy({ left: -360, behavior: "smooth" })} className="flex h-8 w-8 items-center justify-center rounded-full border border-rose-100 bg-white text-[var(--store-accent,#e96f95)] transition hover:border-[var(--store-accent,#e96f95)]"><ChevronLeft className="h-4 w-4" /></button>
+              <button type="button" onClick={() => relatedRef.current?.scrollBy({ left: 360, behavior: "smooth" })} className="flex h-8 w-8 items-center justify-center rounded-full border border-rose-100 bg-white text-[var(--store-accent,#e96f95)] transition hover:border-[var(--store-accent,#e96f95)]"><ChevronRight className="h-4 w-4" /></button>
+              <Link to="/loja/catalogo" className="ml-1 shrink-0 text-[10px] font-semibold text-[var(--store-accent,#e96f95)]">Ver mais</Link>
             </div>
           </div>
           <div ref={relatedRef} className="flex snap-x snap-mandatory gap-2.5 overflow-x-auto pb-3 scrollbar-hide">
