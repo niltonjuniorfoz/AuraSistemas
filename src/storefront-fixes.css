@@ -1,0 +1,36 @@
+/* Ajustes públicos da vitrine que precisam ficar isolados do tema escuro do ERP. */
+
+/*
+ * O editor recomenda 1600×600 para o banner principal (8:3), mas o frame
+ * legado usava alturas fixas muito baixas e a arte principal era object-contain.
+ * Resultado: no desktop uma imagem 1600×600 encolhia para ~600 px de largura
+ * dentro de um frame de quase 1600 px. Mantemos os quatro tamanhos do editor,
+ * agora por proporção responsiva; M corresponde exatamente a 1600×600.
+ */
+@supports selector(section:has(img[alt^="Banner "])) {
+  main section:has(img[alt^="Banner "]) > div.group.relative.h-\[100px\] {
+    height: auto !important;
+    aspect-ratio: 16 / 5;
+  }
+
+  main section:has(img[alt^="Banner "]) > div.group.relative.h-\[120px\] {
+    height: auto !important;
+    aspect-ratio: 8 / 3;
+  }
+
+  main section:has(img[alt^="Banner "]) > div.group.relative.h-\[140px\] {
+    height: auto !important;
+    aspect-ratio: 12 / 5;
+  }
+
+  main section:has(img[alt^="Banner "]) > div.group.relative.h-\[160px\] {
+    height: auto !important;
+    aspect-ratio: 2 / 1;
+  }
+
+  /* A arte ocupa o frame. Em 1600×600 + tamanho M não há corte; para uma
+     imagem de outra proporção, o excesso é recortado em vez de criar faixas. */
+  main section:has(img[alt^="Banner "]) img[alt^="Banner "] {
+    object-fit: cover !important;
+  }
+}
