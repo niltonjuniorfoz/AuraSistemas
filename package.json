@@ -17,7 +17,7 @@
     "db:seed": "tsx src/db/seed.ts",
     "build:check": "npm run lint && npm run build",
     "db:harden": "tsx src/db/hardenProductionUsers.ts",
-    "build:vercel:bootstrap": "npm run db:push && npm run db:seed && npm run db:harden && vite build"
+    "build:vercel:bootstrap": "node scripts/vercel-bootstrap.mjs && vite build"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",
