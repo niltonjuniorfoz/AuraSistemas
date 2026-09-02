@@ -1,3 +1,6 @@
+import express from "express";
+import cors from "cors";
+
 let appPromise: Promise<any> | null = null;
 
 function buildCorsOptions() {
@@ -21,8 +24,6 @@ function buildCorsOptions() {
 
 async function createApp() {
   const [
-    expressModule,
-    corsModule,
     authModule,
     usersModule,
     productsModule,
@@ -63,8 +64,6 @@ async function createApp() {
     maintenanceModule,
     performanceModule,
   ] = await Promise.all([
-    import("express"),
-    import("cors"),
     import("../src/server/auth"),
     import("../src/server/users"),
     import("../src/server/products"),
@@ -106,10 +105,7 @@ async function createApp() {
     import("../src/server/performance"),
   ]);
 
-  const express = expressModule.default;
-  const cors = corsModule.default;
   const app = express();
-
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
 
@@ -123,7 +119,6 @@ async function createApp() {
       res.status(404).end();
       return;
     }
-
     next();
   });
 
@@ -174,6 +169,11 @@ async function createApp() {
     res.json({ status: "ok", runtime: "vercel" });
   });
 
+  app.use((error: any, _req: any, res: any, _next: any) => {
+    console.error("Erro não tratado na API:", error);
+    if (!res.headersSent) res.status(500).json({ error: "Erro interno do servidor" });
+  });
+
   return app;
 }
 
@@ -217,8 +217,6 @@ export default async function handler(req: any, res: any) {
     return app(req, res);
   } catch (error) {
     console.error("Falha ao inicializar API no Vercel:", error);
-    if (!res.headersSent) {
-      return res.status(500).json({ error: "Erro ao inicializar servidor" });
-    }
+    if (!res.headersSent) return res.status(500).json({ error: "Erro ao inicializar servidor" });
   }
 }
