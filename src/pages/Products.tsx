@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router";
 import React, { useEffect, useState, useMemo } from "react";
-import { Archive, Package, Plus, Search, Tag, Filter, Edit, Trash2, Camera, Upload, Loader2 } from "lucide-react";
+import { Archive, Package, Plus, Search, Tag, Filter, Edit, Trash2, Camera, Upload, Loader2, Globe2, EyeOff } from "lucide-react";
 import { toast } from "../components/Toast";
 import { compressImage } from "../lib/imageUpload";
 import { useAuthStore } from "../stores/authStore";
@@ -121,7 +121,7 @@ export function Products() {
     shelfId: '', initialPhysicalStock: 0, minStock: 0, hasSerialNumber: false, requiresLot: false, entryReason: 'Estoque Inicial',
     ofertaQty: 0, ofertaPrice: 0, outletQty: 0, outletPrice: 0,
     costPrice: 0, costCurrency: 'BRL', salePriceA: 0, salePriceB: 0, ivaPercentage: 0,
-    parentId: '', variantName: ''
+    parentId: '', variantName: '', storeVisible: false
   };
   const [formData, setFormData] = useState(defaultFormData);
   // Estoque físico ATUAL do produto sendo editado — só pra feedback visual
@@ -485,6 +485,7 @@ export function Products() {
           imageUrl: full.imageUrl || '',
           parentId: full.parentId || '',
           variantName: full.variantName || '',
+          storeVisible: full.storeVisible !== false,
         });
         setImages(full.images || []);
         setTechnicalSpecs(full.technicalSpecs || []);
@@ -997,10 +998,35 @@ export function Products() {
         <form onSubmit={handleSubmit} className="product-form space-y-4 max-h-[60vh] overflow-y-auto pr-2">
           {activeTab === 'basic' && (
             <div className="space-y-4">
+              <Card className={`py-0 ${formData.storeVisible ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-gray-700 bg-gray-900/70'}`}>
+                <CardContent className="flex items-center justify-between gap-4 p-4">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${formData.storeVisible ? 'bg-emerald-500/15 text-emerald-400' : 'bg-gray-800 text-gray-400'}`}>
+                      {formData.storeVisible ? <Globe2 className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-white">Publicação no site</p>
+                      <p className={`text-xs ${formData.storeVisible ? 'text-emerald-300' : 'text-gray-400'}`}>
+                        {formData.storeVisible ? 'Publicado — aparece na loja assim que salvar.' : 'Rascunho — fica visível somente no sistema.'}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={formData.storeVisible}
+                    aria-label="Publicar produto no site"
+                    onClick={() => updateProductField('storeVisible', !formData.storeVisible)}
+                    className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${formData.storeVisible ? 'bg-emerald-500' : 'bg-gray-700'}`}
+                  >
+                    <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${formData.storeVisible ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </button>
+                </CardContent>
+              </Card>
               <div className="grid grid-cols-[100px_1fr] gap-4">
                 <div className="flex flex-col gap-2 items-center justify-start mt-1">
                   <div className="w-24 h-24 bg-[#171717] border border-gray-700 rounded-lg flex items-center justify-center overflow-hidden">
-                    {formData.imageUrl ? <img src={formData.imageUrl} className="w-full h-full object-cover" /> : <div className="text-gray-600 text-xs text-center p-2">Sem Foto</div>}
+                    {formData.imageUrl ? <img src={formData.imageUrl} alt={`Foto de ${formData.name || 'produto'}`} className="w-full h-full object-cover" /> : <div className="text-gray-600 text-xs text-center p-2">Sem Foto</div>}
                   </div>
                   <label className="cursor-pointer text-xs font-bold text-brand-navydark bg-brand-gold hover:bg-brand-goldhover rounded-lg px-2.5 py-1.5 flex items-center gap-1.5">
                     {uploadingImg === 'main' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
@@ -1483,7 +1509,7 @@ export function Products() {
                             shelfId: v.shelfId || '', initialPhysicalStock: 0, minStock: v.minStock ? Number(v.minStock) : 0, hasSerialNumber: v.hasSerialNumber || false, requiresLot: v.requiresLot || false, entryReason: 'Estoque Inicial',
                             costPrice: v.costPrice ? Number(v.costPrice) : 0, costCurrency: v.costCurrency || 'BRL', salePriceA: v.salePriceA ? Number(v.salePriceA) : 0, salePriceB: v.salePriceB ? Number(v.salePriceB) : 0, ivaPercentage: v.ivaPercentage ? Number(v.ivaPercentage) : 0,
                             ofertaQty: v.ofertaQty ? Number(v.ofertaQty) : 0, ofertaPrice: v.ofertaPrice ? Number(v.ofertaPrice) : 0, outletQty: v.outletQty ? Number(v.outletQty) : 0, outletPrice: v.outletPrice ? Number(v.outletPrice) : 0,
-                            parentId: v.parentId || '', variantName: v.variantName || ''
+                            parentId: v.parentId || '', variantName: v.variantName || '', storeVisible: v.storeVisible !== false
                           });
                           setActiveTab('basic');
                         }}>
@@ -1557,7 +1583,9 @@ export function Products() {
 
           <div className="pt-4 flex justify-end gap-3 mt-4 border-t border-gray-800">
             <Button type="button" variant="ghost" className="text-gray-400 hover:bg-transparent hover:text-white" onClick={handleClose}>Cancelar</Button>
-            <Button type="submit" className="px-6 py-2.5 font-bold" disabled={isSaving}>Confirmar & Salvar</Button>
+            <Button type="submit" className="px-6 py-2.5 font-bold" disabled={isSaving}>
+              {isSaving ? 'Salvando...' : formData.storeVisible ? 'Salvar e publicar' : 'Salvar como rascunho'}
+            </Button>
           </div>
         </form>
       </Modal>

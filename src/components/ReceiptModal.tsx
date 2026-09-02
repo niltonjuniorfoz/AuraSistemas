@@ -47,7 +47,7 @@ export function ReceiptModal({ saleId, saleNumber, onClose }: ReceiptModalProps)
       if (!saleRes.ok) throw new Error('Não foi possível carregar a venda.');
       const sale = await saleRes.json();
       const company = companyRes.ok ? await companyRes.json() : {};
-      const empresa = company.tradeName || company.companyName || 'OMEGA PY';
+      const empresa = company.tradeName || company.companyName || 'Sua loja';
 
       const numero = `${sale.series || '001'}-${String(sale.number).padStart(6, '0')}`;
       const data = sale.createdAt ? new Date(sale.createdAt).toLocaleDateString('pt-BR') : '';

@@ -106,7 +106,7 @@ async function generateA4Doc(doc: typeof PDFDocument.prototype, saleData: any) {
    const headerY = 30;
    const generatedDate = new Date().toLocaleDateString("pt-BR");
    const saleCode = `${sale.series}-${String(sale.number).padStart(6, "0")}`;
-   const companyName = company?.tradeName || company?.companyName || "OMEGA PY";
+   const companyName = company?.tradeName || company?.companyName || "Sua loja";
    const companyLines = [
       getCompanyDocumentLabel(company),
       company?.phone ? `Tel: ${company.phone}` : "Tel: N/D",
@@ -428,11 +428,11 @@ router.get("/:id/receipt/pdf", requirePermission("receipt", "download"), async (
                doc.image(logoBuffer, (226.77 - 64) / 2, startY, { fit: [64, 58], align: 'center' });
                doc.y = startY + 66;
            } catch (e) {
-               doc.fontSize(12).font("Helvetica-Bold").text(company?.tradeName || "OMEGA PY", { align: "center" });
+               doc.fontSize(12).font("Helvetica-Bold").text(company?.tradeName || company?.companyName || "Sua loja", { align: "center" });
                doc.moveDown(0.5);
            }
        } else {
-           doc.fontSize(12).font("Helvetica-Bold").text(company?.tradeName || "OMEGA PY", { align: "center" });
+           doc.fontSize(12).font("Helvetica-Bold").text(company?.tradeName || company?.companyName || "Sua loja", { align: "center" });
            doc.moveDown(0.5);
        }
        doc.fontSize(8).font("Helvetica").text(`${getCompanyDocumentLabel(company)} | Tel: ${company?.phone || "N/D"}`, { align: "center" });
@@ -490,6 +490,7 @@ router.post("/:id/receipt/email", requirePermission("receipt", "email"), async (
      
      const saleData = await getReceiptData(req.params.id);
      const sale = saleData.sale;
+     const storeName = saleData.company?.tradeName || saleData.company?.companyName || "Sua loja";
      
      const es = await db.select().from(emailSettings).limit(1);
      if (!es.length) throw new Error("Configure o SMTP em Configurações > E-mail da empresa antes de enviar recibos.");
@@ -524,8 +525,8 @@ router.post("/:id/receipt/email", requirePermission("receipt", "email"), async (
        await transporter.sendMail({
           from: `"${conf.fromName}" <${conf.fromEmail}>`,
           to: email,
-          subject: `Recibo OMEGA PY - Venda ${sale.series}-${String(sale.number).padStart(6,'0')}`,
-          text: `Olá,\n\nSegue em anexo o recibo da venda ${sale.series}-${String(sale.number).padStart(6,'0')}.\n\nObrigado por comprar conosco!\n\nOMEGA PY`,
+          subject: `Recibo ${storeName} - Venda ${sale.series}-${String(sale.number).padStart(6,'0')}`,
+          text: `Olá,\n\nSegue em anexo o recibo da venda ${sale.series}-${String(sale.number).padStart(6,'0')}.\n\nObrigado por comprar conosco!\n\n${storeName}`,
           attachments: [
             {
                filename,
@@ -537,7 +538,7 @@ router.post("/:id/receipt/email", requirePermission("receipt", "email"), async (
        await db.insert(emailLogs).values({
           saleId: sale.id,
           recipientEmail: email,
-          subject: `Recibo OMEGA PY - Venda ${sale.series}-${String(sale.number).padStart(6,'0')}`,
+          subject: `Recibo ${storeName} - Venda ${sale.series}-${String(sale.number).padStart(6,'0')}`,
           status: 'SENT',
           sentBy: req.user!.userId
        });
@@ -547,7 +548,7 @@ router.post("/:id/receipt/email", requirePermission("receipt", "email"), async (
         await db.insert(emailLogs).values({
           saleId: sale.id,
           recipientEmail: email,
-          subject: `Recibo OMEGA PY - Venda ${sale.series}-${String(sale.number).padStart(6,'0')}`,
+          subject: `Recibo ${storeName} - Venda ${sale.series}-${String(sale.number).padStart(6,'0')}`,
           status: 'FAILED',
           errorMessage: mailError.message,
           sentBy: req.user!.userId

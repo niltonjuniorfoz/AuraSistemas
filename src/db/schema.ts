@@ -1084,6 +1084,18 @@ export const storePageviews = pgTable("store_pageviews", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Contatos que pediram ofertas pelo banner da home. É uma lista própria para
+// não criar clientes falsos/incompletos no ERP: o cadastro de cliente continua
+// exigindo nome, documento e telefone no fluxo de conta/checkout.
+export const storeNewsletterSubscribers = pgTable("store_newsletter_subscribers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  email: text("email").notNull().unique(),
+  isActive: boolean("is_active").notNull().default(true),
+  source: text("source").notNull().default("HOME_FIRST_ORDER"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // ---- FASE E3: cupons e frete por região da loja online ----
 
 export const storeCoupons = pgTable("store_coupons", {

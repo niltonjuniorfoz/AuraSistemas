@@ -162,11 +162,11 @@ export function CompanySettings() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-300">Nome da Empresa (Razão Social)</label>
-              <input type="text" name="companyName" value={formData.companyName} onChange={handleChange} placeholder="Omega PY Suplementos" className="w-full bg-[#171717] border border-gray-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-brand-gold transition-colors" />
+              <input type="text" name="companyName" value={formData.companyName} onChange={handleChange} placeholder="Razão social da empresa" className="w-full bg-[#171717] border border-gray-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-brand-gold transition-colors" />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-300">Nome Fantasia</label>
-              <input type="text" name="tradeName" value={formData.tradeName} onChange={handleChange} placeholder="OMEGA PY" className="w-full bg-[#171717] border border-gray-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-brand-gold transition-colors" />
+              <input type="text" name="tradeName" value={formData.tradeName} onChange={handleChange} placeholder="Nome que aparece na loja" className="w-full bg-[#171717] border border-gray-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-brand-gold transition-colors" />
             </div>
             
             <div className="space-y-2">
@@ -187,7 +187,7 @@ export function CompanySettings() {
 
             <div className="space-y-2 col-span-1 md:col-span-2">
               <label className="text-sm font-medium text-gray-300">E-mail Comercial</label>
-              <input type="email" name="email" value={formData.email} onChange={handleChange} placeholder="contato@originworld.com" className="w-full bg-[#171717] border border-gray-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-brand-gold transition-colors" />
+              <input type="email" name="email" value={formData.email} onChange={handleChange} placeholder="contato@sualoja.com.br" className="w-full bg-[#171717] border border-gray-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-brand-gold transition-colors" />
             </div>
 
             <div className="space-y-2 col-span-1 md:col-span-2">

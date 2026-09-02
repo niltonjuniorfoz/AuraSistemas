@@ -41,7 +41,7 @@ export function buildPixPayload({
   const gui = field("00", "BR.GOV.BCB.PIX");
   const keyField = field("01", key);
   const merchantAccount = field("26", gui + keyField);
-  const name = onlyAscii(merchantName || "OMEGA PY").slice(0, 25) || "OMEGA PY";
+  const name = onlyAscii(merchantName || "SUA LOJA").slice(0, 25) || "SUA LOJA";
   const city = onlyAscii(merchantCity || "CIUDAD DEL ESTE").slice(0, 15) || "CIUDAD DEL ESTE";
   const safeTxid = onlyAscii(txid || "***").slice(0, 25) || "***";
   const additional = field("62", field("05", safeTxid));

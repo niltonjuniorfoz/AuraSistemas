@@ -4052,7 +4052,7 @@ th[class*="text-right"] .money-value,
   }
 }
 
-/* Origin - ajustes finais PDV catálogo, lotes, orçamento e entregas simples */
+/* Aura Sistemas - ajustes finais PDV, catálogo, lotes, orçamento e entregas simples */
 .pos-stock-toggle input { flex: 0 0 auto; }
 .pos-out-stock-overlay {
   position: absolute;

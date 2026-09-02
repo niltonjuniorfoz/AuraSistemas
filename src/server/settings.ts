@@ -321,13 +321,14 @@ router.get("/email", requirePermission("settings", "manage"), async (req: AuthRe
   try {
     let es = await db.select().from(emailSettings).limit(1);
     if (!es.length) {
+      const [company] = await db.select().from(companySettings).limit(1);
       await db.insert(emailSettings).values({
          host: "smtp.example.com",
          port: 587,
          user: "user@example.com",
          password: "",
          fromEmail: "noreply@example.com",
-         fromName: "OMEGA PY"
+         fromName: company?.tradeName || company?.companyName || "Sua loja"
       });
       es = await db.select().from(emailSettings).limit(1);
     }
@@ -399,7 +400,7 @@ router.post("/email/test", requirePermission("settings", "manage"), async (req: 
      await transporter.sendMail({
         from: `"${conf.fromName}" <${conf.fromEmail}>`,
         to: conf.fromEmail,
-        subject: "Teste de Configuração SMTP - OMEGA PY",
+        subject: `Teste de Configuração SMTP - ${conf.fromName || "Sua loja"}`,
         text: "Suas configurações de e-mail estão funcionando perfeitamente."
      });
 
@@ -479,7 +480,8 @@ router.get("/printers/test", requirePermission("settings", "manage"), async (req
         } catch(e) {}
     }
     
-    doc.fontSize(14).font("Helvetica-Bold").text("TESTE DE IMPRESSÃO - OMEGA PY", { align: "center" });
+    const storeName = company?.tradeName || company?.companyName || "Sua loja";
+    doc.fontSize(14).font("Helvetica-Bold").text(`TESTE DE IMPRESSÃO - ${storeName}`, { align: "center" });
     doc.moveDown(1);
     doc.fontSize(10).font("Helvetica").text(`Formato: ${isThermal ? 'Termica' : 'Administrativa'} ${format}`, { align: "center" });
     doc.text(`Data/hora: ${new Date().toLocaleString()}`, { align: "center" });
@@ -488,7 +490,7 @@ router.get("/printers/test", requirePermission("settings", "manage"), async (req
     doc.text("Se voce consegue ler este texto, a impressora esta configurada e operando corretamente.");
     doc.text("--------------------------------------------------");
     doc.moveDown(1);
-    doc.text("OMEGA PY - Sistema");
+    doc.text(`${storeName} · operado pelo Aura Sistemas`);
     
     doc.end();
   } catch(error: any) {

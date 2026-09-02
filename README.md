@@ -1,14 +1,12 @@
-# OMEGA PY
+# Aura Sistemas
 
 ERP multimoeda (BRL/USD/PYG) com PDV, estoque, financeiro, DRE/Balanço e uma
 loja online própria com checkout PIX. Node.js, Express, React, Vite,
 Tailwind CSS e Drizzle ORM sobre PostgreSQL.
 
-**Primeira vez no projeto? Leia [`HANDOFF.md`](HANDOFF.md) antes de mexer em
-qualquer coisa** — tem contexto de negócio, decisões, armadilhas já
-encontradas e uma regra que não pode ser quebrada. O roteiro completo do que
-já foi feito está em [`PLANO.md`](PLANO.md); as regras de deploy em
-[`REGRAS.md`](REGRAS.md).
+O Aura Sistemas é a marca do software. A identidade da loja pública é lida de
+`Configurações > Empresa`: nome fantasia, logo e contatos da cliente aparecem
+na vitrine, no manifest, em recibos e nos e-mails comerciais.
 
 ## Tecnologias e Arquitetura
 

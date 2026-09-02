@@ -3,9 +3,8 @@
 ## 1. Clonar e entrar na branch
 
 ```bash
-git clone https://github.com/WendSilva/OmegaPY.git
-cd OmegaPY
-git checkout colega-dev
+git clone https://github.com/niltonjuniorfoz/AuraSistemas.git
+cd AuraSistemas
 ```
 
 ## 2. Instalar e rodar

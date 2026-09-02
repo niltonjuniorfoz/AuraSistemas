@@ -14,6 +14,7 @@ import { CashRegisterBadge } from './CashRegisterBadge';
 import { HeaderClock } from './HeaderClock';
 import { useThemeStore } from '../stores/themeStore';
 import { APP_VERSION } from '../lib/version';
+import { SYSTEM_BRAND } from '../lib/branding';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -34,7 +35,7 @@ export function Layout() {
   const userRole = String(user?.role || '').toLowerCase();
   const userName = String((user as any)?.username || '').toLowerCase();
   const userEmail = String(user?.email || '').toLowerCase();
-  const isMasterUser = userRole === 'master' || userName === 'master' || userEmail === 'master@origin.local';
+  const isMasterUser = userRole === 'master' || userName === 'master' || userEmail === 'master@aura.local' || userEmail === 'master@origin.local';
 
   const {
     mode: themeMode, colorPreset, density, layout, container, direction,
@@ -256,7 +257,7 @@ export function Layout() {
 
   // Helper to find the current active item name
   const allItems = navGroups.flatMap(g => g.items);
-  const currentRouteName = allItems.find(i => location.pathname === i.path || (i.path !== '/' && location.pathname.startsWith(i.path)))?.name || 'OMEGA PY';
+  const currentRouteName = allItems.find(i => location.pathname === i.path || (i.path !== '/' && location.pathname.startsWith(i.path)))?.name || SYSTEM_BRAND.name;
 
   return (
     <div
@@ -310,12 +311,16 @@ export function Layout() {
         )}
       >
         <div className="h-[var(--density-header-h)] flex items-center justify-between px-3 border-b border-sidebar-border shrink-0">
-          <div className={cn("text-brand-gold font-bold tracking-widest flex items-baseline overflow-hidden", collapsed ? (isMini ? "md:hidden md:group-hover/sidebar:flex" : "md:hidden") : "")}>
-            OMEGA<span className="text-red-500">PY</span>
+          <div className={cn("min-w-0 items-center gap-2 overflow-hidden", collapsed ? (isMini ? "md:hidden md:group-hover/sidebar:flex" : "md:hidden") : "flex")}>
+            <img src={SYSTEM_BRAND.logoMarkUrl} alt="" className="h-9 w-9 shrink-0 object-contain" />
+            <div className="min-w-0 leading-tight">
+              <div className="truncate text-sm font-black tracking-[0.08em] text-brand-gold">AURA</div>
+              <div className="truncate text-[9px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Sistemas</div>
+            </div>
           </div>
           {collapsed && (
             <div className={cn("hidden md:flex mx-auto w-full justify-center", isMini && "md:group-hover/sidebar:hidden")}>
-              <img src="/icons/omegapy-logo.png?v=274" alt="OMEGA PY" className="h-8 w-8 rounded-sm object-contain" />
+              <img src={SYSTEM_BRAND.logoMarkUrl} alt={SYSTEM_BRAND.name} className="h-9 w-9 object-contain" />
             </div>
           )}
           

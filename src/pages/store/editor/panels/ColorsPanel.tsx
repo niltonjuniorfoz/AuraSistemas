@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { useEditMode } from "../EditModeContext";
 import { PanelShell } from "./PanelShell";
-import { STORE_COLOR_TOKENS, contrastRatio } from "../storeTheme";
+import { DEFAULT_STORE_COLORS, STORE_COLOR_TOKENS, contrastRatio } from "../storeTheme";
 
 const MIN_CONTRAST = 4.5; // WCAG AA pra texto normal
 
@@ -69,7 +69,7 @@ export function ColorsPanel() {
           <div key={key} className="flex items-center gap-2 rounded-lg border border-stone-200 p-2">
             <input
               type="color"
-              value={/^#[0-9a-fA-F]{6}$/.test(colors[key] || "") ? colors[key] : "#ffffff"}
+              value={/^#[0-9a-fA-F]{6}$/.test(colors[key] || "") ? colors[key] : DEFAULT_STORE_COLORS[key]}
               onChange={(e) => set(key, e.target.value)}
               className="h-8 w-8 shrink-0 cursor-pointer rounded border border-stone-300 bg-transparent p-0"
             />
@@ -78,7 +78,7 @@ export function ColorsPanel() {
               <input
                 value={colors[key] || ""}
                 onChange={(e) => set(key, e.target.value)}
-                placeholder="Padrão"
+                placeholder={`Padrão ${DEFAULT_STORE_COLORS[key]}`}
                 className="w-full rounded-md border border-stone-300 p-1.5 text-xs font-mono outline-none focus:border-amber-500"
               />
             </div>

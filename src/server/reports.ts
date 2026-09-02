@@ -332,7 +332,7 @@ router.post(
         doc
           .fontSize(16)
           .font("Helvetica-Bold")
-          .text("Catálogo de Produtos - OMEGA PY", { align: "center" });
+          .text(`Catálogo de Produtos - ${company.tradeName || company.companyName || "Sua loja"}`, { align: "center" });
         doc.moveDown(1);
 
         // Update doc Y position in case logo is taller
@@ -369,7 +369,7 @@ router.post(
       doc
         .fontSize(16)
         .font("Helvetica-Bold")
-        .text("Catálogo de Produtos - OMEGA PY", { align: "center" });
+        .text(`Catálogo de Produtos - ${company.tradeName || company.companyName || "Sua loja"}`, { align: "center" });
       doc.moveDown(1);
 
       if (imageBuffers.has("logo") && doc.y < 85) {

@@ -435,9 +435,9 @@ export function Cash() {
       const payload = buildPixPayload({
         pixKey: companyPix.pixKey,
         amount,
-        merchantName: companyPix.tradeName || "OMEGA PY",
+        merchantName: companyPix.tradeName || "Sua loja",
         merchantCity: companyPix.city || "Ciudad del Este",
-        txid: isPaying ? `${isPaying.sale.series}${String(isPaying.sale.number).padStart(6, "0")}` : "OMEGAPY",
+        txid: isPaying ? `${isPaying.sale.series}${String(isPaying.sale.number).padStart(6, "0")}` : "LOJA",
       });
       setPixPayload(payload);
       setShowPixModal(true);

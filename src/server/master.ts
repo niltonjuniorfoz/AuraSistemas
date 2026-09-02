@@ -67,7 +67,7 @@ router.post("/backup-restore", requireMaster, upload.single("backup"), async (re
 
     const ok = await validateMasterPassword(masterPassword);
     if (!ok) return res.status(401).json({ error: "Senha Master invalida." });
-    if (!req.file?.buffer) return res.status(400).json({ error: "Envie um arquivo de backup .json.gz gerado pelo Origin." });
+    if (!req.file?.buffer) return res.status(400).json({ error: "Envie um arquivo de backup .json.gz gerado pelo Aura Sistemas." });
 
     const result = await restoreBackupFromBuffer(req.file.buffer, req.user!.userId);
 
@@ -79,8 +79,8 @@ router.post("/backup-restore", requireMaster, upload.single("backup"), async (re
 
 router.post("/reset-check", requireMaster, async (req: AuthRequest, res) => {
   const { masterPassword, confirmation } = req.body || {};
-  if (confirmation !== "RESETAR ORIGIN") {
-    return res.status(400).json({ error: "Digite exatamente RESETAR ORIGIN para confirmar." });
+  if (confirmation !== "RESETAR AURA") {
+    return res.status(400).json({ error: "Digite exatamente RESETAR AURA para confirmar." });
   }
   const ok = await validateMasterPassword(masterPassword);
   if (!ok) return res.status(401).json({ error: "Senha Master inválida." });

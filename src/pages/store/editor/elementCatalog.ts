@@ -24,13 +24,13 @@ export type SecaoPagina = { id: string; ordem: number; visivel: boolean; tamanho
 
 export const DEFAULT_HOME_SECTIONS: SecaoPagina[] = [
   { id: "announcement", ordem: 0, visivel: true },
-  { id: "banners", ordem: 1, visivel: true, tamanho: "GG" },
+  { id: "banners", ordem: 1, visivel: true, tamanho: "M" },
   { id: "howToBuy", ordem: 2, visivel: true },
   { id: "categories", ordem: 3, visivel: true },
-  { id: "marcas", ordem: 4, visivel: true },
-  { id: "vitrines", ordem: 5, visivel: true },
-  { id: "hero", ordem: 6, visivel: true },
-  { id: "sideBanner", ordem: 7, visivel: true, tamanho: "M" },
+  { id: "vitrines", ordem: 4, visivel: true },
+  { id: "marcas", ordem: 5, visivel: true },
+  { id: "hero", ordem: 6, visivel: false },
+  { id: "sideBanner", ordem: 7, visivel: false, tamanho: "M" },
 ];
 
 export const DEFAULT_CATALOGO_SECTIONS: SecaoPagina[] = [

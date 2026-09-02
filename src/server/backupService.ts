@@ -86,7 +86,7 @@ export function isDropboxConfigured() {
 }
 
 function getDropboxFolder() {
-  const configured = String(process.env.DROPBOX_BACKUP_FOLDER || "/Backups Origin").trim();
+  const configured = String(process.env.DROPBOX_BACKUP_FOLDER || "/Backups Aura Sistemas").trim();
   if (!configured || configured === "/") return "";
   const normalized = configured.startsWith("/") ? configured : `/${configured}`;
   return normalized.replace(/\/+$/g, "");
@@ -175,7 +175,7 @@ async function cleanupOldDropboxBackups(retentionDays: number) {
       const name = String(entry.name || "");
       const pathLower = String(entry.path_lower || "");
       if (entry[".tag"] !== "file") continue;
-      if (!/^origin-backup-.*\.json\.gz$/i.test(name)) continue;
+      if (!/^(?:aura-sistemas|origin)-backup-.*\.json\.gz$/i.test(name)) continue;
 
       const modifiedAt = Date.parse(String(entry.client_modified || entry.server_modified || ""));
       if (Number.isNaN(modifiedAt) || modifiedAt >= cutoff) continue;
@@ -238,7 +238,7 @@ async function exportDatabaseJson() {
   const tables = await getPublicTables();
   const dump: Record<string, unknown> = {
     meta: {
-      app: "Origin",
+      app: "Aura Sistemas",
       format: "origin-json-gzip-v1", // identificador interno de formato — nunca aparece pro usuário
       exportedAt: new Date().toISOString(),
       tables,
@@ -254,7 +254,7 @@ async function exportDatabaseJson() {
   return dump;
 }
 
-async function createLocalBackupFile(prefix = "origin-backup") {
+async function createLocalBackupFile(prefix = "aura-sistemas-backup") {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const filename = `${prefix}-${stamp}.json.gz`;
   const filepath = path.join(backupsDir(), filename);
@@ -268,9 +268,9 @@ function assertOriginBackupPayload(value: any) {
   if (!value || typeof value !== "object") {
     throw new Error("Arquivo de backup invalido.");
   }
-  const validApp = value?.meta?.app === "Origin";
+  const validApp = value?.meta?.app === "Aura Sistemas" || value?.meta?.app === "Origin";
   if (!validApp || value?.meta?.format !== "origin-json-gzip-v1") {
-    throw new Error("Este arquivo nao parece ser um backup valido do Origin.");
+    throw new Error("Este arquivo não parece ser um backup válido do Aura Sistemas.");
   }
   if (!value.tables || typeof value.tables !== "object" || Array.isArray(value.tables)) {
     throw new Error("Backup sem dados de tabelas.");
@@ -416,7 +416,7 @@ export async function restoreBackupFromBuffer(buffer: Buffer, triggeredBy: strin
     throw new Error("Backup nao contem tabelas restauraveis para este banco.");
   }
 
-  const safetyBackup = await createLocalBackupFile("origin-safety-before-restore");
+  const safetyBackup = await createLocalBackupFile("aura-sistemas-safety-before-restore");
   const dependencies = await getTableDependencies(backupTables);
   const tableColumnTypes = await getTableColumnTypes(backupTables);
   const orderedTables = orderTablesByDependencies(backupTables, dependencies);

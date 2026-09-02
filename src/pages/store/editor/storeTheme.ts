@@ -35,13 +35,27 @@ export const STORE_COLOR_TOKENS: { key: string; label: string; cssVar: string }[
   { key: "footerText", label: "Texto do rodapé", cssVar: "--store-footer-text" },
 ];
 
+// Paleta padrão da vitrine: clara, minimalista e adequada a uma loja de
+// cosméticos. Cada cliente continua podendo substituir qualquer token pelo
+// editor visual, sem alterar a identidade do sistema Aura Sistemas.
+export const DEFAULT_STORE_COLORS: Record<string, string> = {
+  bg: "#fff5f7",
+  surface: "#ffffff",
+  headerBg: "#ffffff",
+  headerText: "#6b5b5a",
+  accent: "#d46a86",
+  accentText: "#ffffff",
+  text: "#6b5b5a",
+  textMuted: "#8a797c",
+  footerBg: "#6b5b5a",
+  footerText: "#fff5f7",
+};
+
 // Aplica (ou remove, se vazio) cada token como CSS custom property no elemento
 // raiz da loja. Removida (não setada como string vazia) quando não configurada,
 // pra deixar o fallback do CSS (var(--store-bg, #fafaf9) etc.) valer.
 export function applyStoreColors(root: HTMLElement, colors: Record<string, string>) {
   for (const { key, cssVar } of STORE_COLOR_TOKENS) {
-    const value = colors?.[key];
-    if (value) root.style.setProperty(cssVar, value);
-    else root.style.removeProperty(cssVar);
+    root.style.setProperty(cssVar, colors?.[key] || DEFAULT_STORE_COLORS[key]);
   }
 }

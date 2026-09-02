@@ -70,7 +70,7 @@ export function Backup() {
 
       const blob = await res.blob();
       const encodedName = res.headers.get('X-Backup-Filename') || '';
-      const filename = encodedName ? decodeURIComponent(encodedName) : `origin-backup-${Date.now()}.json.gz`;
+      const filename = encodedName ? decodeURIComponent(encodedName) : `aura-sistemas-backup-${Date.now()}.json.gz`;
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;

@@ -1,10 +1,9 @@
 import React, { useCallback, useEffect, useState, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useOutletContext } from "react-router";
-import { ArrowRight, ShieldCheck, MessageCircle, Loader2, Plus, ShoppingBag, ChevronLeft, ChevronRight, Trash2, Tags } from "lucide-react";
+import { ArrowRight, BadgeCheck, Headphones, Mail, MessageCircle, Loader2, Plus, ShieldCheck, ChevronLeft, ChevronRight, Trash2, Tags, Truck } from "lucide-react";
 import { ShopProductCard } from "./ShopProductCard";
 import { Particles } from "../../components/ui/particles";
-import { AnimatedGradientText } from "../../components/ui/animated-gradient-text";
 import { Marquee } from "../../components/ui/marquee";
 import { PremiumCta } from "./PremiumCta";
 import { categoryIcon } from "./categoryIcons";
@@ -112,59 +111,73 @@ function ProductSection({ title, link, products }: { title: string, link: string
 
   if (!products || products.length === 0) return null;
   return (
-    <section className="mx-auto w-[95%] max-w-[1600px] px-4 py-6">
-      {/* group/vitrine NOMEADO (não "group" puro): sem nome, o group-hover do
-          card de produto lá dentro (que também usa "group") reagiria a esse
-          hover do box PAI também — CSS não distingue "ancestral mais
-          próximo", `.group:hover .group-hover:x` casa com QUALQUER ancestral
-          .group. Nomeando, só o group-hover/vitrine responde a este hover
-          específico, e o hover do card continua isolado ao próprio card. */}
-      <div className="group/vitrine overflow-hidden rounded-2xl border border-stone-200">
-        {/* Faixa do título: transparente em repouso, cor de destaque cheia no
-            hover (0%/100%). Texto/ícone/link acompanham: escuro (stone-900)
-            em repouso pra ler em cima do branco, branco no hover pra ler em
-            cima do dourado cheio — mesmo padrão de badge ativo/inativo que o
-            usuário mostrou como referência. */}
-        <div className="flex items-center justify-between gap-3 rounded-t-2xl bg-transparent px-4 py-3 transition-colors duration-300 group-hover/vitrine:bg-[var(--store-accent,#C99C5A)] sm:px-5">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-black/10 text-stone-900 transition-colors duration-300 group-hover/vitrine:bg-white/20 group-hover/vitrine:text-white">
-              <ShoppingBag className="h-4 w-4" />
-            </span>
-            <h2 className="truncate text-base font-bold uppercase tracking-wide text-stone-900 transition-colors duration-300 group-hover/vitrine:text-white" style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif" }}>{title}</h2>
-          </div>
-          <div className="flex shrink-0 items-center gap-3">
-            <Link to={link} className="text-sm font-semibold text-stone-700 transition-colors duration-300 hover:text-stone-900 group-hover/vitrine:text-white/85 group-hover/vitrine:hover:text-white">
-              {t("home.verTodos")}
-            </Link>
-            <div className="flex items-center gap-1.5">
-              <button type="button" onClick={() => scrollBy(-1)} disabled={!canLeft} aria-label="Anterior"
-                className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-[var(--store-accent,#C99C5A)] shadow-sm transition disabled:opacity-40">
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <button type="button" onClick={() => scrollBy(1)} disabled={!canRight} aria-label="Próximo"
-                className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-[var(--store-accent,#C99C5A)] shadow-sm transition disabled:opacity-40">
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
+    <section className="mx-auto w-[95%] max-w-[1600px] px-4 py-5">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className="text-sm font-extrabold uppercase tracking-[0.08em] text-[var(--store-accent,#d46a86)]" style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif" }}>{title}</h2>
+        <div className="flex shrink-0 items-center gap-2">
+          <Link to={link} className="text-xs font-semibold text-[var(--store-accent,#d46a86)] transition hover:opacity-70">{t("home.verTodos")}</Link>
+          <button type="button" onClick={() => scrollBy(-1)} disabled={!canLeft} aria-label="Anterior" className="hidden h-7 w-7 items-center justify-center rounded-full border border-rose-100 bg-white text-[var(--store-accent,#d46a86)] disabled:opacity-30 sm:flex"><ChevronLeft className="h-4 w-4" /></button>
+          <button type="button" onClick={() => scrollBy(1)} disabled={!canRight} aria-label="Próximo" className="hidden h-7 w-7 items-center justify-center rounded-full border border-rose-100 bg-white text-[var(--store-accent,#d46a86)] disabled:opacity-30 sm:flex"><ChevronRight className="h-4 w-4" /></button>
         </div>
-        {/* scroll-fade: some com a fileira aos poucos na borda direita, então o
-            produto seguinte "espia" desbotado em vez de cortado bruto — o
-            card mantém o tamanho de sempre (w-64), sem cálculo de encaixe
-            exato: é o degradê que dá a pista visual de "tem mais". */}
-        <div className="bg-white p-4">
-          {/* pt-2 aqui (não só o p-4 do pai): o hover do card sobe 2px
-              (-translate-y-0.5) + ganha sombra, e overflow-x-auto vira
-              clipping vertical também (regra do CSS: um eixo não-visible
-              força o outro a auto) — sem essa folga própria, a borda de
-              cima do card fica cortada bem no topo desta faixa rolável. */}
-          <div ref={scrollRef} className="scroll-fade flex gap-4 overflow-x-auto pb-1 pt-2 snap-x snap-mandatory scrollbar-hide">
-            {products.map((p) => (
-              <div key={p.id} className="w-64 shrink-0 snap-start">
-                <ShopProductCard p={p} />
-              </div>
-            ))}
+      </div>
+      <div ref={scrollRef} className="flex gap-3 overflow-x-auto pb-2 pt-1 snap-x snap-mandatory scrollbar-hide">
+        {products.map((p) => (
+          <div key={p.id} className="w-[62vw] max-w-56 shrink-0 snap-start sm:w-52 lg:w-[calc((100%_-_3.75rem)/6)]">
+            <ShopProductCard p={p} />
           </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function NewsletterBanner() {
+  const [email, setEmail] = useState("");
+  const [sending, setSending] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!email.trim() || sending) return;
+    setSending(true);
+    try {
+      const response = await fetch("/api/store/newsletter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Não foi possível cadastrar agora.");
+      setDone(true);
+      setEmail("");
+    } catch (error: any) {
+      toast.error(error.message || "Não foi possível cadastrar agora.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <section className="mx-auto w-[95%] max-w-[1600px] px-4 py-5">
+      <div className="relative overflow-hidden rounded-2xl border border-rose-100 bg-[#f8dde5] shadow-sm">
+        <img src="/banners/db-first-order.png" alt="" className="absolute inset-0 h-full w-full object-cover" aria-hidden="true" />
+        <div className="relative grid min-h-36 items-center gap-4 bg-white/20 px-6 py-6 backdrop-blur-[1px] md:grid-cols-[0.8fr_1.2fr] md:px-12">
+          <div className="text-center md:text-left">
+            <div className="font-serif text-4xl leading-none text-[var(--store-accent,#d46a86)] sm:text-5xl"><strong>5%</strong> OFF</div>
+            <p className="mt-1 text-sm font-semibold text-[#6b5b5a]">na primeira compra</p>
+          </div>
+          {done ? (
+            <div className="flex items-center justify-center gap-2 rounded-xl bg-white/80 px-4 py-3 text-sm font-bold text-[#6b5b5a]"><BadgeCheck className="h-5 w-5 text-[var(--store-accent,#d46a86)]" /> E-mail cadastrado. Suas novidades estão a caminho!</div>
+          ) : (
+            <form onSubmit={submit} className="mx-auto w-full max-w-xl">
+              <label htmlFor="newsletter-email" className="mb-2 block text-center text-xs font-semibold text-[#6b5b5a] md:text-left">Cadastre seu melhor e-mail e receba ofertas exclusivas!</label>
+              <div className="flex overflow-hidden rounded-xl border border-white bg-white/90 shadow-sm focus-within:ring-2 focus-within:ring-[var(--store-accent,#d46a86)]/30">
+                <Mail className="ml-3 h-5 w-5 shrink-0 self-center text-rose-300" />
+                <input id="newsletter-email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Seu melhor e-mail" className="min-w-0 flex-1 bg-transparent px-3 py-3 text-sm text-[#6b5b5a] outline-none" />
+                <button type="submit" disabled={sending} className="bg-[var(--store-accent,#d46a86)] px-5 text-xs font-bold text-white transition hover:brightness-95 disabled:opacity-60">{sending ? "Enviando..." : "Quero aproveitar"}</button>
+              </div>
+            </form>
+          )}
         </div>
       </div>
     </section>
@@ -222,10 +235,10 @@ function MarcasSection({ brands }: { brands: { name: string; logoUrl: string }[]
 // a classes no componente, nunca px salvos). "M" reproduz EXATAMENTE o visual
 // de hoje (aspect-[5/2] max-h-[420px] era o valor fixo do carrossel).
 const BANNER_SIZE_CLASSES: Record<string, string> = {
-  P: "aspect-[4/1] max-h-[240px]",
-  M: "aspect-[5/2] max-h-[420px]",
-  G: "aspect-[2/1] max-h-[540px]",
-  GG: "aspect-[16/10] max-h-[660px]",
+  P: "aspect-[4/3] sm:aspect-[4/1] max-h-[280px]",
+  M: "aspect-[4/3] sm:aspect-[16/5] max-h-[430px]",
+  G: "aspect-[4/3] sm:aspect-[3/1] max-h-[500px]",
+  GG: "aspect-[4/3] sm:aspect-[5/2] max-h-[580px]",
 };
 // Banner lateral: "M" (padrão) = sem classe extra, altura natural de hoje.
 const SIDEBANNER_SIZE_CLASSES: Record<string, string> = {
@@ -416,9 +429,11 @@ export function StoreHome() {
   const banners = useMemo(() => {
     return Array.isArray(cfg?.banners) && cfg.banners.length > 0
       ? cfg.banners
-      : [{ url: "/banners/performance2.png", link: "/loja/catalogo" }];
+      : [
+          { url: "/banners/db-realce-beleza.png", link: "/loja/catalogo" },
+          { url: "/banners/db-body-splash.png", link: "/loja/catalogo?busca=body%20splash" },
+        ];
   }, [cfg?.banners]);
-  const hasAnyBannerTitle = banners.some((b: any) => b.title);
 
   // Pausa o autoplay com o mouse em cima — ref (não state) pra não recriar o
   // timer a cada hover, só o tick seguinte já respeita.
@@ -433,51 +448,6 @@ export function StoreHome() {
     const resolved = getComputedStyle(heroRef.current).getPropertyValue("--store-accent").trim();
     if (resolved) setHeroAccentColor(resolved);
   }, [loading]);
-  // Altura do overlay de título+CTA medida de verdade, não adivinhada: a
-  // altura do banner varia por tamanho (P/M/G/GG) E por largura de tela, e um
-  // deslocamento fixo qualquer que sirva pro "GG" (o maior) estoura o "M"/"P"
-  // e empurra os dots pra fora da caixa com overflow-hidden (dots somem,
-  // pior que a sobreposição original). ResizeObserver acompanha o overlay do
-  // slide ATIVO (currentBanner) e resolve texto reflowing, fonte carregando
-  // depois, mudança de tamanho no editor, etc. — sem precisar de tabela de
-  // valores por tamanho. O carrossel sempre renderiza todos os slides lado a
-  // lado (só translada o track), então o ref só é anexado ao overlay do
-  // slide ativo; um slide sem título (ou não-ativo) não tem nada observado,
-  // por isso o fallback ao trocar de slide é `overlayHeight` ficar 0 até o
-  // observer medir o novo overlay (ou continuar 0 se o slide ativo não tiver
-  // título — nesse caso não existe overlay pra sobrepor os dots mesmo).
-  const [overlayHeight, setOverlayHeight] = useState(0);
-  const overlayRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!overlayRef.current) return;
-    const el = overlayRef.current;
-    // `el.getBoundingClientRect().height`, não `entries[0].contentRect.height`:
-    // `contentRect` exclui o padding (o `p-6` do overlay), então media ~66px
-    // num overlay que na tela mede ~108px de borda a borda — os dots (ancorados
-    // no rodapé do CONTAINER, não do overlay) precisam da altura de borda a
-    // borda pra limpar de verdade o topo do overlay, não só a área de
-    // conteúdo interna. Testado ao vivo: com `contentRect` os dots ainda
-    // encostavam no título; com a altura real (boundingClientRect) fecham
-    // acima dele com folga.
-    const ro = new ResizeObserver(() => {
-      setOverlayHeight(el.getBoundingClientRect().height);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-    // `loading` entra na lista de dependências (não só hasAnyBannerTitle/
-    // currentBanner) por causa de uma race real encontrada ao testar: `cfg`
-    // (de onde vem `banners`/`hasAnyBannerTitle`) pode terminar de carregar
-    // ANTES de `loading` virar false — `renderBanners` só renderiza de fato
-    // (e só aí o <div ref={overlayRef}> passa a existir) quando `loading` já
-    // é false. Sem `loading` aqui, esse efeito rodava com
-    // `overlayRef.current` ainda `null` (seção nem montada), e como
-    // hasAnyBannerTitle/currentBanner não mudavam de novo depois (com 1 banner
-    // só, o autoplay do carrossel faz `setCurrentBanner` manter o mesmo
-    // valor, então nem re-renderiza), o efeito nunca rodava de novo — o
-    // overlay ficava montado mas nunca observado, `overlayHeight` travado em
-    // 0 pra sempre. Mesmo problema (resolvido do mesmo jeito) que o efeito
-    // de `heroAccentColor` logo acima já tinha.
-  }, [hasAnyBannerTitle, currentBanner, loading]);
   useEffect(() => {
     // Apagar um banner inline pode deixar o índice atual além do fim da lista
     // nova — sem o clamp o carrossel ficaria num slide vazio até o timer girar.
@@ -724,19 +694,12 @@ export function StoreHome() {
                     // apertado num celular estreito, já que o container tem
                     // overflow-hidden (não estoura o layout, só fica cramped).
                     <div
-                      ref={i === currentBanner ? overlayRef : undefined}
-                      className="absolute inset-x-0 bottom-0 z-[2] bg-gradient-to-t from-stone-900/80 via-stone-900/20 to-transparent p-6"
+                      className="absolute inset-y-0 left-0 z-[2] flex w-[64%] flex-col justify-center bg-gradient-to-r from-white/95 via-white/75 to-transparent p-5 sm:w-[52%] sm:p-10"
                     >
-                      <div style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif" }}>
-                        <AnimatedGradientText
-                          colorFrom="var(--store-accent, #C99C5A)"
-                          colorTo="#ffffff"
-                          className="!m-0 !w-fit !border-0 !bg-transparent !px-0 !py-0 !shadow-none !backdrop-blur-none text-xl font-bold uppercase tracking-tight md:text-3xl"
-                        >
-                          {b.title}
-                        </AnimatedGradientText>
-                      </div>
-                      <div className="mt-3">
+                      <div className="mb-2 h-px w-12 bg-[#d4af37]" />
+                      <h1 className="font-serif text-2xl leading-[0.95] text-[#6b3f49] sm:text-4xl lg:text-5xl">{b.title}</h1>
+                      {b.subtitle && <p className="mt-3 max-w-xs text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6b5b5a] sm:text-sm">{b.subtitle}</p>}
+                      <div className="mt-4">
                         <PremiumCta
                           size="sm"
                           className="!w-fit"
@@ -753,7 +716,7 @@ export function StoreHome() {
                             navigate(b.link || "/loja/catalogo");
                           }}
                         >
-                          {t("home.verTodos")} <ArrowRight className="h-4 w-4" />
+                          Conheça agora <ArrowRight className="h-4 w-4" />
                         </PremiumCta>
                       </div>
                     </div>
@@ -784,24 +747,7 @@ export function StoreHome() {
                 </button>
               </>
             )}
-            {/* Controles do Carrossel: `bottom` inline (não classe Tailwind
-                fixa) porque a altura do overlay de título+CTA varia por
-                tamanho de banner (P/M/G/GG) E por largura de tela — nenhum
-                valor fixo serve pros quatro tamanhos ao mesmo tempo (testado:
-                um valor que limpa o "GG" estoura o "M"/"P", cortando os dots
-                pra fora da caixa com overflow-hidden). `overlayHeight` (medido
-                de verdade via ResizeObserver no overlay do slide ativo, acima)
-                dá a distância exata. A checagem aqui é pelo SLIDE ATIVO
-                (`banners[currentBanner]?.title`), não `hasAnyBannerTitle`
-                (que só controla quando vale a pena observar, acima): com
-                banners mistos (uns com título, outros sem), `overlayHeight`
-                guarda a medida do ÚLTIMO slide titulado observado — usar
-                `hasAnyBannerTitle` aqui aplicaria essa altura antiga por
-                engano num slide atual sem overlay nenhum pra limpar. */}
-            <div
-              className="absolute left-1/2 flex -translate-x-1/2 gap-2"
-              style={{ bottom: banners[currentBanner]?.title ? `${overlayHeight + 12}px` : "16px" }}
-            >
+            <div className="absolute bottom-3 left-1/2 z-[3] flex -translate-x-1/2 gap-2">
               {banners.map((_, i) => (
                 <button
                   key={i}
@@ -853,29 +799,17 @@ export function StoreHome() {
     return (
       <Editable elementId={SECAO("howToBuy")} panelKey="howToBuy" label="Como comprar"
         onMove={(dir) => moveSection("howToBuy", dir)} onHide={() => hideSection("howToBuy")}>
-        <section className="@container border-y border-stone-200 bg-gradient-to-b from-stone-100 to-stone-200 py-4">
-          {/* Full-bleed igual a faixa dourada de Categorias (borda a borda,
-              sem moldura) — a v. anterior travava a SEÇÃO inteira em 1600px,
-              o que deixava um retângulo de cantos retos flutuando no branco
-              ("parece cortado", pedido do usuário pra bater com o dourado).
-              Só o CONTEÚDO fica nos 1600px, fundo/borda correm a tela toda.
-              @min-[640px] em vez de sm: — breakpoint pelo espaço real do
-              container, não da tela inteira (sidebar do editor reduz o
-              espaço disponível sem reduzir a largura de tela que sm: mede). */}
-          <div className="mx-auto grid w-[95%] max-w-[1600px] grid-cols-2 gap-y-6 px-4 @min-[640px]:grid-cols-5 @min-[640px]:divide-x @min-[640px]:divide-stone-300/60">
+        <section className="px-4 pb-3">
+          <div className="mx-auto grid w-[95%] max-w-[1600px] grid-cols-2 overflow-hidden rounded-xl border border-rose-100 bg-gradient-to-r from-[#fff5f7] to-[#f8dde5] md:grid-cols-4 md:divide-x md:divide-rose-200/70">
             {[
-              ["1.", cfg.howToBuySteps?.[0]?.title || t("steps.s1title"), cfg.howToBuySteps?.[0]?.desc || t("steps.s1desc")],
-              ["2.", cfg.howToBuySteps?.[1]?.title || t("steps.s2title"), cfg.howToBuySteps?.[1]?.desc || t("steps.s2desc")],
-              ["3.", cfg.howToBuySteps?.[2]?.title || t("steps.s3title"), cfg.howToBuySteps?.[2]?.desc || t("steps.s3desc")],
-              ["4.", cfg.howToBuySteps?.[3]?.title || t("steps.s4title"), cfg.howToBuySteps?.[3]?.desc || t("steps.s4desc")],
-              ["5.", cfg.howToBuySteps?.[4]?.title || t("steps.s5title"), cfg.howToBuySteps?.[4]?.desc || t("steps.s5desc")],
-            ].map(([num, title, desc]: any, i) => (
-              <div key={i} className="px-4 first:pl-0">
-                <div className="flex items-baseline gap-2">
-                  <span className="text-lg font-black text-[var(--store-accent,#C99C5A)]">{num}</span>
-                  <span className="text-xs font-bold uppercase tracking-wide text-stone-800">{title}</span>
-                </div>
-                <div className="mt-1 text-[11px] text-stone-500">{desc}</div>
+              [BadgeCheck, "Produtos Originais", "Selo de garantia"],
+              [Truck, "Entrega Rápida", "Para todo o Brasil"],
+              [ShieldCheck, "Compra Segura", "Seus dados protegidos"],
+              [Headphones, "Suporte Especializado", "Atendimento humanizado"],
+            ].map(([Icon, title, desc]: any) => (
+              <div key={title} className="flex items-center justify-center gap-3 px-3 py-4 text-left">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--store-accent,#d46a86)]/30 bg-white/70 text-[var(--store-accent,#d46a86)]"><Icon className="h-5 w-5" strokeWidth={1.5} /></span>
+                <div><div className="text-[11px] font-bold text-[#6b5b5a]">{title}</div><div className="text-[10px] text-[#8a797c]">{desc}</div></div>
               </div>
             ))}
           </div>
@@ -889,19 +823,23 @@ export function StoreHome() {
     return (
       <Editable elementId={SECAO("categories")} panelKey="categories" label="Categorias"
         onMove={(dir) => moveSection("categories", dir)} onHide={() => hideSection("categories")}>
-        <section className="mx-auto w-[95%] max-w-[1600px] px-4 py-10">
+        <section className="mx-auto w-[95%] max-w-[1600px] px-4 py-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-extrabold uppercase tracking-[0.08em] text-[var(--store-accent,#d46a86)]">Categorias em destaque</h2>
+            <Link to="/loja/catalogo" className="text-xs font-semibold text-[var(--store-accent,#d46a86)]">Ver todas</Link>
+          </div>
           <div className="relative">
-            <div ref={catScrollRef} className="flex gap-4 overflow-x-auto pb-2 pt-3 scrollbar-hide">
+            <div ref={catScrollRef} className="flex gap-3 overflow-x-auto pb-2 pt-1 scrollbar-hide">
               {[...categories]
-                .sort((a, b) => translateCategoryName(a.name, i18n.language).localeCompare(translateCategoryName(b.name, i18n.language)))
-                .map((c, i) => {
+                .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || translateCategoryName(a.name, i18n.language).localeCompare(translateCategoryName(b.name, i18n.language)))
+                .map((c) => {
                 const Icon = categoryIcon(c.name, c.icon);
                 return (
                   <Link key={c.id} to={`/loja/catalogo?cat=${c.id}`}
-                    className={`group relative flex w-28 shrink-0 flex-col items-center gap-3 overflow-hidden rounded-md border px-4 py-5 text-center transition-all duration-300 hover:-translate-y-1 hover:border-[var(--store-accent,#C99C5A)] hover:shadow-[0_10px_28px_-8px_rgba(201,156,90,0.55)] ${i === 0 ? "border-[var(--store-accent,#C99C5A)] bg-white shadow-sm" : "border-transparent bg-stone-100"}`}>
+                    className="group relative flex w-28 shrink-0 flex-col items-center gap-2 overflow-hidden rounded-xl border border-rose-100 bg-gradient-to-b from-white to-[#fff5f7] px-3 py-4 text-center shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-[var(--store-accent,#d46a86)] hover:shadow-[0_10px_25px_-12px_rgba(212,106,134,0.55)] sm:w-32">
                     <span className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-[var(--store-accent,#C99C5A)]/30 to-transparent transition-transform duration-700 ease-out group-hover:translate-x-full" />
-                    <Icon className="relative h-9 w-9 text-[var(--store-accent,#C99C5A)]" strokeWidth={1.25} />
-                    <span className="relative line-clamp-2 text-[11px] font-bold uppercase leading-tight tracking-wide text-stone-800">{translateCategoryName(c.name, i18n.language)}</span>
+                    <span className="relative flex h-12 w-12 items-center justify-center rounded-full bg-[#f8dde5]/70 text-[var(--store-accent,#d46a86)]"><Icon className="h-7 w-7" strokeWidth={1.35} /></span>
+                    <span className="relative line-clamp-2 text-[10px] font-semibold leading-tight text-[#6b5b5a]">{translateCategoryName(c.name, i18n.language)}</span>
                   </Link>
                 );
               })}
@@ -934,6 +872,8 @@ export function StoreHome() {
     if (Array.isArray(cfg.vitrines) && cfg.vitrines.length > 0) {
       inner = (
         <div className="flex flex-col gap-2">
+          <ProductSection title="Produtos mais amados" link="/loja/catalogo?ord=popular" products={allInStock.slice(0, 12)} />
+          <NewsletterBanner />
           {/* Cada vitrine configurada tem a própria barrinha (🗑️ ↑↓ ⧉ ✏️) — o
               🗑️ confirma inline na barrinha, nada de modal. As 4 vitrines
               padrão do fallback abaixo NÃO ganham barrinha própria: não
@@ -948,11 +888,12 @@ export function StoreHome() {
         </div>
       );
     } else if (featured.length === 0) {
-      inner = <div className="py-16 text-center text-stone-400">{t("home.vitrinePreparando")}</div>;
+      inner = <><div className="py-12 text-center text-stone-400">{t("home.vitrinePreparando")}</div><NewsletterBanner /></>;
     } else {
       inner = (
         <div className="flex flex-col gap-2">
-          <ProductSection title={t("home.maisVendidos")} link="/loja/catalogo?ord=popular" products={featured} />
+          <ProductSection title="Produtos mais amados" link="/loja/catalogo?ord=popular" products={allInStock.length > 0 ? allInStock.slice(0, 12) : featured} />
+          <NewsletterBanner />
           <ProductSection title={t("home.emagrecimento")} link="/loja/catalogo?q=emagrecimento" products={emagrecimento.length > 0 ? emagrecimento : featured.slice().reverse()} />
           <ProductSection title={t("home.performance")} link="/loja/catalogo?q=performance" products={performance.length > 0 ? performance : featured} />
           <ProductSection title={t("home.novidades")} link="/loja/catalogo?ord=newest" products={newest.length > 0 ? newest : featured.slice().reverse()} />
@@ -1116,7 +1057,7 @@ export function StoreHome() {
   };
 
   return (
-    <main className="flex flex-col bg-stone-50 pb-20 md:pb-0">
+    <main className="flex flex-col bg-[var(--store-bg,#fff5f7)] pb-20 md:pb-0">
       {/* Seções na ordem da config (pages.home.sections), pulando as ocultas.
           Seção oculta some TAMBÉM dentro do editor (spec) — o caminho de
           recuperação é o painel Seções da toolbar (Task 8). */}

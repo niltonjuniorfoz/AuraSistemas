@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, Link, useNavigate, useLocation } from "react-router";
 import {
   ShoppingBag, Search, Plus, Minus, Trash2, X, Package, Loader2, ArrowRight, MessageCircle, ShieldCheck, Store, User, Sparkles, ArrowLeftRight, Check,
+  Truck, Heart, Home, LayoutGrid, Tag,
 } from "lucide-react";
 import { useShopCart, cartTotal, cartCount } from "../../stores/shopCart";
 import { useCustomerAuthStore } from "../../stores/customerAuth";
@@ -70,10 +71,10 @@ function EditableAnnouncementBar({ announcement, pages }: { announcement: string
   const secoes = effectiveHomeSections(ctx ? ctx.draft : { pages });
   const secao = secoes.find((s) => s.id === "announcement");
   if (secao?.visivel === false) return null;
-  if (!ctx && !text) return null;
+  const displayText = text || "Atendimento rápido, compra segura e entrega acompanhada";
   const bar = (
-    <span className="hidden h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-[var(--store-accent,#C99C5A)]/40 bg-[var(--store-accent,#C99C5A)]/10 px-2.5 text-[11px] font-medium text-[var(--store-accent,#C99C5A)] lg:inline-flex">
-      <Sparkles className="h-3 w-3" /> {text || (ctx ? "Clique pra adicionar um aviso" : "")}
+    <span className="inline-flex min-h-7 items-center gap-1.5 text-[10px] font-semibold tracking-wide text-[var(--store-header-text,#2f2729)] sm:text-[11px]">
+      <Truck className="h-3.5 w-3.5 text-[var(--store-accent,#e96f95)]" /> {displayText}
     </span>
   );
   if (!ctx) return bar;
@@ -103,9 +104,9 @@ function EditableAnnouncementBar({ announcement, pages }: { announcement: string
 // tema — não precisa de requisição extra), com o texto fixo como último
 // fallback se a loja nunca configurou nada. Dentro do editor mostra o
 // rascunho ao vivo, igual aos outros campos editáveis.
-function EditableFooterText({ footerText }: { footerText: string }) {
+function EditableFooterText({ footerText, storeName }: { footerText: string; storeName?: string }) {
   const ctx = useEditMode();
-  const fallback = "OMEGA PY® Todos os direitos reservados 2026";
+  const fallback = `© ${new Date().getFullYear()} ${storeName || "Sua loja"}. Todos os direitos reservados.`;
   const text = ctx ? String(ctx.draft?.footerText || "") : footerText;
   const p = <p className="text-xs text-stone-400">{text || fallback}</p>;
   if (!ctx) return p;
@@ -262,6 +263,24 @@ export function ShopLayout() {
       .catch(() => {});
   }, []);
 
+  // A loja pública pertence ao cliente do Aura Sistemas. Título, ícone e
+  // metadados acompanham a identidade cadastrada da loja; ao sair de /loja,
+  // o shell do ERP volta a usar a marca do sistema pelo carregamento normal.
+  useEffect(() => {
+    if (!info?.storeName) return;
+    document.title = info.storeName;
+    const description = document.querySelector<HTMLMetaElement>('meta[name="description"]');
+    if (description) description.content = `${info.storeName} — loja online`;
+    const appName = document.querySelector<HTMLMetaElement>('meta[name="application-name"]');
+    if (appName) appName.content = info.storeName;
+    const appleTitle = document.querySelector<HTMLMetaElement>('meta[name="apple-mobile-web-app-title"]');
+    if (appleTitle) appleTitle.content = info.storeName;
+    const icon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (icon) icon.href = "/api/store/icon/192";
+    const appleIcon = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]');
+    if (appleIcon) appleIcon.href = "/api/store/icon/192";
+  }, [info?.storeName]);
+
   // Aplica os 9 tokens de cor como CSS custom properties no elemento raiz da
   // loja — dentro do editor usa o rascunho ao vivo (editCtx.draft), fora dele
   // usa as cores publicadas vindas de /api/store/config.
@@ -373,7 +392,7 @@ export function ShopLayout() {
   const wa = info?.whatsapp ? `https://wa.me/${String(info.whatsapp).replace(/\D/g, "")}` : null;
 
   return (
-    <div ref={rootRef} className="h-[100dvh] overflow-y-auto bg-stone-50 text-stone-900" style={{ fontFamily: "var(--store-font-body, 'Inter'), system-ui, sans-serif" }}>
+    <div ref={rootRef} className="h-[100dvh] overflow-y-auto bg-[var(--store-bg,#fff9fa)] pb-16 text-[var(--store-text,#2f2729)] md:pb-0" style={{ fontFamily: "var(--store-font-body, 'Inter'), system-ui, sans-serif" }}>
       {/* Loja aberta desde antes de uma atualização — recarregar evita erro no checkout */}
       {precisaAtualizar && (
         <div className="flex flex-wrap items-center justify-center gap-3 bg-stone-900 text-white px-4 py-2 text-center text-xs font-semibold text-stone-900">
@@ -403,17 +422,28 @@ export function ShopLayout() {
           moeda/idioma (antes numa barra separada) entram discretos perto dos
           ícones da direita. Dúvidas/Sobre nós mudou pro rodapé (pedido do
           usuário), junto dos outros links de rodapé. */}
-      <header className="sticky top-0 z-30 bg-white/90 backdrop-blur">
+      <header className="sticky top-0 z-30 bg-[var(--store-header-bg,#ffffff)]/95 shadow-sm backdrop-blur">
+        <div className="border-b border-rose-100 bg-[var(--store-accent,#e96f95)]/12">
+          <div className="mx-auto flex min-h-8 w-[95%] max-w-[1600px] items-center justify-center gap-4 px-4 sm:justify-between">
+            <EditableAnnouncementBar announcement={announcement} pages={pagesFromInfo} />
+            <div className="hidden items-center gap-4 text-[10px] font-semibold text-[var(--store-header-text,#2f2729)] md:flex">
+              {wa && <a href={wa} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-[var(--store-accent,#e96f95)]"><MessageCircle className="h-3 w-3" /> WhatsApp</a>}
+              <Link to="/loja/conta/pedidos" className="hover:text-[var(--store-accent,#e96f95)]">Meus pedidos</Link>
+              <Link to="/loja/conta" className="hover:text-[var(--store-accent,#e96f95)]">Minha conta</Link>
+            </div>
+          </div>
+        </div>
         <div className="border-b border-stone-200">
-          <div className="mx-auto flex w-[95%] max-w-[1600px] items-center gap-4 px-4 py-2 lg:gap-7">
+          <div className="mx-auto flex w-[95%] max-w-[1600px] items-center gap-3 px-4 py-3 lg:gap-6">
           <Link to="/loja" className="flex shrink-0 items-center gap-2.5">
             {infoLoading ? (
-              <span className="h-28 w-24 shrink-0 animate-pulse rounded-sm bg-stone-200" />
+              <span className="h-14 w-32 shrink-0 animate-pulse rounded-xl bg-rose-100" />
             ) : (
-              <>
-                <img src="/icons/omegapy-logo-full.png?v=275" alt={info?.storeName || "OMEGA PY"} className="h-28 w-auto shrink-0 object-contain" />
-                {info?.city && <div className="text-[11px] uppercase tracking-widest text-stone-500">{info.city}</div>}
-              </>
+              <img
+                src={info?.logoUrl || "/branding/db-cosmetics-logo.png"}
+                alt={info?.storeName || "Cosmetics by Jessica Ferreira"}
+                className="h-16 w-28 shrink-0 object-contain sm:h-20 sm:w-36"
+              />
             )}
           </Link>
 
@@ -422,7 +452,7 @@ export function ShopLayout() {
               o círculo dourado só faz sentido pros ícones da Categorias/
               Entrar/Carrito, na bandeira ele sobrava). Espaçamento maior
               entre os grupos pra não ficar tudo colado (outro pedido). */}
-          <div className="hidden shrink-0 items-center gap-5 border-l border-stone-200 pl-4 lg:flex">
+          <div className="hidden shrink-0 items-center gap-5 border-l border-stone-200 pl-4 xl:flex">
             {/* Caixa única "Cotação do dia" (pedido do usuário) - rótulo
                 traduzido por idioma, cada moeda na sua caixinha por dentro. */}
             <div className="flex flex-col items-center gap-1.5 rounded-lg border border-stone-200 bg-stone-50/60 px-2.5 py-1.5">
@@ -438,11 +468,6 @@ export function ShopLayout() {
                 </div>
               </div>
             </div>
-            {wa && (
-              <a href={wa} target="_blank" rel="noreferrer" className="flex h-8 items-center gap-1 rounded-full border border-emerald-500 bg-emerald-50 px-2.5 text-[11px] font-medium text-emerald-600 transition-colors hover:bg-emerald-100">
-                <MessageCircle className="h-3 w-3" /> {t("header.vendas")}
-              </a>
-            )}
           </div>
 
           <div className="hidden flex-1 items-center justify-center gap-2 sm:flex">
@@ -451,10 +476,9 @@ export function ShopLayout() {
               <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder={t("header.buscarPlaceholder")}
                 className="h-10 w-full rounded-full border border-stone-200 bg-stone-100 pl-10 pr-4 text-sm outline-none transition focus:border-[var(--store-accent,#C99C5A)] focus:bg-white" />
             </form>
-            <EditableAnnouncementBar announcement={announcement} pages={pagesFromInfo} />
           </div>
 
-          <div className="ml-auto flex items-center gap-[25px] sm:ml-0">
+          <div className="ml-auto flex items-center gap-3 sm:ml-0 sm:gap-[25px]">
 
             {/* Idioma + moeda num seletor só (pedido do usuário): o idioma já
                 define a moeda principal (es→PYG, pt→BRL, en→USD); a seção
@@ -473,7 +497,7 @@ export function ShopLayout() {
                   <CodeFlag code={currency} className="h-11 w-11 rounded-full shadow-[0_0_0_1px_rgba(0,0,0,0.08)]" />
                   <ArrowLeftRight className="absolute -bottom-1.5 -right-1.5 h-4 w-4 rounded-full border border-stone-200 bg-white p-0.5 text-[var(--store-accent,#C99C5A)] shadow-sm" />
                 </span>
-                <span className="absolute left-1/2 top-full mt-1.5 -translate-x-1/2 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide">{currency} / {CURRENCY_SYMBOL[currency]}</span>
+                <span className="absolute left-1/2 top-full mt-1.5 hidden -translate-x-1/2 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide sm:block">{currency} / {CURRENCY_SYMBOL[currency]}</span>
               </button>
               {selectorOpen && (
                 <div className="absolute right-0 top-[64px] z-50 w-48 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-xl">
@@ -511,6 +535,12 @@ export function ShopLayout() {
               </span>
               <span className="absolute left-1/2 top-full mt-1.5 max-w-[70px] -translate-x-1/2 truncate whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide">{customer ? customer.name.split(" ")[0] : t("account.entrar")}</span>
             </Link>
+            <Link to="/loja/conta/favoritos" className="relative hidden h-11 items-center text-stone-600 hover:text-stone-900 lg:flex">
+              <span className="flex h-11 w-11 items-center justify-center rounded-full border border-rose-100 bg-white text-[var(--store-accent,#e96f95)] shadow-sm transition hover:bg-rose-50">
+                <Heart className="h-5 w-5" />
+              </span>
+              <span className="absolute left-1/2 top-full mt-1.5 -translate-x-1/2 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide">Favoritos</span>
+            </Link>
             <button onClick={() => setOpen(true)} className="relative flex h-11 items-center text-stone-600 hover:text-stone-900">
               <span className="relative flex h-11 w-11 items-center justify-center rounded-full bg-[var(--store-accent,#C99C5A)] text-[var(--store-accent-text,#ffffff)] shadow-sm transition hover:brightness-95">
                 <ShoppingBag className="h-5 w-5" />
@@ -520,7 +550,7 @@ export function ShopLayout() {
                   </span>
                 )}
               </span>
-              <span className="absolute left-1/2 top-full mt-1.5 -translate-x-1/2 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide">{t("header.carrinho")}</span>
+              <span className="absolute left-1/2 top-full mt-1.5 hidden -translate-x-1/2 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide sm:block">{t("header.carrinho")}</span>
             </button>
           </div>
           </div>
@@ -538,7 +568,7 @@ export function ShopLayout() {
             fina desliza da esquerda pra direita por baixo (scale-x-0 →
             scale-x-100 com origin-left), com o texto ganhando leve
             letter-spacing extra. */}
-        <div className="hidden bg-[var(--store-accent,#C99C5A)] md:block">
+        <div className="hidden bg-[var(--store-accent,#e96f95)] md:block">
           <div className="mx-auto flex w-[95%] max-w-[1600px] items-center gap-6 overflow-x-auto whitespace-nowrap px-4 py-3 text-[0.825rem] font-bold uppercase tracking-wider text-[var(--store-accent-text,#ffffff)] scrollbar-hide">
             <Link to="/loja/catalogo" className="group relative inline-block pb-1">
               <span className="transition-all duration-300 group-hover:tracking-[0.15em]">{t("header.categorias")}</span>
@@ -546,7 +576,7 @@ export function ShopLayout() {
             </Link>
             <div className="h-4 w-px shrink-0 bg-white/30"></div>
             {[...categories]
-              .sort((a, b) => translateCategoryName(a.name, i18nInstance.language).localeCompare(translateCategoryName(b.name, i18nInstance.language)))
+              .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || translateCategoryName(a.name, i18nInstance.language).localeCompare(translateCategoryName(b.name, i18nInstance.language)))
               .slice(0, 8).map(c => (
               <Link key={c.id} to={`/loja/catalogo?cat=${c.id}`} className="group relative inline-block pb-1">
                 <span className="transition-all duration-300 group-hover:tracking-[0.15em]">{translateCategoryName(c.name, i18nInstance.language)}</span>
@@ -578,7 +608,7 @@ export function ShopLayout() {
       <Outlet context={{ info }} />
       <ColorsPanel />
       <FontsPanel />
-      <TextPanel panelKey="footer" title="Rodapé" fieldKey="footerText" maxLength={200} placeholder="OMEGA PY® Todos os direitos reservados 2026" />
+      <TextPanel panelKey="footer" title="Rodapé" fieldKey="footerText" maxLength={200} placeholder="© Nome da loja. Todos os direitos reservados." />
 
 
 
@@ -816,20 +846,20 @@ export function ShopLayout() {
       )}
 
       {/* Rodapé / Footer */}
-      <footer className="mt-auto border-t border-stone-200 bg-white py-6">
+      <footer className="mt-auto border-t border-white/10 bg-[var(--store-footer-bg,#2f2729)] py-6 text-[var(--store-footer-text,#fff7f9)]">
         <div className="mx-auto w-[95%] max-w-[1600px] px-4">
           
           <div className="flex flex-col items-center justify-between gap-6 sm:flex-row">
             
             {/* Trust Badges Minimal */}
-            <div className="flex flex-wrap justify-center gap-6 text-[10px] uppercase tracking-wider text-stone-500 sm:justify-start">
-              <div className="flex items-center gap-1.5"><ShieldCheck className="h-4 w-4 text-stone-900" /> {t("footer.compraSegura")}</div>
-              <div className="flex items-center gap-1.5"><Package className="h-4 w-4 text-stone-900" /> {t("footer.entregaRapida")}</div>
-              <div className="flex items-center gap-1.5"><Store className="h-4 w-4 text-stone-900" /> {t("footer.qualidadeGarantida")}</div>
+            <div className="flex flex-wrap justify-center gap-6 text-[10px] uppercase tracking-wider text-[var(--store-footer-text,#fff7f9)]/75 sm:justify-start">
+              <div className="flex items-center gap-1.5"><ShieldCheck className="h-4 w-4 text-[var(--store-accent,#e96f95)]" /> {t("footer.compraSegura")}</div>
+              <div className="flex items-center gap-1.5"><Package className="h-4 w-4 text-[var(--store-accent,#e96f95)]" /> {t("footer.entregaRapida")}</div>
+              <div className="flex items-center gap-1.5"><Store className="h-4 w-4 text-[var(--store-accent,#e96f95)]" /> {t("footer.qualidadeGarantida")}</div>
             </div>
 
             {/* Links */}
-            <div className="flex flex-wrap justify-center gap-4 text-xs font-medium text-stone-500">
+            <div className="flex flex-wrap justify-center gap-4 text-xs font-medium text-[var(--store-footer-text,#fff7f9)]/70">
               <Link to="/loja" className="hover:text-stone-900 transition">{t("header.dudas")}</Link>
               <Link to="/loja" className="hover:text-stone-900 transition">{t("header.sobre")}</Link>
               <Link to="/loja/catalogo" className="hover:text-stone-900 transition">{t("footer.comoComprar")}</Link>
@@ -840,8 +870,8 @@ export function ShopLayout() {
 
           </div>
 
-          <div className="mt-6 flex flex-col items-center justify-between gap-4 border-t border-stone-100 pt-4 sm:flex-row">
-            <EditableFooterText footerText={footerText} />
+          <div className="mt-6 flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-4 sm:flex-row">
+            <EditableFooterText footerText={footerText} storeName={info?.storeName} />
 
             <div className="flex items-center gap-4 opacity-75 grayscale transition hover:grayscale-0">
               <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-600"><span className="text-sm italic">pix</span></div>
@@ -853,11 +883,20 @@ export function ShopLayout() {
         </div>
       </footer>
 
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-rose-100 bg-white/95 px-2 pb-[max(.35rem,env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-8px_30px_rgba(80,35,50,.08)] backdrop-blur md:hidden">
+        {[
+          ["Início", "/loja", Home],
+          ["Categorias", "/loja/catalogo", LayoutGrid],
+          ["Ofertas", "/loja/catalogo?canal=oferta", Tag],
+          ["Conta", "/loja/conta", User],
+        ].map(([label, path, Icon]: any) => (
+          <Link key={label} to={path} className="flex flex-col items-center gap-0.5 py-1 text-[10px] font-semibold text-stone-500 hover:text-[var(--store-accent,#e96f95)]">
+            <Icon className="h-5 w-5" /> {label}
+          </Link>
+        ))}
+      </nav>
+
       <AssistantWidget wa={wa} />
     </div>
   );
 }
-
-
-
-

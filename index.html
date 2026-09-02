@@ -3,21 +3,29 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>OMEGA PY</title>
-    <meta name="description" content="OMEGA PY - Suplementos, Vitaminas e Medicamentos" />
-    <meta name="application-name" content="OMEGA PY" />
+    <title>Aura Sistemas</title>
+    <meta name="description" content="Aura Sistemas - gestão integrada de vendas, estoque, financeiro e loja online" />
+    <meta name="application-name" content="Aura Sistemas" />
     <meta name="theme-color" content="#0a192f" />
-    <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png?v=274" />
-    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=274" />
+    <link id="app-manifest" rel="manifest" href="/manifest.webmanifest" />
+    <link id="app-icon" rel="icon" type="image/png" sizes="192x192" href="/branding/aura-sistemas-icon-192.png?v=1" />
+    <link id="apple-touch-icon" rel="apple-touch-icon" href="/branding/aura-sistemas-apple-touch.png?v=1" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-title" content="OMEGA PY" />
+    <meta name="apple-mobile-web-app-title" content="Aura Sistemas" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="mobile-web-app-capable" content="yes" />
     <!-- Fontes da loja online (Inter + Barlow Condensed) -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,700;1,600;1,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+    <script>
+      if (location.pathname === "/loja" || location.pathname.startsWith("/loja/")) {
+        document.getElementById("app-manifest").href = "/api/store/manifest.webmanifest";
+        document.getElementById("app-icon").href = "/api/store/icon/192";
+        document.getElementById("apple-touch-icon").href = "/api/store/icon/192";
+        document.title = "Sua loja";
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

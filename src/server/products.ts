@@ -528,6 +528,9 @@ function normalizeProductInput(rawData: any, technicalSpecs: any) {
     technicalSpecs: technicalSpecs || [],
     hasSerialNumber: !!rawData.hasSerialNumber,
     requiresLot: !!rawData.requiresLot,
+    storeVisible: rawData.storeVisible === undefined
+      ? true
+      : rawData.storeVisible === true || rawData.storeVisible === "true",
     ofertaQty: Math.max(0, parseInt(rawData.ofertaQty) || 0),
     ofertaPrice: rawData.ofertaPrice ? String(rawData.ofertaPrice) : null,
     outletQty: Math.max(0, parseInt(rawData.outletQty) || 0),

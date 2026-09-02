@@ -199,7 +199,7 @@ $$;`
         id: uuidv4(),
         username: "master",
         name: "Master",
-        email: "master@origin.local",
+        email: "master@aura.local",
         passwordHash: masterHash,
         roleId: masterRoleId,
         isActive: true,
@@ -211,7 +211,7 @@ $$;`
     }
   }
 
-  const adminEmail = "admin@origin.local";
+  const adminEmail = "admin@aura.local";
   const existingUsers = await db.select().from(users).where(eq(users.username, "admin")).limit(1);
   
   if (existingUsers.length === 0) {
@@ -230,6 +230,36 @@ $$;`
     await db.update(users).set({ roleId: adminRoleId }).where(eq(users.username, "admin"));
     console.log("Admin user already exists, ensured role.");
   }
+
+  // Categorias iniciais da vitrine de cosméticos. Elas são os mesmos grupos
+  // escolhidos no cadastro do produto; por isso o produto já nasce na seção
+  // correta do site, sem uma segunda classificação manual.
+  const storefrontGroups = [
+    { name: "Maquiagem", icon: "makeup", sortOrder: 10 },
+    { name: "Skincare", icon: "skincare", sortOrder: 20 },
+    { name: "Cabelos", icon: "hair", sortOrder: 30 },
+    { name: "Corpo e Banho", icon: "bath", sortOrder: 40 },
+    { name: "Perfumes", icon: "perfume", sortOrder: 50 },
+    { name: "Kits e Presentes", icon: "gift", sortOrder: 60 },
+    { name: "Acessórios", icon: "accessories", sortOrder: 70 },
+    { name: "Lançamentos", icon: "launch", sortOrder: 80 },
+  ];
+  for (const group of storefrontGroups) {
+    const existing = await db.select().from(productGroups).where(eq(productGroups.name, group.name)).limit(1);
+    if (existing.length === 0) {
+      await db.insert(productGroups).values({ id: uuidv4(), ...group, storeVisible: true, isActive: true });
+    } else {
+      await db.update(productGroups).set({
+        icon: group.icon,
+        sortOrder: group.sortOrder,
+        storeVisible: true,
+        isActive: true,
+        deletedAt: null,
+        updatedAt: new Date(),
+      }).where(eq(productGroups.id, existing[0].id));
+    }
+  }
+  console.log("Storefront cosmetic categories ensured.");
 
   // Seed expense categories
   const categories = ["ALUGUEL", "INTERNET", "LUZ", "ÁGUA", "SALÁRIOS", "TRANSPORTE", "MARKETING", "IMPOSTOS", "OUTROS"];
@@ -252,4 +282,3 @@ main().catch((err) => {
   console.error("Seeding failed", err);
   process.exit(1);
 });
-

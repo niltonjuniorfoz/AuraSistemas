@@ -103,7 +103,7 @@ export function MasterPanel() {
   async function restoreBackup() {
     if (restoring) return;
     if (!restoreFile) {
-      setMessage('Selecione um arquivo de backup .json.gz gerado pelo Origin.');
+      setMessage('Selecione um arquivo de backup .json.gz gerado pelo Aura Sistemas.');
       return;
     }
 
@@ -163,7 +163,7 @@ export function MasterPanel() {
         </div>
         <div>
           <h2 className="text-2xl font-semibold text-white">Painel Master</h2>
-          <p className="text-gray-400 text-sm">Área oculta para manutenção crítica, backups e recuperação do Origin.</p>
+          <p className="text-gray-400 text-sm">Área oculta para manutenção crítica, backups e recuperação do Aura Sistemas.</p>
         </div>
       </div>
 
@@ -317,7 +317,7 @@ export function MasterPanel() {
           </CardContent>
           </Card>
           <p className="text-[11px] text-gray-500">
-            A restauracao aceita somente backup .json.gz gerado pelo Origin e exige senha Master.
+            A restauração aceita somente backup .json.gz gerado pelo Aura Sistemas e exige senha Master.
           </p>
         </CardContent>
         </Card>

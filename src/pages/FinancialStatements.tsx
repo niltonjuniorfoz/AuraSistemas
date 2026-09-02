@@ -270,7 +270,7 @@ export function FinancialStatements() {
                   <div className="mt-4 space-y-1 border-t border-gray-800 pt-3 text-[11px] text-gray-500">
                     <div className="flex items-start gap-1.5"><Info className="mt-0.5 h-3 w-3 shrink-0" /> CMV real pelo câmbio da época (FIFO): <b className="text-gray-300">{brl(data.realCogs)}</b> — cobre o que já saiu do estoque.</div>
                     {d.monthsCount > 1 && <div className="flex items-start gap-1.5"><Info className="mt-0.5 h-3 w-3 shrink-0" /> Despesas fixas rateadas por {d.monthsCount} meses do período.</div>}
-                    <div className="pt-1 text-right text-[10px] text-gray-600">Gerado em {new Date().toLocaleDateString("pt-BR")} · OMEGA PY</div>
+                    <div className="pt-1 text-right text-[10px] text-gray-600">Gerado em {new Date().toLocaleDateString("pt-BR")}</div>
                   </div>
                 </CardContent>
                 </Card>

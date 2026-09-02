@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { useAuthStore } from '../stores/authStore';
 import { ArrowRight, CheckCircle2, Compass, Lock, Menu, Share2, User } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import { SYSTEM_BRAND } from '../lib/branding';
 
 
 function shouldShowMobileInstallIntro() {
@@ -72,17 +73,17 @@ export function Login() {
           <div className="absolute top-0 left-0 right-0 h-1 bg-brand-gold" />
           <div className="flex flex-col items-center text-center mb-5">
             <img
-              src="/icons/omegapy-logo.png?v=274"
-              alt="OMEGA PY"
+              src={SYSTEM_BRAND.logoMarkUrl}
+              alt={SYSTEM_BRAND.name}
               className="pwa-install-logo w-24 h-24 mb-3 drop-shadow-2xl"
             />
-            <div className="text-white font-bold text-2xl leading-tight">Instalar OMEGA PY</div>
+            <div className="text-white font-bold text-2xl leading-tight">Instalar {SYSTEM_BRAND.name}</div>
             <div className="text-brand-gold text-sm font-semibold mt-1">Melhor experiência de uso no celular</div>
           </div>
 
           <p className="text-gray-300 text-sm leading-relaxed mb-5 text-center">
-            Para instalar e usar o OMEGA PY com aparência de aplicativo, sem ocupar espaço com a barra do navegador,
-            adicione o OMEGA PY à tela de início do seu telefone.
+            Para instalar e usar o {SYSTEM_BRAND.name} com aparência de aplicativo, sem ocupar espaço com a barra do navegador,
+            adicione o {SYSTEM_BRAND.name} à tela de início do seu telefone.
           </p>
 
           <div className="space-y-3 mb-5">
@@ -119,7 +120,7 @@ export function Login() {
             <div className="pwa-install-step">
               <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
               <div>
-                <div className="font-semibold text-white">Depois abra pelo ícone OMEGA PY</div>
+                <div className="font-semibold text-white">Depois abra pelo ícone {SYSTEM_BRAND.name}</div>
                 <div className="text-gray-400 text-sm">
                   Use o ícone criado na tela inicial para abrir com cara de aplicativo e melhor aproveitamento da tela.
                 </div>
@@ -147,8 +148,10 @@ export function Login() {
         <div className="absolute top-0 left-0 right-0 h-1 bg-brand-gold" />
         
         <div className="text-center mb-8 flex flex-col items-center">
-          <div className="text-brand-gold font-bold text-4xl tracking-widest flex items-baseline justify-center mb-2">
-            OMEGA<span className="text-red-500">PY</span>
+          <img src={SYSTEM_BRAND.logoMarkUrl} alt={SYSTEM_BRAND.name} className="mb-3 h-24 w-24 object-contain drop-shadow-2xl" />
+          <div className="text-center leading-tight">
+            <div className="text-3xl font-black tracking-[0.16em] text-brand-gold">AURA</div>
+            <div className="mt-1 text-xs font-semibold uppercase tracking-[0.34em] text-gray-300">Sistemas</div>
           </div>
           <p className="text-gray-400 text-sm mt-4">Acesso ao Sistema</p>
         </div>

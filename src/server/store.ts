@@ -4,6 +4,7 @@ import {
   products, stockBalances, stockReservations, stockMovements, sales, saleItems, customers,
   storeOrders, companySettings, systemSettings, users, roles, auditLogs,
   productGroups, productGroupsDraft, productSubgroups, productImages, accountMovements, storePageviews,
+  storeNewsletterSubscribers,
   brandLogos,
 } from "../db/schema";
 import { and, desc, eq, gt, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
@@ -80,7 +81,8 @@ async function getStoreConfig() {
   const pixRows = await db.select().from(systemSettings).where(eq(systemSettings.key, PIX_SETTINGS_KEY)).limit(1);
   const pix = (pixRows[0]?.value as any) || {};
   return {
-    storeName: cs?.tradeName || cs?.companyName || "Loja",
+    storeName: cs?.tradeName || cs?.companyName || "Sua loja",
+    logoUrl: cs?.logoUrl || "",
     city: cs?.city || "",
     whatsapp: cs?.whatsappGateway || "",
     pixKey: pix.pixKey || "",
@@ -97,8 +99,61 @@ router.get("/info", async (_req, res) => {
     // appVersion: a loja aberta há dias no navegador compara com a sua e avisa
     // pra recarregar — senão o formulário velho bate num servidor novo.
     const { APP_VERSION } = await import("../lib/version");
-    res.json({ storeName: c.storeName, city: c.city, whatsapp: c.whatsapp, pixEnabled: !!c.pixKey, appVersion: APP_VERSION, currencies: c.currencies });
+    res.json({ storeName: c.storeName, logoUrl: c.logoUrl, city: c.city, whatsapp: c.whatsapp, pixEnabled: !!c.pixKey, appVersion: APP_VERSION, currencies: c.currencies });
   } catch (err: any) { res.status(500).json({ error: "Loja indisponível." }); }
+});
+
+// PWA da vitrine: diferente do manifest do ERP, este pertence à loja da
+// cliente. Nome, ícone e tela inicial acompanham Configurações > Empresa.
+router.get("/manifest.webmanifest", async (_req, res) => {
+  try {
+    const c = await getStoreConfig();
+    const name = String(c.storeName || "Sua loja").trim().slice(0, 80) || "Sua loja";
+    res.type("application/manifest+json").set("Cache-Control", "no-store").json({
+      name,
+      short_name: name.slice(0, 24),
+      description: `${name} — loja online`,
+      start_url: "/loja/",
+      scope: "/loja/",
+      display: "standalone",
+      orientation: "portrait",
+      theme_color: "#d46a86",
+      background_color: "#fff5f7",
+      icons: [
+        { src: "/api/store/icon/192", sizes: "192x192", type: "image/png", purpose: "any" },
+        { src: "/api/store/icon/512", sizes: "512x512", type: "image/png", purpose: "any" },
+      ],
+    });
+  } catch {
+    res.status(503).json({ error: "Manifesto da loja indisponível." });
+  }
+});
+
+router.get("/icon/:size", async (req, res) => {
+  try {
+    const size = req.params.size === "512" ? "512" : "192";
+    const c = await getStoreConfig();
+    const logo = String(c.logoUrl || "");
+    const data = logo.match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/);
+    if (data) {
+      res.type(data[1]).set("Cache-Control", "no-store").send(Buffer.from(data[2], "base64"));
+      return;
+    }
+    if (/^https?:\/\//i.test(logo)) {
+      res.redirect(302, logo);
+      return;
+    }
+    if (/^\/branding\/[a-z0-9/_-]+\.png$/i.test(logo)) {
+      res.redirect(302, logo);
+      return;
+    }
+    // Sem logo cadastrada, a vitrine usa uma marca neutra. A identidade Aura
+    // pertence ao sistema administrativo e não deve aparecer como logo do cliente.
+    res.redirect(302, `/branding/store-placeholder-${size}.png?v=1`);
+  } catch {
+    const size = req.params.size === "512" ? "512" : "192";
+    res.redirect(302, `/branding/store-placeholder-${size}.png?v=1`);
+  }
 });
 
 // Condição base do catálogo: ativo, visível na loja e com estoque livre.
@@ -281,17 +336,21 @@ router.get("/brands", async (_req, res) => {
 // Categorias com contagem de produtos disponíveis (pra navegação da vitrine).
 router.get("/categories", async (_req, res) => {
   try {
-    const [rows, subgroupRows] = await Promise.all([
+    const [rows, countRows, subgroupRows] = await Promise.all([
       db.select({
-        id: productGroups.id, name: productGroups.name, icon: productGroups.icon,
-        count: sql<number>`count(*)`,
+        id: productGroups.id,
+        name: productGroups.name,
+        icon: productGroups.icon,
+        sortOrder: productGroups.sortOrder,
       })
+        .from(productGroups)
+        .where(and(eq(productGroups.storeVisible, true), eq(productGroups.isActive, true), isNull(productGroups.deletedAt)))
+        .orderBy(productGroups.sortOrder, productGroups.name),
+      db.select({ groupId: products.groupId, count: sql<number>`count(*)` })
         .from(products)
         .innerJoin(stockBalances, eq(products.id, stockBalances.productId))
-        .innerJoin(productGroups, eq(products.groupId, productGroups.id))
-        .where(and(catalogWhere(), eq(productGroups.storeVisible, true)))
-        .groupBy(productGroups.id, productGroups.name, productGroups.icon)
-        .orderBy(sql`count(*) desc`),
+        .where(catalogWhere())
+        .groupBy(products.groupId),
       // Subgrupos só entram na navegação se tiverem produto visível de
       // verdade — subgrupo vazio não aparece como botão no catálogo.
       db.select({
@@ -304,12 +363,13 @@ router.get("/categories", async (_req, res) => {
         .groupBy(productSubgroups.id, productSubgroups.groupId, productSubgroups.name)
         .orderBy(productSubgroups.name),
     ]);
+    const countByGroup = new Map(countRows.map((row) => [row.groupId, Number(row.count)]));
     const subgroupsByGroup: Record<string, { id: string; name: string }[]> = {};
     for (const sg of subgroupRows) {
       (subgroupsByGroup[sg.groupId] ||= []).push({ id: sg.id, name: sg.name });
     }
     res.json({
-      data: rows.map((r) => ({ ...r, count: Number(r.count), subgroups: subgroupsByGroup[r.id] || [] })),
+      data: rows.map((r) => ({ ...r, count: countByGroup.get(r.id) || 0, subgroups: subgroupsByGroup[r.id] || [] })),
     });
   } catch (err: any) { res.status(500).json({ error: "Erro ao carregar categorias." }); }
 });
@@ -593,6 +653,31 @@ router.get("/product/:id", async (req, res) => {
       await db.insert(storePageviews).values({ path, visitorId, country, region, city });
       res.status(201).json({ success: true });
     } catch { res.status(200).json({ success: false }); } // nunca deixa isso quebrar a navegação do cliente
+  });
+
+  // Cadastro simples de ofertas da home. Repetir o mesmo e-mail apenas
+  // reativa a inscrição, sem duplicar contato e sem criar cliente incompleto.
+  router.post("/newsletter", async (req, res) => {
+    try {
+      const ip = clientIp(req);
+      if (!rateLimit(`newsletter:${ip}`, 8, 10 * 60 * 1000)) {
+        return res.status(429).json({ error: "Muitas tentativas. Aguarde alguns minutos." });
+      }
+      const email = String(req.body?.email || "").trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+        return res.status(400).json({ error: "Informe um e-mail válido." });
+      }
+      await db.insert(storeNewsletterSubscribers)
+        .values({ email, source: "HOME_FIRST_ORDER" })
+        .onConflictDoUpdate({
+          target: storeNewsletterSubscribers.email,
+          set: { isActive: true, source: "HOME_FIRST_ORDER", updatedAt: new Date() },
+        });
+      return res.status(201).json({ success: true });
+    } catch (err: any) {
+      console.error("Erro ao cadastrar newsletter:", err);
+      return res.status(500).json({ error: "Não foi possível cadastrar agora." });
+    }
   });
 
   // Criação silenciosa do lead (Carrinho Abandonado)
@@ -1440,7 +1525,7 @@ router.get("/admin/orders/:id/dossier", requireAuth, requirePermission("sales", 
 
     // ================= CABEÇALHO =================
     doc.rect(0, 0, 595, 68).fill(INK);
-    const empresa = String(cs?.tradeName || cs?.companyName || "Loja");
+    const empresa = String(cs?.tradeName || cs?.companyName || "Sua loja");
     doc.fillColor("#ffffff").fontSize(12.5).font("Helvetica-Bold").text(empresa, M, 20, { width: 300 });
     const idLinha = [cs?.companyName !== empresa ? cs?.companyName : null, cs?.documentNumber ? `${cs?.documentType || "DOC"} ${cs.documentNumber}` : null, cs?.city]
       .filter(Boolean).join("  ·  ");

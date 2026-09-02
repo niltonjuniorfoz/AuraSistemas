@@ -1027,12 +1027,25 @@ const resources = {
   }
 };
 
+const STOREFRONT_LANGUAGE_VERSION = 'db-cosmetics-pt-v1';
+const storefrontLanguage = (() => {
+  if (typeof window === 'undefined') return 'pt';
+
+  const versionKey = 'storeLangVersion';
+  if (localStorage.getItem(versionKey) !== STOREFRONT_LANGUAGE_VERSION) {
+    localStorage.setItem('storeLang', 'pt');
+    localStorage.setItem(versionKey, STOREFRONT_LANGUAGE_VERSION);
+  }
+
+  return localStorage.getItem('storeLang') || 'pt';
+})();
+
 i18n
   .use(initReactI18next)
   .init({
     resources,
-    lng: localStorage.getItem('storeLang') || 'es', // Default to Spanish like Genove
-    fallbackLng: 'es',
+    lng: storefrontLanguage,
+    fallbackLng: 'pt',
     interpolation: {
       escapeValue: false
     }

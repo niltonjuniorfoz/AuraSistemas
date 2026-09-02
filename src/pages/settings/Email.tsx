@@ -124,7 +124,7 @@ export function Email() {
 
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-300">Usuário de Autenticação</label>
-              <input value={formData.user} onChange={e => setFormData({...formData, user: e.target.value})} type="text" placeholder="envios@originworld.com" className="w-full bg-[#171717] border border-gray-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-brand-gold transition-colors" />
+              <input value={formData.user} onChange={e => setFormData({...formData, user: e.target.value})} type="text" placeholder="envios@sualoja.com.br" className="w-full bg-[#171717] border border-gray-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-brand-gold transition-colors" />
             </div>
 
             <div className="space-y-2">
@@ -134,12 +134,12 @@ export function Email() {
 
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-300">E-mail do Remetente (De:)</label>
-              <input value={formData.fromEmail} onChange={e => setFormData({...formData, fromEmail: e.target.value})} type="email" placeholder="nao-responda@originworld.com" className="w-full bg-[#171717] border border-gray-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-brand-gold transition-colors" />
+              <input value={formData.fromEmail} onChange={e => setFormData({...formData, fromEmail: e.target.value})} type="email" placeholder="nao-responda@sualoja.com.br" className="w-full bg-[#171717] border border-gray-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-brand-gold transition-colors" />
             </div>
 
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-300">Nome do Remetente</label>
-              <input value={formData.fromName} onChange={e => setFormData({...formData, fromName: e.target.value})} type="text" placeholder="OMEGA PY" className="w-full bg-[#171717] border border-gray-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-brand-gold transition-colors" />
+              <input value={formData.fromName} onChange={e => setFormData({...formData, fromName: e.target.value})} type="text" placeholder="Nome da sua loja" className="w-full bg-[#171717] border border-gray-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-brand-gold transition-colors" />
             </div>
           </div>
 

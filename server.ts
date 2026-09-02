@@ -497,11 +497,13 @@ async function ensureRuntimeSchema() {
 }
 
 async function resetMasterPasswordFromEnv() {
-  const newPassword = String(process.env.ORIGIN_MASTER_RESET_PASSWORD || "").trim();
+  const newPassword = String(
+    process.env.AURA_MASTER_RESET_PASSWORD || process.env.ORIGIN_MASTER_RESET_PASSWORD || "",
+  ).trim();
   if (!newPassword) return;
 
   if (newPassword.length < 8) {
-    console.error("[MASTER RESET] ORIGIN_MASTER_RESET_PASSWORD precisa ter pelo menos 8 caracteres. Senha nao alterada.");
+    console.error("[MASTER RESET] AURA_MASTER_RESET_PASSWORD precisa ter pelo menos 8 caracteres. Senha nao alterada.");
     return;
   }
 
@@ -529,7 +531,7 @@ async function resetMasterPasswordFromEnv() {
     return;
   }
 
-  console.warn("[MASTER RESET] Senha do usuario master foi redefinida. Remova ORIGIN_MASTER_RESET_PASSWORD do Render e faca novo deploy.");
+  console.warn("[MASTER RESET] Senha do usuario master foi redefinida. Remova AURA_MASTER_RESET_PASSWORD do ambiente e faca novo deploy.");
 }
 
 
@@ -744,4 +746,3 @@ async function startServer() {
 }
 
 startServer();
-

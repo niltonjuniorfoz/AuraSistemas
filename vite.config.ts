@@ -5,7 +5,7 @@ import {defineConfig, type PluginOption} from 'vite';
 
 function productionHardeningPlugin(): PluginOption {
   return {
-    name: 'origin-production-hardening',
+    name: 'aura-sistemas-production-hardening',
     apply: 'build',
     generateBundle(_options, bundle) {
       for (const [fileName, asset] of Object.entries(bundle)) {
