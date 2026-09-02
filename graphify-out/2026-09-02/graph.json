@@ -8447,6 +8447,18 @@
       "source_location": "L20"
     },
     {
+      "id": "scripts_vercel_bootstrap_hasstrongpassword",
+      "label": "hasStrongPassword()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 99,
+      "community_name": "vercel-bootstrap.mjs",
+      "file_type": "code",
+      "norm_label": "hasstrongpassword()",
+      "source_file": "scripts/vercel-bootstrap.mjs",
+      "source_location": "L40"
+    },
+    {
       "id": "scripts_vercel_bootstrap_run",
       "label": "run()",
       "_callable": true,
@@ -8456,7 +8468,7 @@
       "file_type": "code",
       "norm_label": "run()",
       "source_file": "scripts/vercel-bootstrap.mjs",
-      "source_location": "L20"
+      "source_location": "L21"
     },
     {
       "id": "scripts_vercel_bootstrap_sanitize",
@@ -8468,7 +8480,7 @@
       "file_type": "code",
       "norm_label": "sanitize()",
       "source_file": "scripts/vercel-bootstrap.mjs",
-      "source_location": "L11"
+      "source_location": "L12"
     },
     {
       "id": "src_db_schema_deliveryitems",
@@ -16745,17 +16757,6 @@
       "source_location": "L1"
     },
     {
-      "id": "scripts_vercel_bootstrap_push",
-      "label": "push",
-      "_origin": "ast",
-      "community": 99,
-      "community_name": "vercel-bootstrap.mjs",
-      "file_type": "code",
-      "norm_label": "push",
-      "source_file": "scripts/vercel-bootstrap.mjs",
-      "source_location": "L48"
-    },
-    {
       "id": "scripts_vercel_bootstrap_report",
       "label": "report",
       "_origin": "ast",
@@ -16764,7 +16765,7 @@
       "file_type": "code",
       "norm_label": "report",
       "source_file": "scripts/vercel-bootstrap.mjs",
-      "source_location": "L39"
+      "source_location": "L44"
     },
     {
       "id": "scripts_vercel_bootstrap_secrets",
@@ -16775,7 +16776,7 @@
       "file_type": "code",
       "norm_label": "secrets",
       "source_file": "scripts/vercel-bootstrap.mjs",
-      "source_location": "L4"
+      "source_location": "L5"
     }
   ],
   "links": [
@@ -16896,7 +16897,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "scripts/vercel-bootstrap.mjs",
-      "source_location": "L35",
+      "source_location": "L36",
       "weight": 1.0
     },
     {
@@ -53286,7 +53287,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "scripts/vercel-bootstrap.mjs",
-      "source_location": "L11",
+      "source_location": "L12",
       "weight": 1.0
     },
     {
@@ -53297,7 +53298,18 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "scripts/vercel-bootstrap.mjs",
-      "source_location": "L20",
+      "source_location": "L21",
+      "weight": 1.0
+    },
+    {
+      "source": "scripts_vercel_bootstrap",
+      "target": "scripts_vercel_bootstrap_hasstrongpassword",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "scripts/vercel-bootstrap.mjs",
+      "source_location": "L40",
       "weight": 1.0
     },
     {
@@ -53308,7 +53320,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "scripts/vercel-bootstrap.mjs",
-      "source_location": "L39",
+      "source_location": "L44",
       "weight": 1.0
     },
     {
@@ -53319,18 +53331,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "scripts/vercel-bootstrap.mjs",
-      "source_location": "L4",
-      "weight": 1.0
-    },
-    {
-      "source": "scripts_vercel_bootstrap",
-      "target": "scripts_vercel_bootstrap_push",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "scripts/vercel-bootstrap.mjs",
-      "source_location": "L48",
+      "source_location": "L5",
       "weight": 1.0
     },
     {
@@ -65694,5 +65695,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "48cdc618a6e5190679411c2be20bfb167843bbe4"
+  "built_at_commit": "e640afcd7c71b4b79d37c3eae337b9a0b665ac61"
 }

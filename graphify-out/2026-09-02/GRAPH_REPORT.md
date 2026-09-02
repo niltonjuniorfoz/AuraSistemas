@@ -1,7 +1,7 @@
 # Graph Report - AuraSistemas  (2026-09-02)
 
 ## Corpus Check
-- 235 files · ~686,612 words
+- 235 files · ~686,685 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `48cdc618`
+- Built from commit: `e640afcd`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -385,7 +385,7 @@ Nodes (6): main(), pick(), r2(), r4(), rand(), randInt()
 
 ### Community 99 - "vercel-bootstrap.mjs"
 Cohesion: 0.40
-Nodes (5): push, report, run(), sanitize(), secrets
+Nodes (4): report, run(), sanitize(), secrets
 
 ### Community 102 - "particles.tsx"
 Cohesion: 0.47
@@ -424,7 +424,7 @@ Cohesion: 0.53
 Nodes (5): money(), onlyDigits(), ReceiptModal(), ReceiptModalProps, toWhatsAppNumber()
 
 ## Knowledge Gaps
-- **317 isolated node(s):** `$schema`, `style`, `rsc`, `tsx`, `config` (+312 more)
+- **316 isolated node(s):** `$schema`, `style`, `rsc`, `tsx`, `config` (+311 more)
   These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 430 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
 - **58 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -438,7 +438,7 @@ _Questions this graph is uniquely positioned to answer:_
 - **Why does `MONEY_EPSILON` connect `cash.ts` to `badge.tsx`, `store.ts`, `lib/i18n.ts`, `Pos.tsx`?**
   _High betweenness centrality (0.025) - this node is a cross-community bridge._
 - **What connects `$schema`, `style`, `rsc` to the rest of the system?**
-  _317 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _316 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `sales.ts` be split into smaller, more focused modules?**
   _Cohesion score 0.07619738751814223 - nodes in this community are weakly interconnected._
 - **Should `backupService.ts` be split into smaller, more focused modules?**
