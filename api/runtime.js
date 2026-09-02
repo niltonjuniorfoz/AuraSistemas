@@ -6771,7 +6771,6 @@ init_schema();
 init_authMiddleware();
 import { Router as Router16 } from "express";
 import { eq as eq19, sql as sql15, and as and16, ne as ne2 } from "drizzle-orm";
-import { v4 as uuidv49 } from "uuid";
 var router16 = Router16();
 router16.get("/", async (_req, res) => {
   try {
@@ -6779,36 +6778,6 @@ router16.get("/", async (_req, res) => {
     res.json({ status: "ok", db: "connected", time: (/* @__PURE__ */ new Date()).toISOString() });
   } catch (err) {
     res.status(503).json({ status: "error", db: "unreachable", error: err.message });
-  }
-});
-router16.post("/product-write-smoke", async (_req, res) => {
-  if (process.env.VERCEL_ENV !== "preview") return res.status(404).json({ error: "Not found" });
-  const rollbackMarker = `AURA_SMOKE_ROLLBACK_${Date.now()}`;
-  try {
-    const [group] = await db.select({ id: productGroups.id }).from(productGroups).limit(1);
-    await db.transaction(async (tx) => {
-      const id = uuidv49();
-      await tx.insert(products).values({
-        id,
-        sku: `SMOKE-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`.toUpperCase(),
-        name: "AURA DEPLOYMENT WRITE SMOKE",
-        groupId: group?.id || null,
-        salePriceA: "1.00",
-        salePriceB: "1.00",
-        salePriceC: "1.00",
-        technicalSpecs: [{ label: "smoke", value: "ok" }],
-        storeVisible: false
-      });
-      await tx.insert(stockBalances).values({ productId: id, physicalStock: 0, reservedStock: 0 });
-      throw new Error(rollbackMarker);
-    });
-    return res.status(500).json({ status: "error", error: "Smoke transaction did not rollback" });
-  } catch (error) {
-    if (String(error?.message || "") === rollbackMarker) {
-      return res.json({ status: "ok", dbWrite: "verified", rolledBack: true });
-    }
-    console.error("Product write smoke failed:", error);
-    return res.status(500).json({ status: "error", dbWrite: "failed", error: String(error?.message || "unknown").slice(0, 300) });
   }
 });
 router16.get("/flow", requireAuth, requirePermission("admin", "manage"), async (req, res) => {
@@ -6921,7 +6890,7 @@ init_authMiddleware();
 import { Router as Router18 } from "express";
 import { eq as eq21, desc as desc10, and as and18, inArray as inArray8, notInArray as notInArray3, sql as sql16, gte as gte5, lte as lte5 } from "drizzle-orm";
 init_fx();
-import { v4 as uuidv410 } from "uuid";
+import { v4 as uuidv49 } from "uuid";
 var router18 = Router18();
 router18.use(requireAuth);
 function isPrivilegedRole2(roleName) {
@@ -7398,7 +7367,7 @@ router18.post("/sales/:saleId/payments", requirePermission("cash", "receive_paym
       await tx.update(sales).set({ paymentStatus: newStatus, ...orderStatusUpdate }).where(eq21(sales.id, saleId));
       await syncStoreOrderFromSale(tx, saleId, req.user.userId);
       await tx.insert(auditLogs).values({
-        id: uuidv410(),
+        id: uuidv49(),
         userId: req.user.userId,
         action: "RECEIVE_PAYMENT",
         tableName: "sales",
@@ -7474,7 +7443,7 @@ router18.post("/sales/:saleId/payments/split", requirePermission("cash", "receiv
       const orderStatusUpdate = newStatus === "PAID" && locked.fulfillmentStatus === "DELIVERED" ? { orderStatus: "COMPLETED" } : {};
       await tx.update(sales).set({ paymentStatus: newStatus, ...orderStatusUpdate }).where(eq21(sales.id, saleId));
       await syncStoreOrderFromSale(tx, saleId, req.user.userId);
-      await tx.insert(auditLogs).values({ id: uuidv410(), userId: req.user.userId, action: "RECEIVE_PAYMENT_SPLIT", tableName: "sales", recordId: saleId, newValues: JSON.stringify({ appliedTotal, newStatus, lines: lines.length }) });
+      await tx.insert(auditLogs).values({ id: uuidv49(), userId: req.user.userId, action: "RECEIVE_PAYMENT_SPLIT", tableName: "sales", recordId: saleId, newValues: JSON.stringify({ appliedTotal, newStatus, lines: lines.length }) });
       return { appliedTotal, newStatus };
     });
     res.status(201).json({ success: true, ...result });
@@ -7503,7 +7472,7 @@ router18.post("/misc-receipt", requirePermission("cash", "receive_payment"), asy
       const miscCurrency = companyRows[0]?.defaultCurrency === "BRL" ? "BRL" : "USD";
       const routed = await routePayment(tx, method, amt, { saleLabel: `Avulso: ${desc24}`, userId: req.user.userId, accountId: accountId || null, sourceCurrency: miscCurrency });
       if (!routed) throw new Error(`Nenhuma conta configurada para ${method} \u2014 mapeie em Financeiro > Mapear Contas antes de receber.`);
-      await tx.insert(auditLogs).values({ id: uuidv410(), userId: req.user.userId, action: "MISC_RECEIPT", tableName: "financial_accounts", recordId: accountId || "-", newValues: JSON.stringify({ method, amount: amt, description: desc24 }) });
+      await tx.insert(auditLogs).values({ id: uuidv49(), userId: req.user.userId, action: "MISC_RECEIPT", tableName: "financial_accounts", recordId: accountId || "-", newValues: JSON.stringify({ method, amount: amt, description: desc24 }) });
     });
     res.status(201).json({ success: true });
   } catch (err) {
@@ -7563,7 +7532,7 @@ init_schema();
 init_authMiddleware();
 import { Router as Router19 } from "express";
 import { eq as eq22, and as and19, desc as desc11, inArray as inArray9 } from "drizzle-orm";
-import { v4 as uuidv411 } from "uuid";
+import { v4 as uuidv410 } from "uuid";
 var router19 = Router19();
 router19.use(requireAuth);
 router19.get("/queue", requirePermission("separation", "view"), async (req, res) => {
@@ -7603,7 +7572,7 @@ router19.post("/sales/:saleId/start", requirePermission("separation", "process")
     if (existing.length > 0) {
       taskId = existing[0].id;
     } else {
-      taskId = uuidv411();
+      taskId = uuidv410();
       await db.transaction(async (tx) => {
         await tx.insert(separationTasks).values({
           id: taskId,
@@ -7615,7 +7584,7 @@ router19.post("/sales/:saleId/start", requirePermission("separation", "process")
         const items = await tx.select().from(saleItems).where(eq22(saleItems.saleId, saleId));
         if (items.length > 0) {
           await tx.insert(separationItems).values(items.map((item) => ({
-            id: uuidv411(),
+            id: uuidv410(),
             separationTaskId: taskId,
             saleItemId: item.id,
             productId: item.productId,
@@ -7736,7 +7705,7 @@ init_schema();
 init_authMiddleware();
 import { Router as Router20 } from "express";
 import { eq as eq23, and as and20, desc as desc12, inArray as inArray10 } from "drizzle-orm";
-import { v4 as uuidv412 } from "uuid";
+import { v4 as uuidv411 } from "uuid";
 import bcrypt5 from "bcryptjs";
 var router20 = Router20();
 router20.use(requireAuth);
@@ -7806,7 +7775,7 @@ router20.post("/sales/:saleId/start", requirePermission("delivery", "process"), 
     if (existing.length > 0) {
       taskId = existing[0].id;
     } else {
-      taskId = uuidv412();
+      taskId = uuidv411();
       await db.transaction(async (tx) => {
         await tx.insert(deliveryTasks).values({
           id: taskId,
@@ -7818,7 +7787,7 @@ router20.post("/sales/:saleId/start", requirePermission("delivery", "process"), 
         const items = await tx.select().from(saleItems).where(eq23(saleItems.saleId, saleId));
         if (items.length > 0) {
           await tx.insert(deliveryItems).values(items.map((item) => ({
-            id: uuidv412(),
+            id: uuidv411(),
             deliveryTaskId: taskId,
             saleItemId: item.id,
             productId: item.productId,
@@ -7843,7 +7812,7 @@ router20.post("/sales/:saleId/skip-separation", requirePermission("separation", 
     if (s.length > 0 && s[0].fulfillmentStatus === "PENDING") {
       const existing = await db.select().from(deliveryTasks).where(eq23(deliveryTasks.saleId, saleId)).limit(1);
       if (existing.length === 0) {
-        const taskId = uuidv412();
+        const taskId = uuidv411();
         await db.transaction(async (tx) => {
           await tx.insert(deliveryTasks).values({
             id: taskId,
@@ -7853,7 +7822,7 @@ router20.post("/sales/:saleId/skip-separation", requirePermission("separation", 
           const items = await tx.select().from(saleItems).where(eq23(saleItems.saleId, saleId));
           if (items.length > 0) {
             await tx.insert(deliveryItems).values(items.map((item) => ({
-              id: uuidv412(),
+              id: uuidv411(),
               deliveryTaskId: taskId,
               saleItemId: item.id,
               productId: item.productId,
@@ -7947,7 +7916,7 @@ router20.post("/tasks/:taskId/items/:itemId/scan-serial", requirePermission("del
         throw Object.assign(new Error(msg), { statusCode: 400 });
       }
       await tx.insert(deliverySerials).values({
-        id: uuidv412(),
+        id: uuidv411(),
         deliveryItemId: itemId,
         productId: dItem[0].productId,
         saleItemId: dItem[0].saleItemId,
@@ -7990,7 +7959,7 @@ router20.post("/sales/:saleId/authorize-unpaid", requirePermission("delivery", "
         createdBy: req.user.userId
       });
       await tx.insert(auditLogs).values({
-        id: uuidv412(),
+        id: uuidv411(),
         userId: req.user.userId,
         action: "AUTHORIZE_UNPAID_DELIVERY",
         tableName: "sales",
@@ -8054,7 +8023,7 @@ router20.post("/tasks/:taskId/complete", requirePermission("delivery", "complete
         }).where(eq23(stockBalances.productId, item.productId));
         await consumeFifo(tx, item.productId, item.quantityDelivered, { saleId, reason: "SALE" });
         await tx.insert(stockMovements).values({
-          id: uuidv412(),
+          id: uuidv411(),
           productId: item.productId,
           quantity: -item.quantityDelivered,
           // delivery is an outward movement
@@ -8078,7 +8047,7 @@ router20.post("/tasks/:taskId/complete", requirePermission("delivery", "complete
       await tx.update(deliveryTasks).set({ status: "COMPLETED", completedAt: /* @__PURE__ */ new Date() }).where(eq23(deliveryTasks.id, taskId));
       await tx.update(sales).set({ fulfillmentStatus: "DELIVERED", orderStatus: orderSt }).where(eq23(sales.id, saleId));
       await tx.insert(auditLogs).values({
-        id: uuidv412(),
+        id: uuidv411(),
         userId: req.user.userId,
         action: orderSt === "COMPLETED" ? "DELIVER_SALE" : "DELIVER_UNPAID_AUTHORIZED",
         tableName: "sales",
@@ -8097,7 +8066,7 @@ init_schema();
 init_authMiddleware();
 import { Router as Router21 } from "express";
 import { eq as eq24, desc as desc13, and as and21, inArray as inArray11 } from "drizzle-orm";
-import { v4 as uuidv413 } from "uuid";
+import { v4 as uuidv412 } from "uuid";
 var router21 = Router21();
 router21.use(requireAuth);
 router21.get("/:productId", requirePermission("product", "manage"), async (req, res) => {
@@ -8118,7 +8087,7 @@ router21.post("/:productId", requirePermission("product", "manage"), async (req,
     if (pr.length === 0 || !pr[0].hasSerialNumber) return res.status(400).json({ error: "Este produto n\xE3o usa controle de n\xFAmero de s\xE9rie." });
     const ex = await db.select().from(productSerials).where(and21(eq24(productSerials.productId, productId), eq24(productSerials.serialNumber, serialNumber))).limit(1);
     if (ex.length > 0) return res.status(400).json({ error: "Serial number already registered for this product." });
-    const id = uuidv413();
+    const id = uuidv412();
     await db.insert(productSerials).values({ id, productId, serialNumber, status: "AVAILABLE" });
     res.json({ id });
   } catch (e) {
@@ -8140,7 +8109,7 @@ router21.post("/:productId/bulk", requirePermission("product", "manage"), async 
     if (existing.length > 0) return res.status(409).json({ error: "Um ou mais n\xFAmeros de s\xE9rie j\xE1 constam neste produto." });
     let inserted = 0;
     for (const sn of unique2) {
-      await db.insert(productSerials).values({ id: uuidv413(), productId, serialNumber: sn, status: "AVAILABLE" });
+      await db.insert(productSerials).values({ id: uuidv412(), productId, serialNumber: sn, status: "AVAILABLE" });
       inserted++;
     }
     res.json({ success: true, inserted });
@@ -9713,7 +9682,7 @@ import { eq as eq28, ilike as ilike5, or as or5, and as and23, isNull as isNull7
 import multer2 from "multer";
 import fs3 from "fs";
 import path3 from "path";
-import { v4 as uuidv414 } from "uuid";
+import { v4 as uuidv413 } from "uuid";
 var router24 = Router24();
 router24.use(requireAuth);
 var upload2 = multer2({ storage: multer2.memoryStorage() });
@@ -9799,7 +9768,7 @@ router24.post("/:id/invoices", requirePermission("supplier", "edit"), upload2.si
     if (req.file.size > SUPPLIER_INVOICE_MAX_BYTES) {
       return res.status(400).json({ error: "Arquivo maior que 4 MB." });
     }
-    const id = uuidv414();
+    const id = uuidv413();
     const persistentFilePath = `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`;
     const [created] = await db.insert(supplierInvoiceFiles).values({
       id,
@@ -10158,7 +10127,7 @@ var payables_default = router25;
 
 // src/server/purchases.ts
 init_fx();
-import { v4 as uuidv415 } from "uuid";
+import { v4 as uuidv414 } from "uuid";
 import fs4 from "fs";
 import path4 from "path";
 import xlsx from "xlsx";
@@ -10210,14 +10179,14 @@ router26.post("/import/spreadsheet", requirePermission("purchase", "import"), up
   }
 });
 router26.post("/ocr", requirePermission("purchase", "ocr"), upload3.single("file"), async (req, res) => {
-  const jobId = uuidv415();
+  const jobId = uuidv414();
   try {
     if (!req.file) {
       return res.status(400).json({ error: "Nenhum arquivo enviado" });
     }
-    const allowedMimeTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"];
+    const allowedMimeTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
     if (!allowedMimeTypes.includes(req.file.mimetype)) {
-      return res.status(400).json({ error: "Formato de arquivo inv\xE1lido. Formatos suportados: JPG, JPEG, PNG, WEBP, PDF." });
+      return res.status(400).json({ error: "Formato de arquivo inv\xE1lido. Formatos suportados para OCR com Ollama: JPG, JPEG, PNG e WEBP." });
     }
     const maxBytes = 4 * 1024 * 1024;
     if (req.file.size > maxBytes) {
@@ -10912,7 +10881,7 @@ init_schema();
 init_authMiddleware();
 import { Router as Router27 } from "express";
 import { eq as eq31, desc as desc17, and as and26, gte as gte6, lte as lte6 } from "drizzle-orm";
-import { v4 as uuidv416 } from "uuid";
+import { v4 as uuidv415 } from "uuid";
 var router27 = Router27();
 router27.get("/categories", requireAuth, async (req, res) => {
   try {
@@ -10926,7 +10895,7 @@ router27.post("/categories", requireAuth, requirePermission("expenses", "manage"
   try {
     const { name, type } = req.body;
     const result = await db.insert(expenseCategories).values({
-      id: uuidv416(),
+      id: uuidv415(),
       name,
       type: type || "FIXED"
     }).returning();
@@ -10971,7 +10940,7 @@ router27.post("/", requireAuth, requirePermission("expenses", "manage"), async (
       }
     }
     const result = await db.insert(expenses).values({
-      id: uuidv416(),
+      id: uuidv415(),
       categoryId,
       description,
       expenseDate: new Date(expenseDate || Date.now()),
@@ -11642,7 +11611,7 @@ init_schema();
 init_authMiddleware();
 import { Router as Router30 } from "express";
 import { and as and29, desc as desc19, eq as eq34, ilike as ilike7, inArray as inArray14, or as or7 } from "drizzle-orm";
-import { v4 as uuidv417 } from "uuid";
+import { v4 as uuidv416 } from "uuid";
 import multer4 from "multer";
 var router30 = Router30();
 router30.use(requireAuth);
@@ -11840,7 +11809,7 @@ router30.post("/", requirePermission("purchase", "create"), async (req, res) => 
         const missingProduct = productIds.find((productId) => !existingProductIds.has(productId));
         if (missingProduct) throw new Error("Um dos produtos cadastrados n\xE3o foi encontrado.");
       }
-      const transferId = uuidv417();
+      const transferId = uuidv416();
       const code = transferCode();
       await tx.insert(stockTransfers).values({
         id: transferId,
@@ -11859,7 +11828,7 @@ router30.post("/", requirePermission("purchase", "create"), async (req, res) => 
       });
       for (const item of normalizedItems) {
         await tx.insert(stockTransferItems).values({
-          id: uuidv417(),
+          id: uuidv416(),
           transferId,
           productId: item.productId,
           productName: item.productName,
@@ -12416,7 +12385,7 @@ init_authMiddleware();
 init_audit();
 import { Router as Router36 } from "express";
 import { and as and33, desc as desc22, eq as eq39, inArray as inArray15, isNotNull as isNotNull4, isNull as isNull10, or as or9, sql as sql25 } from "drizzle-orm";
-import { v4 as uuidv418 } from "uuid";
+import { v4 as uuidv417 } from "uuid";
 
 // src/lib/cpf.ts
 var onlyDigits = (v) => String(v || "").replace(/\D/g, "");
@@ -13469,7 +13438,7 @@ router36.post("/orders", requireCustomerAuth, async (req, res) => {
       const map = new Map(prods.map((p) => [p.id, p]));
       let subtotal = 0;
       const toInsert = [];
-      const saleId = uuidv418();
+      const saleId = uuidv417();
       for (const raw of items) {
         const p = map.get(String(raw.productId));
         const qty = Math.floor(Number(raw.quantity) || 0);
@@ -13481,7 +13450,7 @@ router36.post("/orders", requireCustomerAuth, async (req, res) => {
         const total = round23(unit * qty);
         subtotal = round23(subtotal + total);
         toInsert.push({
-          id: uuidv418(),
+          id: uuidv417(),
           saleId,
           productId: p.id,
           quantity: qty,
@@ -13541,9 +13510,9 @@ router36.post("/orders", requireCustomerAuth, async (req, res) => {
         const beforeRes = Number(p.reserved);
         const newRes = beforeRes + Number(it.quantity);
         await tx.update(stockBalances).set({ reservedStock: newRes, updatedAt: /* @__PURE__ */ new Date() }).where(eq39(stockBalances.productId, it.productId));
-        await tx.insert(stockReservations).values({ id: uuidv418(), saleId, productId: it.productId, quantity: it.quantity, status: "ACTIVE" });
+        await tx.insert(stockReservations).values({ id: uuidv417(), saleId, productId: it.productId, quantity: it.quantity, status: "ACTIVE" });
         await tx.insert(stockMovements).values({
-          id: uuidv418(),
+          id: uuidv417(),
           productId: it.productId,
           movementType: "STORE_ORDER_RESERVE",
           quantity: it.quantity,
@@ -13607,7 +13576,7 @@ Declara\xE7\xE3o adicional: autorizo que o pagamento deste pedido seja feito por
         await tx.update(abandonedCarts2).set({ status: "RECOVERED", updatedAt: /* @__PURE__ */ new Date() }).where(eq39(abandonedCarts2.customerPhone, phone));
       }
       await tx.insert(auditLogs).values({
-        id: uuidv418(),
+        id: uuidv417(),
         userId: owner.id,
         action: "STORE_ORDER_CREATED",
         tableName: "store_orders",
@@ -14591,7 +14560,7 @@ router36.put("/admin/config", requireAuth, requirePermission("settings", "manage
         }
       },
       vitrines: Array.isArray(b.vitrines) ? b.vitrines.map((vt) => ({
-        id: String(vt?.id || uuidv418()),
+        id: String(vt?.id || uuidv417()),
         title: String(vt?.title || "").slice(0, 60),
         productIds: Array.isArray(vt?.productIds) ? vt.productIds.map(String).slice(0, 12) : []
       })).slice(0, 20) : [],
@@ -14823,7 +14792,7 @@ router36.post("/admin/config/publish", requireAuth, requirePermission("settings"
         await tx.delete(systemSettings).where(eq39(systemSettings.key, STORE_CONFIG_DRAFT_KEY));
       }
       await tx.insert(auditLogs).values({
-        id: uuidv418(),
+        id: uuidv417(),
         userId: req.user.userId,
         action: "STORE_CONFIG_PUBLISH",
         tableName: "system_settings",
@@ -15545,10 +15514,6 @@ function markResponseStart(req, res, next) {
 }
 
 // api/handler.ts
-init_db();
-init_schema();
-init_audit();
-import { v4 as uuidv419 } from "uuid";
 function buildCorsOptions() {
   const allowedOrigins = (process.env.CORS_ORIGINS || "").split(",").map((origin) => origin.trim()).filter(Boolean);
   if (!allowedOrigins.length) return { origin: false };
@@ -15623,36 +15588,6 @@ app.get("/api/ping", (_req, res) => {
     runtime: "vercel",
     commit: process.env.VERCEL_GIT_COMMIT_SHA || null
   });
-});
-app.post("/api/__preview/product-write-selftest", async (_req, res) => {
-  if (process.env.VERCEL_ENV !== "preview") return res.status(404).json({ error: "Not found" });
-  let rolledBack = false;
-  try {
-    await db.transaction(async (tx) => {
-      const [actor] = await tx.select({ id: users.id }).from(users).limit(1);
-      if (!actor) throw new Error("SELFTEST_NO_USER");
-      const id = uuidv419();
-      await tx.insert(products).values({
-        id,
-        sku: `AURA-SELFTEST-${Date.now()}`,
-        name: "AURA PREVIEW WRITE SELFTEST",
-        unitMeasure: "UN",
-        salePriceA: "1.00",
-        salePriceB: "1.00",
-        salePriceC: "1.00"
-      });
-      await tx.insert(stockBalances).values({ productId: id, physicalStock: 0, reservedStock: 0 });
-      await logAction(actor.id, "SELF_TEST", "products", id, null, { preview: true }, tx);
-      throw new Error("__AURA_SELFTEST_ROLLBACK__");
-    });
-  } catch (error) {
-    if (error?.message === "__AURA_SELFTEST_ROLLBACK__") rolledBack = true;
-    else {
-      console.error("Preview product write selftest failed:", error);
-      return res.status(500).json({ ok: false, error: "Product write self-test failed" });
-    }
-  }
-  res.json({ ok: rolledBack, rolledBack });
 });
 app.use((error, _req, res, _next) => {
   console.error("Erro n\xE3o tratado na API:", error);

@@ -1,16 +1,16 @@
 # Graph Report - AuraSistemas  (2026-09-02)
 
 ## Corpus Check
-- 245 files · ~758,162 words
+- 246 files · ~758,844 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1658 nodes · 4648 edges · 142 communities (74 shown, 62 thin omitted)
+- 1675 nodes · 4712 edges · 138 communities (72 shown, 60 thin omitted)
 - Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 67 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `4ec96a5c`
+- Built from commit: `1a332825`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -18,7 +18,7 @@
 - schema.ts
 - runtime.js
 - backupService.ts
-- authMiddleware.ts
+- index.ts
 - elementCatalog.ts
 - api.ts
 - server.ts
@@ -26,46 +26,46 @@
 - vercel.json
 - App.tsx
 - store.ts
-- Products.tsx
+- authMiddleware.ts
 - cn
 - Dashboard.tsx
-- settings.ts
+- receipts.ts
 - storeApiFetch
-- dashboard.ts
+- AuthRequest
 - badge.tsx
-- cash.ts
-- Analytics.tsx
+- finance.ts
+- Finance.tsx
 - useEditMode
 - Toast.tsx
 - ThemeCustomizer.tsx
-- money.ts
+- OrderStatus.tsx
 - command.tsx
-- admin.ts
+- handler.ts
 - components.json
-- Layout.tsx
+- Login.tsx
 - compilerOptions
 - FinancialStatements.tsx
 - lib/utils.ts
 - lib/i18n.ts
-- auth.ts
+- server/customerAuth.ts
 - devDependencies
 - dependencies
 - scripts
 - StockTransfers.tsx
-- main
+- purchases.ts
 - EditModeContext.tsx
 - PaymentProof.tsx
 - ErrorBoundary
 - diag.ts
-- hardenProductionUsers.ts
+- Sales.tsx
 - ShopLayout.tsx
 - Aura Sistemas
 - package.json
 - Setup rápido — trabalho em dupla
-- Pos.tsx
+- Products.tsx
 - ERP Complete Audit Skill
 - local-db.mjs
-- ocrService.ts
+- ollama.ts
 - vite
 - AGENTS.md
 - class-variance-authority
@@ -74,19 +74,19 @@
 - date-fns
 - dotenv
 - drizzle-orm
-- useStorePrefs
-- PurchaseOcr.tsx
+- StockMovementReport.tsx
+- HeaderClock.tsx
 - express
-- geoip-lite
+- buscarProdutoImpl
 - useAdminTranslation
 - @hookform/resolvers
 - i18next
 - jsonwebtoken
 - restoreBackupFromBuffer
 - motion
-- multer
+- @fontsource-variable/inter
 - papaparse
-- pdfkit
+- lucide-react
 - postgres
 - radix-ui
 - @radix-ui/react-dialog
@@ -128,11 +128,11 @@
 - buildPixPayload
 - @types/react-dom
 - getStoreVitrineConfig
-- particles.tsx
+- nodemailer
 - BannerPanel.tsx
 - flagIcons.tsx
 - @types/uuid
-- @google/genai
+- FulfillmentBadge
 - qrcode
 - @radix-ui/react-select
 - react
@@ -141,12 +141,8 @@
 - formatServerCurrency
 - consumeSaleLots
 - apiPerformanceLogger
-- getAiErrorInfo
-- computeDre
-- deleteDeadSaleRecords
-- handler
-- isMaster
-- normalizeProductInput
+- processImageWithOllama
+- StatusBadge
 - drizzle-kit
 - tailwindcss
 - @types/nodemailer
@@ -158,7 +154,7 @@
 3. `useAuthStore` - 58 edges
 4. `Button()` - 54 edges
 5. `Card()` - 49 edges
-6. `db` - 47 edges
+6. `db` - 48 edges
 7. `useEditMode()` - 39 edges
 8. `CardContent()` - 37 edges
 9. `requireAuth()` - 37 edges
@@ -179,35 +175,35 @@
 ## Import Cycles
 - None detected.
 
-## Communities (142 total, 62 thin omitted)
+## Communities (138 total, 60 thin omitted)
 
 ### Community 0 - "schema.ts"
-Cohesion: 0.08
-Nodes (47): abandonedCarts, accountMovements, auditLogs, cashMovements, cashRegisters, deliveryItems, deliveryPaymentOverrides, deliverySerials (+39 more)
+Cohesion: 0.07
+Nodes (48): abandonedCarts, auditLogs, brandLogos, cashMovements, cashRegisterBalances, cashRegisters, companySettings, currencies (+40 more)
 
 ### Community 1 - "runtime.js"
 Cohesion: 0.02
-Nodes (14): buscarProdutoImpl(), dayEndUtc(), formatBrl(), getAiClient(), getRecentAuditLogsForUser(), getTtlMs(), isMasterRole(), isMasterRole2() (+6 more)
+Nodes (20): computeDre(), dayEndUtc(), deleteDeadSaleRecords(), getRecentAuditLogsForUser(), getTtlMs(), handler(), isMaster(), isMasterRole() (+12 more)
 
 ### Community 2 - "backupService.ts"
 Cohesion: 0.09
 Nodes (42): sqlClient, assertOriginBackupPayload(), BACKUP_SETTINGS_KEY, BackupRestoreResult, BackupRunResult, backupsDir(), BackupSettings, checkPendingAutomaticBackupNow() (+34 more)
 
-### Community 3 - "authMiddleware.ts"
-Cohesion: 0.07
-Nodes (44): client, configuredMax, db, expenseCategories, permissions, productGroups, productSubgroups, rolePermissions (+36 more)
+### Community 3 - "index.ts"
+Cohesion: 0.06
+Nodes (41): loaded, app, main(), requiredPassword(), updatePassword(), client, configuredMax, db (+33 more)
 
 ### Community 4 - "elementCatalog.ts"
 Cohesion: 0.16
 Nodes (16): bannerElements(), CampoPermitido, Capacidade, DEFAULT_CATALOGO_SECTIONS, DEFAULT_HOME_SECTIONS, ElementoCatalogo, ESTATICOS, getElemento() (+8 more)
 
 ### Community 5 - "api.ts"
-Cohesion: 0.15
-Nodes (26): Button(), buttonVariants, Card(), CardContent(), extractList(), PUBLIC_API_ENDPOINTS, Archived(), ArchiveType (+18 more)
+Cohesion: 0.10
+Nodes (41): Archived, AuditLogs, Customers, Groups, ProtectedRoute(), Reports, Users, ConfirmModal() (+33 more)
 
 ### Community 6 - "server.ts"
-Cohesion: 0.06
-Nodes (63): loaded, loaded, loaded, app, app, app, handler(), rebuildApiUrl() (+55 more)
+Cohesion: 0.07
+Nodes (45): loaded, loaded, app, app, applyProductionSecurityHeaders(), buildCorsOptions(), ensureRuntimeSchema(), ensureTransferChecklistSchema() (+37 more)
 
 ### Community 7 - "StoreHome.tsx"
 Cohesion: 0.14
@@ -218,48 +214,48 @@ Cohesion: 0.25
 Nodes (7): maxDuration, buildCommand, functions, api/runtime.js, outputDirectory, rewrites, $schema
 
 ### Community 9 - "App.tsx"
-Cohesion: 0.04
-Nodes (47): AbandonedCarts, AbcReport, Analytics, Archived, AuditLogs, Backup, Brands, Cash (+39 more)
+Cohesion: 0.05
+Nodes (42): AbandonedCarts, Backup, Brands, Cash, CompanySettings, Currencies, Email, Fiscal (+34 more)
 
 ### Community 10 - "store.ts"
-Cohesion: 0.07
-Nodes (26): customerAddresses, customerWishlist, productGroupsDraft, productImages, storeNewsletterSubscribers, CustomerAuthRequest, hits, requireCustomerAuth() (+18 more)
+Cohesion: 0.09
+Nodes (27): productGroupsDraft, productImages, storeNewsletterSubscribers, formatBrl(), MONEY_EPSILON, round2(), availableStockExpr, buscarProdutoImpl() (+19 more)
 
-### Community 11 - "Products.tsx"
+### Community 11 - "authMiddleware.ts"
 Cohesion: 0.13
-Nodes (26): BarcodeDetectorLike, BarcodeScannerModal(), BarcodeScannerModalProps, loadHtml5Qrcode(), Window, CompositionDonut(), ConfirmModal(), ConfirmModalProps (+18 more)
+Nodes (19): permissions, productGroups, products, productSubgroups, rolePermissions, roles, shelves, users (+11 more)
 
 ### Community 12 - "cn"
 Cohesion: 0.10
-Nodes (31): DataTableProps, CardAction(), CardDescription(), CardFooter(), CardHeader(), CardTitle(), DropdownMenu(), DropdownMenuCheckboxItem() (+23 more)
+Nodes (29): DataTableProps, BorderBeam(), BorderBeamProps, CardAction(), CardDescription(), CardFooter(), CardHeader(), CardTitle() (+21 more)
 
 ### Community 13 - "Dashboard.tsx"
-Cohesion: 0.10
-Nodes (24): AiReportModal(), AiReportModalProps, AnimatedNumber(), AnimatedNumberProps, DisplayCurrencySelector(), prefersReducedMotion(), AVATAR_COLORS, CHART_METRIC_LABELS (+16 more)
+Cohesion: 0.11
+Nodes (23): Dashboard, AnimatedNumber(), AnimatedNumberProps, DisplayCurrencySelector(), prefersReducedMotion(), AVATAR_COLORS, CHART_METRIC_LABELS, ChartMetricKey (+15 more)
 
-### Community 14 - "settings.ts"
-Cohesion: 0.10
-Nodes (22): brandLogos, companySettings, currencies, emailSettings, fiscalSettings, printerSettings, systemSettings, formatAmount() (+14 more)
+### Community 14 - "receipts.ts"
+Cohesion: 0.16
+Nodes (15): emailLogs, printLogs, formatAmount(), formatServerCurrency(), getServerCurrencySettings(), normalizeCurrencyMode(), normalizeExchangeRate(), number() (+7 more)
 
 ### Community 15 - "storeApiFetch"
-Cohesion: 0.11
-Nodes (21): AccountLayout, MyAddresses, MyProfile, ResetPassword, storeApiFetch(), AccountAuth(), requestReset(), submitLogin() (+13 more)
+Cohesion: 0.14
+Nodes (17): AccountLayout, MyAddresses, storeApiFetch(), AccountLayout(), emptyForm, MyAddresses(), remove(), submit() (+9 more)
 
-### Community 16 - "dashboard.ts"
-Cohesion: 0.11
-Nodes (27): costConsumptions, costLayers, customers, expenses, financialAccounts, fxRates, payables, personalExpenses (+19 more)
+### Community 16 - "AuthRequest"
+Cohesion: 0.12
+Nodes (19): customers, expenseCategories, expenses, personalCategories, personalExpenses, profitDistributionRules, storePageviews, dayEndUtc() (+11 more)
 
 ### Community 17 - "badge.tsx"
-Cohesion: 0.09
-Nodes (26): Shortcuts, Badge(), badgeVariants, AbcReport(), classStyle, firstOfMonth(), today(), brl() (+18 more)
-
-### Community 18 - "cash.ts"
 Cohesion: 0.13
-Nodes (18): cashRegisterBalances, paymentMethodAccounts, CURRENCIES, Currency, CURRENCY_LABEL, isValidCurrency(), MONEY_EPSILON, findMasterByPassword() (+10 more)
+Nodes (18): AbcReport, Shortcuts, SimpleDeliveries, Badge(), badgeVariants, AbcReport(), classStyle, firstOfMonth() (+10 more)
 
-### Community 19 - "Analytics.tsx"
-Cohesion: 0.16
-Nodes (13): brl(), compact(), DarkTooltip(), dayLabel(), FxSparkline(), RankingBars(), RevenueAreaChart(), Analytics() (+5 more)
+### Community 18 - "finance.ts"
+Cohesion: 0.18
+Nodes (16): accountMovements, financialAccounts, payables, paymentMethodAccounts, CURRENCIES, Currency, CURRENCY_LABEL, isValidCurrency() (+8 more)
+
+### Community 19 - "Finance.tsx"
+Cohesion: 0.10
+Nodes (23): Analytics, Finance, Personal, brl(), compact(), CompositionDonut(), DarkTooltip(), dayLabel() (+15 more)
 
 ### Community 20 - "useEditMode"
 Cohesion: 0.17
@@ -271,27 +267,27 @@ Nodes (11): add(), emit(), getSnapshot(), items, listeners, remove(), STYLE, sub
 
 ### Community 22 - "ThemeCustomizer.tsx"
 Cohesion: 0.11
-Nodes (19): COLOR_PRESETS, LAYOUTS, Sheet(), SheetContent(), SheetDescription(), SheetFooter(), SheetHeader(), SheetOverlay() (+11 more)
+Nodes (21): COLOR_PRESETS, LAYOUTS, ThemeCustomizer(), Sheet(), SheetContent(), SheetDescription(), SheetFooter(), SheetHeader() (+13 more)
 
-### Community 23 - "money.ts"
-Cohesion: 0.11
-Nodes (17): OrderStatus, inputNumber(), PriceCurrencyInput(), PriceCurrencyInputProps, BaseCurrency, calcOrderTotal(), formatBrl(), parseMoneyInput() (+9 more)
+### Community 23 - "OrderStatus.tsx"
+Cohesion: 0.29
+Nodes (3): OrderStatus, statusClasses, statusIcons
 
 ### Community 24 - "command.tsx"
-Cohesion: 0.13
-Nodes (18): ACTIONS, Nav, Command(), CommandDialog(), CommandEmpty(), CommandGroup(), CommandInput(), CommandItem() (+10 more)
+Cohesion: 0.12
+Nodes (19): ACTIONS, CommandTrigger(), Nav, Command(), CommandDialog(), CommandEmpty(), CommandGroup(), CommandInput() (+11 more)
 
-### Community 25 - "admin.ts"
+### Community 25 - "handler.ts"
 Cohesion: 0.10
-Nodes (21): app, loaded, notifications, stockTransferItems, stockTransfers, router, router, router (+13 more)
+Nodes (23): app, loaded, app, handler(), rebuildApiUrl(), stockTransferItems, stockTransfers, router (+15 more)
 
 ### Community 26 - "components.json"
 Cohesion: 0.10
 Nodes (19): aliases, components, hooks, lib, ui, utils, iconLibrary, registries (+11 more)
 
-### Community 27 - "Layout.tsx"
-Cohesion: 0.12
-Nodes (18): Login, CommandPalette(), CommandTrigger(), buttons, GlobalCalculator(), HeaderClock(), pad(), cn() (+10 more)
+### Community 27 - "Login.tsx"
+Cohesion: 0.38
+Nodes (5): Login, STORE_FALLBACK_NAME, SYSTEM_BRAND, Login(), shouldShowMobileInstallIntro()
 
 ### Community 28 - "compilerOptions"
 Cohesion: 0.11
@@ -302,16 +298,16 @@ Cohesion: 0.21
 Nodes (14): FinancialStatements, Tabs(), TabsContent(), TabsList(), tabsListVariants, TabsTrigger(), brl(), brlShort() (+6 more)
 
 ### Community 30 - "lib/utils.ts"
-Cohesion: 0.15
-Nodes (8): AnimatedGradientText(), AnimatedGradientTextProps, BorderBeam(), BorderBeamProps, Marquee(), MarqueeProps, ShimmerButton, ShimmerButtonProps
+Cohesion: 0.14
+Nodes (11): AnimatedGradientText(), AnimatedGradientTextProps, Marquee(), MarqueeProps, Circle, hexToRgb(), MousePosition, Particles() (+3 more)
 
 ### Community 31 - "lib/i18n.ts"
-Cohesion: 0.11
-Nodes (36): App(), money(), onlyDigits(), ReceiptModal(), ReceiptModalProps, toWhatsAppNumber(), currencyCode(), CurrencyDisplayPart (+28 more)
+Cohesion: 0.08
+Nodes (50): App(), Money(), MoneyProps, PurchaseItemRow(), useDebounce(), QuickGroupModal(), QuickSubgroupModal(), StockModal() (+42 more)
 
-### Community 32 - "auth.ts"
-Cohesion: 0.14
-Nodes (7): LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_MS, LoginAttempt, loginAttempts, ME_CACHE_TTL_MS, meCache, MeCacheEntry
+### Community 32 - "server/customerAuth.ts"
+Cohesion: 0.11
+Nodes (13): customerAddresses, customerWishlist, formatCpf(), isValidCpf(), onlyDigits(), AccountAuth(), requestReset(), submitLogin() (+5 more)
 
 ### Community 33 - "devDependencies"
 Cohesion: 0.12
@@ -319,19 +315,19 @@ Nodes (17): autoprefixer, embedded-postgres, esbuild, devDependencies, autoprefi
 
 ### Community 34 - "dependencies"
 Cohesion: 0.15
-Nodes (13): bcryptjs, clsx, @fontsource-variable/inter, lucide-react, nodemailer, dependencies, bcryptjs, clsx (+5 more)
+Nodes (13): bcryptjs, clsx, geoip-lite, multer, dependencies, bcryptjs, clsx, geoip-lite (+5 more)
 
 ### Community 35 - "scripts"
 Cohesion: 0.13
 Nodes (15): scripts, build, build:check, build:vercel, build:vercel:api, clean, db:harden, db:local (+7 more)
 
 ### Community 36 - "StockTransfers.tsx"
-Cohesion: 0.35
-Nodes (10): formatDate(), formatFileSize(), initialForm(), isLate(), isPdfInvoice(), StockTransfers(), toDateInput(), todayIso() (+2 more)
+Cohesion: 0.30
+Nodes (11): StockTransfers, formatDate(), formatFileSize(), initialForm(), isLate(), isPdfInvoice(), StockTransfers(), toDateInput() (+3 more)
 
-### Community 37 - "main"
-Cohesion: 0.47
-Nodes (6): main(), pick(), r2(), r4(), rand(), randInt()
+### Community 37 - "purchases.ts"
+Cohesion: 0.10
+Nodes (29): main(), pick(), r2(), r4(), rand(), randInt(), costConsumptions, costLayers (+21 more)
 
 ### Community 38 - "EditModeContext.tsx"
 Cohesion: 0.18
@@ -349,13 +345,13 @@ Nodes (3): ErrorBoundary, Props, State
 Cohesion: 0.67
 Nodes (3): handler(), modulesToCheck, sanitize()
 
-### Community 42 - "hardenProductionUsers.ts"
-Cohesion: 0.83
-Nodes (3): main(), requiredPassword(), updatePassword()
+### Community 42 - "Sales.tsx"
+Cohesion: 0.29
+Nodes (9): Sales, money(), onlyDigits(), ReceiptModal(), ReceiptModalProps, toWhatsAppNumber(), csvCell(), getTodayString() (+1 more)
 
 ### Community 43 - "ShopLayout.tsx"
-Cohesion: 0.17
-Nodes (18): formatCpf(), isFullName(), isValidCpf(), onlyDigits(), submitRegister(), Country, AssistantWidget(), ChatMsg (+10 more)
+Cohesion: 0.15
+Nodes (19): isFullName(), calcOrderTotal(), APP_VERSION, AssistantWidget(), ChatMsg, applyStoreFonts(), escapeCssString(), applyStoreColors() (+11 more)
 
 ### Community 44 - "Aura Sistemas"
 Cohesion: 0.29
@@ -369,9 +365,9 @@ Nodes (6): engines, node, name, private, type, version
 Cohesion: 0.33
 Nodes (5): 1. Clonar e entrar na branch, 2. Instalar e rodar, 3. Variáveis de ambiente, 4. Regra de trabalho, Setup rápido — trabalho em dupla
 
-### Community 47 - "Pos.tsx"
-Cohesion: 0.24
-Nodes (15): Pos, defaultQuickCustomerForm, defaultShortcuts, getInitialActiveNote(), getInitialPosLayoutMode(), getMaxOpenNotes(), getTodayDateInputValue(), isTouchMobileViewport() (+7 more)
+### Community 47 - "Products.tsx"
+Cohesion: 0.10
+Nodes (31): Pos, Products, BarcodeDetectorLike, BarcodeScannerModal(), BarcodeScannerModalProps, loadHtml5Qrcode(), Window, Modal() (+23 more)
 
 ### Community 48 - "ERP Complete Audit Skill"
 Cohesion: 0.40
@@ -381,25 +377,21 @@ Nodes (4): 1. Corretude e Links (Routing Integrity), 2. C�digo Fantasma (Dead 
 Cohesion: 0.50
 Nodes (3): dataDir, __dirname, pg
 
-### Community 50 - "ocrService.ts"
-Cohesion: 0.67
-Nodes (3): getAiClient(), OcrResult, processInvoiceOcr()
+### Community 50 - "ollama.ts"
+Cohesion: 0.17
+Nodes (19): normalizeOcrResult(), OcrResult, processImageWithOllama(), processInvoiceOcr(), processPdfWithOllama(), extractJsonObject(), getOllamaBaseUrl(), getOllamaErrorInfo() (+11 more)
 
 ### Community 51 - "vite"
 Cohesion: 0.67
 Nodes (3): vite, vite, vite
 
-### Community 59 - "useStorePrefs"
-Cohesion: 0.24
-Nodes (11): MyOrders, MyWishlist, MyOrders(), statusClasses, MyWishlist(), remove(), CURRENCIES, defaultRates() (+3 more)
-
-### Community 60 - "PurchaseOcr.tsx"
-Cohesion: 0.26
-Nodes (12): loadList(), CURRENCY_SYMBOL, getBaseCurrency(), PurchaseForm(), loadAll(), PurchaseImport(), loadAll(), ExtendedOcrItem (+4 more)
+### Community 59 - "StockMovementReport.tsx"
+Cohesion: 0.27
+Nodes (10): StockMovementReport, csvCell(), directionClasses, directionLabels, formatDateTime(), monthStart(), movementBadgeVariant(), movementLabels (+2 more)
 
 ### Community 63 - "useAdminTranslation"
-Cohesion: 0.13
-Nodes (25): Money(), MoneyProps, formatDate(), SystemCurrency, useAdminTranslation, Finance(), fmtCur(), METHODS (+17 more)
+Cohesion: 0.14
+Nodes (19): Payables, ProfitReport, Purchases, RealMarginReport, Receivables, AiReportModal(), AiReportModalProps, DataTable() (+11 more)
 
 ### Community 67 - "restoreBackupFromBuffer"
 Cohesion: 0.17
@@ -431,11 +423,11 @@ Nodes (8): addCostLayer(), addLotStock(), approvePurchaseOrder(), cancelSaleTx()
 
 ### Community 107 - "apiFetch"
 Cohesion: 0.09
-Nodes (29): ProtectedRoute(), CashRegisterBadge(), NotificationBell(), toast, apiFetch(), isPublicApi(), redirectToLogin(), AbandonedCarts() (+21 more)
+Nodes (30): CommissionsReport, CashRegisterBadge(), CommandPalette(), buttons, GlobalCalculator(), cn(), getStoredPosLayoutMode(), Layout() (+22 more)
 
 ### Community 113 - "ShopProductCard.tsx"
-Cohesion: 0.19
-Nodes (16): StoreProduct, CATEGORY_TRANSLATIONS, resources, storefrontLanguage, translateCategoryName(), translateStockStatus(), PremiumCta(), PremiumCtaProps (+8 more)
+Cohesion: 0.17
+Nodes (19): MyOrders(), statusClasses, MyWishlist(), CATEGORY_TRANSLATIONS, resources, storefrontLanguage, translateCategoryName(), translateStockStatus() (+11 more)
 
 ### Community 114 - "buildPixPayload"
 Cohesion: 0.70
@@ -444,10 +436,6 @@ Nodes (4): buildPixPayload(), crc16(), field(), onlyAscii()
 ### Community 116 - "getStoreVitrineConfig"
 Cohesion: 0.25
 Nodes (8): getStoreConfigDraft(), getStoreVitrineConfig(), normalizeHeroCtaOrder(), normalizeHeroCtaSize(), normalizeStorePages(), normalizeStorePageSection(), normalizeStoreThemeColors(), normalizeStoreThemeFont()
-
-### Community 117 - "particles.tsx"
-Cohesion: 0.47
-Nodes (5): Circle, hexToRgb(), MousePosition, Particles(), ParticlesProps
 
 ### Community 118 - "BannerPanel.tsx"
 Cohesion: 0.52
@@ -473,29 +461,29 @@ Nodes (4): consumeFifo(), consumeLotStock(), consumeSaleLots(), markSaleDelivere
 Cohesion: 0.67
 Nodes (3): apiPerformanceLogger(), asNumber(), redactUrl()
 
-### Community 132 - "getAiErrorInfo"
-Cohesion: 0.67
-Nodes (3): generateAiContent(), getAiErrorInfo(), sendFriendlyAiError()
+### Community 132 - "processImageWithOllama"
+Cohesion: 0.16
+Nodes (14): extractJsonObject(), getOllamaBaseUrl(), getOllamaErrorInfo(), getOllamaModel(), isOllamaConfigured(), normalizeBaseUrl(), normalizeOcrResult(), ollamaChat() (+6 more)
 
 ## Knowledge Gaps
-- **324 isolated node(s):** `app`, `loaded`, `loaded`, `loaded`, `loaded` (+319 more)
+- **326 isolated node(s):** `app`, `loaded`, `loaded`, `loaded`, `loaded` (+321 more)
   These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 513 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **62 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **60 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `apiFetch()` connect `apiFetch` to `StockTransfers.tsx`, `api.ts`, `EditModeContext.tsx`, `StoreHome.tsx`, `App.tsx`, `Products.tsx`, `Dashboard.tsx`, `Pos.tsx`, `badge.tsx`, `FinancialStatements.tsx`, `Analytics.tsx`, `useEditMode`, `command.tsx`, `Layout.tsx`, `PurchaseOcr.tsx`, `useAdminTranslation`, `lib/i18n.ts`?**
-  _High betweenness centrality (0.051) - this node is a cross-community bridge._
-- **Why does `MONEY_EPSILON` connect `cash.ts` to `authMiddleware.ts`, `store.ts`, `badge.tsx`, `money.ts`, `lib/i18n.ts`?**
-  _High betweenness centrality (0.030) - this node is a cross-community bridge._
-- **Why does `db` connect `authMiddleware.ts` to `auth.ts`, `schema.ts`, `backupService.ts`, `server.ts`, `hardenProductionUsers.ts`, `store.ts`, `settings.ts`, `dashboard.ts`, `cash.ts`, `admin.ts`?**
-  _High betweenness centrality (0.027) - this node is a cross-community bridge._
+- **Why does `apiFetch()` connect `apiFetch` to `StockTransfers.tsx`, `api.ts`, `EditModeContext.tsx`, `StoreHome.tsx`, `App.tsx`, `Sales.tsx`, `Dashboard.tsx`, `Products.tsx`, `badge.tsx`, `useAdminTranslation`, `Finance.tsx`, `useEditMode`, `command.tsx`, `StockMovementReport.tsx`, `FinancialStatements.tsx`, `lib/i18n.ts`?**
+  _High betweenness centrality (0.049) - this node is a cross-community bridge._
+- **Why does `cn()` connect `cn` to `StockTransfers.tsx`, `api.ts`, `StatusBadge`, `Sales.tsx`, `badge.tsx`, `ThemeCustomizer.tsx`, `command.tsx`, `FulfillmentBadge`, `lib/i18n.ts`, `FinancialStatements.tsx`, `lib/utils.ts`, `useAdminTranslation`?**
+  _High betweenness centrality (0.026) - this node is a cross-community bridge._
+- **Why does `MONEY_EPSILON` connect `store.ts` to `schema.ts`, `App.tsx`, `finance.ts`, `lib/i18n.ts`?**
+  _High betweenness centrality (0.020) - this node is a cross-community bridge._
 - **What connects `app`, `loaded`, `loaded` to the rest of the system?**
-  _324 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _326 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `schema.ts` be split into smaller, more focused modules?**
-  _Cohesion score 0.07923497267759563 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.07161125319693094 - nodes in this community are weakly interconnected._
 - **Should `runtime.js` be split into smaller, more focused modules?**
-  _Cohesion score 0.024859663191659984 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.0241280458671763 - nodes in this community are weakly interconnected._
 - **Should `backupService.ts` be split into smaller, more focused modules?**
   _Cohesion score 0.09413067552602436 - nodes in this community are weakly interconnected._
