@@ -46,10 +46,13 @@ export function Editable({ panelKey, label, children, className, elementId, onMo
         // Botões/controles internos são donos do próprio clique. Antes, por
         // exemplo, "Editar 2 banners" abria sideBanner e o evento continuava
         // até este Editable da seção Vitrines, que imediatamente trocava o
-        // painel para "vitrines". Ignorar controles internos evita que o pai
-        // sobrescreva a ação escolhida pelo usuário.
+        // painel para "vitrines". Encerra a propagação aqui sem substituir a
+        // ação já executada pelo controle filho.
         const target = e.target as Element;
-        if (target.closest("button, input, select, textarea, label, [role='button']")) return;
+        if (target.closest("button, input, select, textarea, label, [role='button']")) {
+          e.stopPropagation();
+          return;
+        }
         e.stopPropagation();
         ctx.openPanel(panelKey);
       } : undefined}
