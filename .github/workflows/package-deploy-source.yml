@@ -1,4 +1,4 @@
-name: Package deployment source
+name: Validate deployment source
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  package:
+  validate:
     if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
     runs-on: ubuntu-latest
     steps:
@@ -17,6 +17,24 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check
+        run: npm run lint
+
+      - name: Production build
+        run: npm run build
+
+      - name: Vercel frontend build
+        run: npm run build:vercel
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -40,13 +58,13 @@ jobs:
             git push origin HEAD:deploy-vercel-neon-20260902
           fi
 
-      - name: Package source
+      - name: Package tracked source
         shell: bash
-        run: tar --exclude=.git --exclude=node_modules --exclude=aura-source.tgz -czf aura-source.tgz .
+        run: git archive --format=tar.gz -o /tmp/aura-source.tgz HEAD
 
       - name: Upload source artifact
         uses: actions/upload-artifact@v4
         with:
           name: aura-deploy-source
-          path: aura-source.tgz
+          path: /tmp/aura-source.tgz
           retention-days: 1
