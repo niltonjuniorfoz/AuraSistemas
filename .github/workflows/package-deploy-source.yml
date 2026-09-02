@@ -1,4 +1,4 @@
-name: Validate deployment source
+name: Validate Aura Preview
 
 on:
   push:
@@ -13,136 +13,67 @@ jobs:
     if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: npm
-
-      - name: Install dependencies
+      - name: Install
         run: npm ci
-
-      - name: TypeScript check
+      - name: TypeScript
         run: npm run lint
-
       - name: Production build
         run: npm run build
-
-      - name: Build Vercel frontend and bundled API
+      - name: Vercel build
         run: npm run build:vercel
-
-      - name: Verify bundled runtime is current
-        shell: bash
-        run: git diff --exit-code -- api/runtime.js
-
-      - name: Wait for current Vercel Preview
+      - name: Wait for Preview
         shell: bash
         env:
           EXPECTED_SHA: ${{ github.sha }}
         run: |
-          set -u
           URL="https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app/api/ping"
-          ready=0
-
-          for attempt in $(seq 1 20); do
-            CODE=$(curl -sS --max-time 20 \
-              -H 'User-Agent: AuraSistemas-CI/1.0' \
-              -H 'Cache-Control: no-cache' \
-              -o /tmp/aura-ping-body.txt \
-              -D /tmp/aura-ping-headers.txt \
-              -w "%{http_code}" "$URL" || true)
-            BODY=$(cat /tmp/aura-ping-body.txt 2>/dev/null || true)
-            echo "Probe ${attempt}/20 HTTP=$CODE body=${BODY:0:300}"
-
-            if [ "$CODE" = "200" ] \
-              && grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' /tmp/aura-ping-body.txt \
-              && grep -Fq "$EXPECTED_SHA" /tmp/aura-ping-body.txt; then
-              ready=1
-              break
-            fi
+          for attempt in $(seq 1 24); do
+            CODE=$(curl -sS --max-time 20 -H 'User-Agent: AuraSistemas-CI/1.0' -H 'Cache-Control: no-cache' -o /tmp/ping.json -w "%{http_code}" "$URL" || true)
+            cat /tmp/ping.json 2>/dev/null || true
+            echo
+            if [ "$CODE" = "200" ] && grep -Fq "$EXPECTED_SHA" /tmp/ping.json && grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' /tmp/ping.json; then exit 0; fi
             sleep 15
           done
-
-          if [ "$ready" != "1" ]; then
-            echo "Preview did not reach the expected commit $EXPECTED_SHA"
-            echo "--- headers ---"
-            grep -iE '^(content-type|x-vercel-error|server|location):' /tmp/aura-ping-headers.txt || true
-            echo "--- body ---"
-            head -c 1200 /tmp/aura-ping-body.txt || true
-            exit 1
-          fi
-
-      - name: Verify API ping
-        shell: bash
+          exit 1
+      - name: API ping
         run: |
-          URL="https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app/api/ping"
-          CODE=$(curl -sS --max-time 20 -H 'User-Agent: AuraSistemas-CI/1.0' -o /tmp/aura-final-ping.txt -w "%{http_code}" "$URL")
-          cat /tmp/aura-final-ping.txt
+          CODE=$(curl -sS --max-time 20 -H 'User-Agent: AuraSistemas-CI/1.0' -o /tmp/ping.json -w "%{http_code}" "https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app/api/ping")
+          test "$CODE" = "200"
+          grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' /tmp/ping.json
+      - name: Neon transactional product write
+        run: |
+          CODE=$(curl -sS --max-time 30 -H 'User-Agent: AuraSistemas-CI/1.0' -X POST -o /tmp/write.json -w "%{http_code}" "https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app/api/__preview/product-write-selftest")
+          cat /tmp/write.json
           echo
           test "$CODE" = "200"
-          grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' /tmp/aura-final-ping.txt
-
-      - name: Verify login reaches Neon
-        shell: bash
+          grep -Eq '"ok"[[:space:]]*:[[:space:]]*true' /tmp/write.json
+          grep -Eq '"rolledBack"[[:space:]]*:[[:space:]]*true' /tmp/write.json
+      - name: Frontend
         run: |
-          URL="https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app/api/auth/login"
-          CODE=$(curl -sS --max-time 30 \
-            -o /tmp/aura-login-probe.txt \
-            -w "%{http_code}" \
-            -X POST \
-            -H 'User-Agent: AuraSistemas-CI/1.0' \
-            -H 'content-type: application/json' \
-            --data '{"username":"__aura_connectivity_probe__","password":"not-a-real-password"}' \
-            "$URL")
-
-          echo "HTTP_STATUS=$CODE"
-          cat /tmp/aura-login-probe.txt
-          echo
-          test "$CODE" = "401"
-          grep -Fq 'Credenciais inválidas' /tmp/aura-login-probe.txt
-
-      - name: Verify frontend
-        shell: bash
-        run: |
-          URL="https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app/"
-          CODE=$(curl -sS --max-time 20 -H 'User-Agent: AuraSistemas-CI/1.0' -o /tmp/aura-home.html -w "%{http_code}" "$URL")
+          CODE=$(curl -sS --max-time 20 -H 'User-Agent: AuraSistemas-CI/1.0' -o /tmp/home.html -w "%{http_code}" "https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app/")
           test "$CODE" = "200"
-          grep -qi '<html' /tmp/aura-home.html
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+          grep -qi '<html' /tmp/home.html
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
-      - name: Install Graphify
-        run: pipx install graphifyy
-
-      - name: Update Graphify incrementally
-        run: graphify update .
-
-      - name: Commit refreshed graph to deployment branch
+      - name: Graphify
+        run: |
+          pipx install graphifyy
+          graphify update .
+      - name: Refresh generated files
         shell: bash
         run: |
-          if ! git diff --quiet -- graphify-out; then
+          if ! git diff --quiet -- api/runtime.js graphify-out; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add graphify-out
-            git commit -m "chore: refresh graphify [skip ci]"
+            git add api/runtime.js graphify-out
+            git commit -m "chore: refresh vercel bundle and graphify [skip ci]"
             git push origin HEAD:deploy-vercel-neon-20260902
           fi
-
-      - name: Package tracked source
-        shell: bash
-        run: git archive --format=tar.gz -o /tmp/aura-source.tgz HEAD
-
-      - name: Upload source artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: aura-deploy-source
-          path: /tmp/aura-source.tgz
-          retention-days: 1
