@@ -21,10 +21,10 @@ jobs:
       - name: Apply prepared fixes
         shell: bash
         run: |
-          cat .github/aura-fixes.patch.gz.b64.part-* | base64 -d | gzip -d > /tmp/aura-fixes.patch
+          cat .github/aura-fixes.patch.part-* > /tmp/aura-fixes.patch
           git apply --check /tmp/aura-fixes.patch
           git apply /tmp/aura-fixes.patch
-          rm .github/aura-fixes.patch.gz.b64.part-*
+          rm -f .github/aura-fixes.patch.part-* .github/aura-fixes.patch.gz.b64.part-*
           rm .github/workflows/apply-aura-fixes.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
