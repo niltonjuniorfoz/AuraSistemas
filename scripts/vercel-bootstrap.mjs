@@ -37,9 +37,18 @@ function run(name, command) {
   };
 }
 
-function hasStrongPassword(name) {
-  return String(process.env[name] || '').trim().length >= MIN_PASSWORD_LENGTH;
+function passwordLength(name) {
+  return String(process.env[name] || '').trim().length;
 }
+
+function hasStrongPassword(name) {
+  return passwordLength(name) >= MIN_PASSWORD_LENGTH;
+}
+
+const masterPasswordLength = passwordLength('AURA_MASTER_PASSWORD');
+const adminPasswordLength = passwordLength('AURA_ADMIN_PASSWORD');
+
+console.log(`Vercel preflight: masterLength=${masterPasswordLength}, adminLength=${adminPasswordLength}, databaseConfigured=${Boolean(process.env.DATABASE_URL)}`);
 
 const report = {
   generatedAt: new Date().toISOString(),
@@ -48,6 +57,10 @@ const report = {
   databaseConfigured: Boolean(process.env.DATABASE_URL),
   requiredPasswordsConfigured:
     hasStrongPassword('AURA_MASTER_PASSWORD') && hasStrongPassword('AURA_ADMIN_PASSWORD'),
+  passwordLengths: {
+    master: masterPasswordLength,
+    admin: adminPasswordLength,
+  },
   steps: [],
 };
 
@@ -67,7 +80,7 @@ if (!report.databaseConfigured) {
     exitCode: 1,
     startedAt: report.generatedAt,
     finishedAt: new Date().toISOString(),
-    output: `AURA_MASTER_PASSWORD e AURA_ADMIN_PASSWORD devem ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`,
+    output: `Senhas inválidas no Preview. Comprimentos detectados: master=${masterPasswordLength}, admin=${adminPasswordLength}. Mínimo=${MIN_PASSWORD_LENGTH}.`,
   });
 } else {
   const push = run('db:push', 'npm run db:push');
