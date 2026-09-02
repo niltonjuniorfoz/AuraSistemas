@@ -120,6 +120,7 @@ export function ShopLayout() {
   // do StoreEditor, mas navigate() não passa por clique.
   const storePath = (p: string) => (editCtx ? p.replace(/^\/loja/, "/store-settings/editor") : p);
   const location = useLocation();
+  const normalizedStorePath = location.pathname.replace(/\/+$/, "") || "/";
   const [info, setInfo] = useState<any>(null);
   const [infoLoading, setInfoLoading] = useState(true);
   useEffect(() => {
@@ -167,6 +168,7 @@ export function ShopLayout() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const [announcement, setAnnouncement] = useState("");
   const [footerText, setFooterText] = useState("");
@@ -403,18 +405,18 @@ export function ShopLayout() {
           </div>
         </div>
         <div className="border-b border-stone-100 bg-white">
-          <div className="mx-auto flex w-[96%] max-w-[1440px] items-center gap-3 px-3 py-2.5 lg:gap-8">
-          <Link to="/loja/catalogo" className="flex h-11 w-11 shrink-0 items-center justify-center text-[#6b5b5a] md:hidden" aria-label="Abrir categorias">
+          <div className="relative mx-auto flex min-h-[74px] w-[96%] max-w-[1440px] items-center gap-3 px-3 py-1.5 lg:gap-8">
+          <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); setMobileMenuOpen((open) => !open); }} className="relative z-20 flex h-11 w-11 shrink-0 items-center justify-center text-[#6b5b5a] md:hidden" aria-label="Abrir categorias" aria-controls="mobile-store-menu" aria-expanded={mobileMenuOpen}>
             <Menu className="h-6 w-6" />
-          </Link>
-          <Link to="/loja" className="flex shrink-0 items-center">
+          </button>
+          <Link to="/loja" className="absolute left-1/2 flex -translate-x-1/2 items-center md:static md:translate-x-0">
             {infoLoading ? (
-              <span className="h-20 w-32 shrink-0 animate-pulse rounded-xl bg-rose-100 md:h-28 md:w-44" />
+              <span className="h-20 w-36 shrink-0 animate-pulse rounded-xl bg-rose-100 md:h-28 md:w-44" />
             ) : (
               <img
                 src={info?.logoUrl || "/branding/db-cosmetics-logo.png"}
                 alt={info?.storeName || "Cosmetics by Jessica Ferreira"}
-                className="h-20 w-32 shrink-0 object-contain md:h-28 md:w-44"
+                className="h-20 w-36 shrink-0 scale-[1.32] object-contain md:h-28 md:w-44 md:scale-100"
               />
             )}
           </Link>
@@ -471,6 +473,43 @@ export function ShopLayout() {
           </div>
         </div>
       </header>
+
+      {mobileMenuOpen && (
+        <div id="mobile-store-menu" className="fixed inset-0 z-[9999] md:hidden" role="dialog" aria-modal="true" aria-label="Categorias">
+          <button type="button" className="absolute inset-0 bg-stone-900/35 backdrop-blur-[1px]" onClick={() => setMobileMenuOpen(false)} aria-label="Fechar menu" />
+          <aside className="absolute inset-y-0 left-0 flex w-[86%] max-w-sm flex-col bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-rose-100 px-4 py-4">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--store-accent,#e96f95)]">Menu</div>
+                <div className="mt-0.5 text-lg font-bold text-[#463c3b]">Categorias</div>
+              </div>
+              <button type="button" onClick={() => setMobileMenuOpen(false)} className="flex h-10 w-10 items-center justify-center rounded-full border border-rose-100 text-stone-500" aria-label="Fechar">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3">
+              <Link to="/loja/catalogo" onClick={() => setMobileMenuOpen(false)} className="mb-2 flex items-center gap-3 rounded-xl bg-[var(--store-accent,#e96f95)] px-4 py-3 text-sm font-bold text-white">
+                <LayoutGrid className="h-5 w-5" /> Todas as categorias
+              </Link>
+              <div className="grid grid-cols-1 gap-1">
+                {[...categories]
+                  .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || translateCategoryName(a.name, i18nInstance.language).localeCompare(translateCategoryName(b.name, i18nInstance.language)))
+                  .map((category) => (
+                    <Link key={category.id} to={`/loja/catalogo?cat=${category.id}`} onClick={() => setMobileMenuOpen(false)} className="flex items-center justify-between rounded-xl px-4 py-3 text-sm font-semibold text-[#6b5b5a] transition active:bg-rose-50">
+                      <span>{translateCategoryName(category.name, i18nInstance.language)}</span>
+                      <ArrowRight className="h-4 w-4 text-[var(--store-accent,#e96f95)]" />
+                    </Link>
+                  ))}
+              </div>
+              {ofertaOutlet.hasOferta && (
+                <Link to="/loja/catalogo?canal=oferta" onClick={() => setMobileMenuOpen(false)} className="mt-2 flex items-center gap-3 rounded-xl border border-rose-100 px-4 py-3 text-sm font-bold text-[var(--store-accent,#e96f95)]">
+                  <Tag className="h-5 w-5" /> Ofertas
+                </Link>
+              )}
+            </div>
+          </aside>
+        </div>
+      )}
 
       <Outlet context={{ info }} />
       <ColorsPanel />
@@ -714,9 +753,9 @@ export function ShopLayout() {
 
       {/* Rodapé editorial inspirado na organização da DroidStore, com a identidade da loja. */}
       <footer id="atendimento" className="relative mt-auto overflow-hidden border-t border-rose-100 bg-white py-10 text-[#6b5b5a]">
-        <div className="pointer-events-none absolute -bottom-28 left-1/2 select-none text-[15rem] font-black tracking-[0.18em] text-[#f8dde5]/30">DB</div>
+        <div className="pointer-events-none absolute -bottom-10 left-1/2 w-full -translate-x-1/2 select-none text-center text-[9rem] font-black leading-none tracking-[0.02em] text-[#f8dde5]/35 sm:-bottom-24 sm:text-[15rem]">DB</div>
         <div className="relative mx-auto w-[94%] max-w-[1440px] px-4">
-          <div className="grid gap-9 md:grid-cols-[1.25fr_.8fr_1fr_1fr]">
+          <div className="hidden gap-9 md:grid md:grid-cols-[1.25fr_.8fr_1fr_1fr]">
             <div>
               <img src={info?.logoUrl || "/branding/db-cosmetics-logo.png"} alt={info?.storeName || "Logo da loja"} className="h-28 w-44 object-contain object-left" />
               <p className="mt-3 max-w-sm text-sm leading-6 text-[#6b5b5a]/75">Beleza, cuidado e fragrâncias selecionadas para valorizar cada momento.</p>
@@ -770,13 +809,18 @@ export function ShopLayout() {
 
       <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-rose-100 bg-white/95 px-2 pb-[max(.35rem,env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-8px_30px_rgba(80,35,50,.08)] backdrop-blur md:hidden">
         {[
-          ["Início", "/loja", Home],
-          ["Categorias", "/loja/catalogo", LayoutGrid],
-          ["Ofertas", "/loja/catalogo?canal=oferta", Tag],
-          ["Conta", "/loja/conta", User],
-        ].map(([label, path, Icon]: any) => (
-          <Link key={label} to={path} className="flex flex-col items-center gap-0.5 py-1 text-[10px] font-semibold text-stone-500 hover:text-[var(--store-accent,#e96f95)]">
-            <Icon className="h-5 w-5" /> {label}
+          ["Início", "/loja", Home, normalizedStorePath === "/loja"],
+          ["Categorias", "/loja/catalogo", LayoutGrid, normalizedStorePath === "/loja/catalogo" && !new URLSearchParams(location.search).get("canal")],
+          ["Ofertas", "/loja/catalogo?canal=oferta", Tag, normalizedStorePath === "/loja/catalogo" && new URLSearchParams(location.search).get("canal") === "oferta"],
+          ["Conta", "/loja/conta", User, normalizedStorePath.startsWith("/loja/conta")],
+        ].map(([label, path, Icon, active]: any) => (
+          <Link
+            key={label}
+            to={path}
+            aria-current={active ? "page" : undefined}
+            className={`flex flex-col items-center gap-0.5 py-1 text-[10px] font-semibold transition ${active ? "text-[var(--store-accent,#e96f95)]" : "text-stone-500 hover:text-[var(--store-accent,#e96f95)]"}`}
+          >
+            <Icon className={`h-5 w-5 ${active ? "fill-[var(--store-accent,#e96f95)]/12" : ""}`} /> {label}
           </Link>
         ))}
       </nav>

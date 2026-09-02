@@ -93,7 +93,7 @@ export function OrderStatus() {
 
   const sendProof = async (file: File, paymentId?: string) => {
     setErr(""); setMsg("");
-    if (file.size > 5 * 1024 * 1024) { setErr(t("orderStatus.arquivoMuitoGrande")); return; }
+    if (file.size > 3 * 1024 * 1024) { setErr(t("orderStatus.arquivoMuitoGrande")); return; }
     setUploading(paymentId || "full");
     try {
       const data = await readFile(file);

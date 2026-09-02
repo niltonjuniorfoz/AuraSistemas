@@ -235,10 +235,13 @@ function MarcasSection({ brands }: { brands: { name: string; logoUrl: string }[]
 // a classes no componente, nunca px salvos). "M" reproduz EXATAMENTE o visual
 // de hoje (aspect-[5/2] max-h-[420px] era o valor fixo do carrossel).
 const BANNER_SIZE_CLASSES: Record<string, string> = {
-  P: "aspect-[2/1] max-h-[520px]",
-  M: "aspect-[2/1] max-h-[720px]",
-  G: "aspect-[2/1] max-h-[780px]",
-  GG: "aspect-[2/1] max-h-[840px]",
+  // Frame fixo por tamanho: qualquer imagem enviada ocupa exatamente a mesma
+  // altura visual. A arte principal usa object-contain (não corta) e o fundo
+  // desfocado preenche eventuais diferenças de proporção sem criar borda vazia.
+  P: "h-[145px] sm:h-[175px] md:h-[205px]",
+  M: "h-[165px] sm:h-[205px] md:h-[245px]",
+  G: "h-[185px] sm:h-[235px] md:h-[285px]",
+  GG: "h-[205px] sm:h-[265px] md:h-[325px]",
 };
 // Banner lateral: "M" (padrão) = sem classe extra, altura natural de hoje.
 const SIDEBANNER_SIZE_CLASSES: Record<string, string> = {
@@ -649,13 +652,13 @@ export function StoreHome() {
     return (
       <Editable elementId={SECAO("banners")} panelKey="banners" label="Banners do topo"
         onMove={(dir) => moveSection("banners", dir)} onHide={() => hideSection("banners")}>
-        <section className="mx-auto w-[96%] max-w-[1440px] px-3 py-3">
+        <section className="mx-auto w-[94%] max-w-[1380px] px-1 py-2.5 sm:px-2">
           {/* Largura sempre acompanha a seção (igual ao header/categorias/produtos).
               A altura agora vem do passo de tamanho (P/M/G/GG) — "M" é o valor
               fixo antigo (aspect-[5/2] max-h-[420px]). */}
           <div
             ref={heroRef}
-            className={`group relative ${BANNER_SIZE_CLASSES[tamanho] || BANNER_SIZE_CLASSES.M} w-full overflow-hidden rounded-md border border-stone-200 bg-white shadow-sm`}
+            className={`group relative ${BANNER_SIZE_CLASSES[tamanho] || BANNER_SIZE_CLASSES.M} w-full overflow-hidden rounded-xl bg-[#fff7f8] shadow-sm`}
             onMouseEnter={() => { bannerHoverRef.current = true; }}
             onMouseLeave={() => { bannerHoverRef.current = false; }}
           >
@@ -682,12 +685,24 @@ export function StoreHome() {
             <div className="flex h-full transition-transform duration-700 ease-out" style={{ transform: `translateX(-${currentBanner * 100}%)` }}>
               {banners.map((b: any, i: number) => (
                 <Link key={i} to={b.link || "/loja/catalogo"} className="relative h-full w-full shrink-0">
-                  <img
-                    src={b.url}
-                    alt={`Banner ${i + 1}`}
-                    style={{ objectPosition: `${b.posX ?? 50}% 50%` }}
-                    className="h-full w-full bg-[#fff7f8] object-contain"
-                  />
+                  <div className="absolute inset-0 overflow-hidden bg-[#fff7f8]">
+                    {/* Fundo preenchido com a própria arte desfocada: elimina
+                        barras vazias quando o upload tem outra proporção, mas
+                        a imagem principal continua inteira (sem crop). */}
+                    <img
+                      src={b.url}
+                      alt=""
+                      aria-hidden="true"
+                      style={{ objectPosition: `${b.posX ?? 50}% 50%` }}
+                      className="absolute inset-0 h-full w-full scale-110 object-cover opacity-20 blur-2xl"
+                    />
+                    <img
+                      src={b.url}
+                      alt={`Banner ${i + 1}`}
+                      style={{ objectPosition: `${b.posX ?? 50}% 50%` }}
+                      className="relative z-[1] h-full w-full object-contain"
+                    />
+                  </div>
                   {b.title && (
                     // Título melhor combina com banner "M"/"G"/"GG" — em "P"
                     // (o tamanho mais baixo) o overlay pode ficar visualmente
@@ -800,16 +815,16 @@ export function StoreHome() {
       <Editable elementId={SECAO("howToBuy")} panelKey="howToBuy" label="Como comprar"
         onMove={(dir) => moveSection("howToBuy", dir)} onHide={() => hideSection("howToBuy")}>
         <section className="px-4 pb-3">
-          <div className="mx-auto grid w-[95%] max-w-[1600px] grid-cols-2 overflow-hidden rounded-xl border border-rose-100 bg-gradient-to-r from-[#fff5f7] to-[#f8dde5] md:grid-cols-4 md:divide-x md:divide-rose-200/70">
+          <div className="mx-auto grid w-[95%] max-w-[1600px] grid-cols-4 divide-x divide-rose-200/70 overflow-hidden rounded-xl border border-rose-100 bg-gradient-to-r from-[#fff5f7] to-[#f8dde5]">
             {[
               [BadgeCheck, "Produtos Originais", "Selo de garantia"],
               [Truck, "Entrega Rápida", "Para todo o Brasil"],
               [ShieldCheck, "Compra Segura", "Seus dados protegidos"],
               [Headphones, "Suporte Especializado", "Atendimento humanizado"],
             ].map(([Icon, title, desc]: any) => (
-              <div key={title} className="flex items-center justify-center gap-3 px-3 py-4 text-left">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--store-accent,#d46a86)]/30 bg-white/70 text-[var(--store-accent,#d46a86)]"><Icon className="h-5 w-5" strokeWidth={1.5} /></span>
-                <div><div className="text-[11px] font-bold text-[#6b5b5a]">{title}</div><div className="text-[10px] text-[#8a797c]">{desc}</div></div>
+              <div key={title} className="flex min-w-0 flex-col items-center justify-center gap-1.5 px-1 py-3 text-center sm:flex-row sm:gap-3 sm:px-3 sm:py-4 sm:text-left">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--store-accent,#d46a86)]/30 bg-white/70 text-[var(--store-accent,#d46a86)] sm:h-10 sm:w-10"><Icon className="h-4 w-4 sm:h-5 sm:w-5" strokeWidth={1.5} /></span>
+                <div className="min-w-0"><div className="text-[8px] font-bold leading-tight text-[#6b5b5a] min-[390px]:text-[9px] sm:text-[11px]">{title}</div><div className="mt-0.5 text-[7px] leading-tight text-[#8a797c] min-[390px]:text-[8px] sm:text-[10px]">{desc}</div></div>
               </div>
             ))}
           </div>

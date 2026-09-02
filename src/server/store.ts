@@ -21,6 +21,7 @@ import { findMasterByPassword } from "./authMiddleware";
 import { requireCustomerAuth, CustomerAuthRequest } from "./customerAuth";
 import { createNotification } from "./notifications";
 import geoip from "geoip-lite";
+import { getOllamaErrorInfo, ollamaChat } from "./ollama";
 
 const router = Router();
 
@@ -29,7 +30,7 @@ const router = Router();
 // fragmento novo por consulta, sem reaproveitar objeto entre queries.
 const availableStockExpr = () => sql<number>`greatest(${stockBalances.physicalStock} - ${stockBalances.reservedStock}, 0)`;
 const PIX_SETTINGS_KEY = "company_pix";
-const MAX_PROOF_BYTES = 5 * 1024 * 1024; // 5 MB
+const MAX_PROOF_BYTES = 3 * 1024 * 1024; // 3 MB: base64 + JSON precisa caber no limite HTTP de 4 MB
 const MAX_FONT_URL_CHARS = 400000; // ~400KB base64 data URL — generous para um arquivo de fonte woff2
 const MAX_ITEMS = 40;
 const MAX_QTY_PER_ITEM = 99;
@@ -376,7 +377,7 @@ router.get("/categories", async (_req, res) => {
   } catch (err: any) { res.status(500).json({ error: "Erro ao carregar categorias." }); }
 });
 
-// Function que a IA do assistente chama (via tool-calling do Gemini) pra
+// Função que o assistente com Ollama usa para consultar dados reais do catálogo e
 // saber preço/disponibilidade real de um produto — nunca inventa, sempre
 // bate no banco. Reaproveita a MESMA query ILIKE do catálogo (catalogWhere,
 // linha ~95) e a MESMA faixa de disponibilidade que a loja já mostra pro
@@ -435,19 +436,13 @@ async function buscarProdutoImpl(nomeBuscado: string) {
   };
 }
 
-// Assistente de IA da loja: perguntas gerais (categorias, como funciona
-// pagamento/pedido) e também preço/disponibilidade de produto específico —
-// nesse caso a IA chama a function buscarProduto, que bate no banco de
-// verdade, nunca inventa. Contexto é montado aqui no servidor a cada
-// mensagem (nunca no cliente) pra ninguém manipular o system prompt.
+// Assistente de IA da loja. O contexto de preço/disponibilidade continua vindo
+// do Postgres no servidor; o Ollama recebe somente dados já consultados e nunca
+// pode inventar preço ou estoque.
 router.post("/assistant/chat", async (req, res) => {
   try {
     const ip = clientIp(req);
     if (!rateLimit(`assistant:${ip}`, 200, 10 * 60 * 1000)) {
-      // Log pra descobrir a causa real se voltar a travar rápido mesmo com o
-      // limite alto: várias pessoas atrás do mesmo IP (wifi único da loja),
-      // um bot/scraper batendo no endpoint, ou o resolvedor de IP (clientIp)
-      // devolvendo o mesmo valor pra visitantes diferentes.
       console.warn(`[assistant] rate limit atingido — ip=${ip || "(vazio)"}`);
       return res.status(429).json({ code: "AI_RATE_LIMIT", error: "Muitas mensagens. Aguarde alguns minutos e tente de novo." });
     }
@@ -457,12 +452,9 @@ router.post("/assistant/chat", async (req, res) => {
     const lang = ["es", "pt", "en"].includes(req.body?.lang) ? req.body.lang : "es";
     const historyRaw = Array.isArray(req.body?.history) ? req.body.history : [];
     const history = historyRaw
-      .filter((h: any) => h && (h.role === "user" || h.role === "model") && typeof h.text === "string")
-      .slice(-10)
-      .map((h: any) => ({ role: h.role, text: String(h.text).slice(0, 500) }));
-
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return res.status(503).json({ code: "AI_UNAVAILABLE", error: "Assistente não configurado." });
+      .filter((h: any) => h && (h.role === "user" || h.role === "model" || h.role === "assistant") && typeof h.text === "string")
+      .slice(-8)
+      .map((h: any) => ({ role: h.role === "model" ? "assistant" as const : h.role, content: String(h.text).slice(0, 500) }));
 
     const [company] = await db.select({ tradeName: companySettings.tradeName, companyName: companySettings.companyName }).from(companySettings).limit(1);
     const categoryRows = await db.select({ name: productGroups.name })
@@ -473,102 +465,54 @@ router.post("/assistant/chat", async (req, res) => {
       .groupBy(productGroups.id, productGroups.name);
     const categoryNames = [...new Set(categoryRows.map((r) => r.name))];
 
+    // A busca usa a mensagem inteira e também palavras relevantes; assim
+    // perguntas naturais como "tem body splash victoria secret?" ainda acham
+    // o cadastro real sem depender de tool-calling do provedor.
+    const words = message
+      .replace(/[^\p{L}\p{N}\-]+/gu, " ")
+      .split(/\s+/)
+      .map((word) => word.trim())
+      .filter((word) => word.length >= 3)
+      .filter((word) => !["tem", "uma", "uns", "com", "para", "por", "qual", "quanto", "preco", "preço", "produto", "vocês", "voces"].includes(word.toLowerCase()))
+      .slice(0, 5);
+
+    let productContext = await buscarProdutoImpl(message);
+    if (productContext.encontrados.length === 0) {
+      for (const word of words) {
+        productContext = await buscarProdutoImpl(word);
+        if (productContext.encontrados.length > 0) break;
+      }
+    }
+
     const langName = { es: "español", pt: "português", en: "English" }[lang as "es" | "pt" | "en"];
     const storeName = company?.tradeName || company?.companyName || "a loja";
     const systemPrompt = `Você é a assistente de vendas da loja online "${storeName}".
 Responda SEMPRE em ${langName}, em no máximo 3 frases, com tom simpático de atendente.
-Categorias de produto que a loja vende hoje: ${categoryNames.length > 0 ? categoryNames.join(", ") : "(nenhuma cadastrada ainda)"}.
-Como funciona a compra: o cliente escolhe o produto na vitrine, adiciona ao carrinho, paga via PIX (QR Code gerado na hora), envia o comprovante pelo WhatsApp, e combina retirada ou entrega.
-Você TEM uma function "buscarProduto" pra consultar preço e disponibilidade real de um produto específico — use ela sempre que o cliente perguntar sobre um produto por nome. Nunca invente preço ou disponibilidade sem chamar a function.
-Se o cliente perguntar algo sem relação com a loja (política, concorrentes, assuntos pessoais, etc.), recuse educadamente e sugira uma das perguntas rápidas ou o catálogo do site — não tente responder o assunto fora do escopo.
-Só sugira falar no WhatsApp com um atendente humano quando você genuinamente não souber responder (ex.: reclamação, negociação, pedido já feito, pergunta fora do que você tem acesso) — não repita essa sugestão em toda resposta.`;
+Categorias atuais: ${categoryNames.length > 0 ? categoryNames.join(", ") : "(nenhuma cadastrada ainda)"}.
+Como funciona a compra: o cliente escolhe o produto, adiciona ao carrinho, paga via PIX, envia o comprovante pelo WhatsApp e combina retirada ou entrega.
+Dados reais de produtos possivelmente relacionados à pergunta: ${JSON.stringify(productContext.encontrados)}.
+Nunca invente preço ou disponibilidade. Só informe preço/estoque se aparecer nos dados reais acima; se não aparecer, diga que não localizou esse produto no catálogo.
+Se a pergunta não tiver relação com a loja, recuse educadamente e redirecione para catálogo/atendimento.`;
 
-    const { GoogleGenAI, Type, createUserContent, createPartFromFunctionResponse } = await import("@google/genai");
-    const ai = new GoogleGenAI({ apiKey });
-    const model = process.env.GEMINI_MODEL || "gemini-3.6-flash";
-    const buscarProdutoTool = {
-      name: "buscarProduto",
-      description: "Busca produtos da loja pelo nome ou parte do nome. Devolve até 5 produtos com preço e disponibilidade (faixa, não quantidade exata).",
-      parameters: {
-        type: Type.OBJECT,
-        properties: {
-          nome: { type: Type.STRING, description: "Nome ou parte do nome do produto buscado pelo cliente" },
-        },
-        required: ["nome"],
-      },
-    };
-    const genConfig = { systemInstruction: systemPrompt, tools: [{ functionDeclarations: [buscarProdutoTool] }] };
-    let contents: any[] = [
-      ...history.map((h) => ({ role: h.role, parts: [{ text: h.text }] })),
-      { role: "user", parts: [{ text: message }] },
-    ];
+    const reply = await ollamaChat({
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...history,
+        { role: "user", content: message },
+      ],
+      temperature: 0.25,
+      timeoutMs: 55_000,
+    });
 
-    // Retry único em erro transitório (rate-limit/5xx do próprio Gemini) —
-    // mesmo espírito do generateAiContent() já usado em products.ts, sem
-    // repassar pro cliente um erro que uma segunda tentativa resolveria.
-    // Extraído em função porque agora pode rodar até 2 vezes na mesma
-    // requisição (chamada inicial + chamada final depois da function).
-    const callGemini = async (): Promise<{ result?: any; err?: any }> => {
-      let lastErr: any;
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        try {
-          const result = await ai.models.generateContent({ model, contents, config: genConfig });
-          return { result };
-        } catch (err: any) {
-          lastErr = err;
-          const status = err?.status || err?.rawStatus || 0;
-          const isTransient = status === 429 || status >= 500 || status === 503;
-          if (attempt === 0 && isTransient) {
-            await new Promise((r) => setTimeout(r, 1000));
-            continue;
-          }
-          break;
-        }
-      }
-      return { err: lastErr };
-    };
-
-    const respondWithError = (err: any) => {
-      const status = err?.status || err?.rawStatus || 0;
-      if (status === 429) return res.status(429).json({ code: "AI_RATE_LIMIT", error: "Assistente ocupado agora. Tente de novo em instantes." });
-      if (status >= 500 || status === 503) return res.status(503).json({ code: "AI_UNAVAILABLE", error: "Assistente temporariamente indisponível." });
-      console.error("assistant chat error:", err?.message || err);
-      return res.status(500).json({ code: "AI_ERROR", error: "Não consegui responder agora." });
-    };
-
-    let { result, err } = await callGemini();
-    if (err) return respondWithError(err);
-
-    const calls = result.functionCalls;
-    if (calls && calls.length > 0 && calls[0].name === "buscarProduto") {
-      const call = calls[0];
-      const funcResult = await buscarProdutoImpl(String(call.args?.nome || ""));
-      // Turno do modelo (com a functionCall) + turno com o resultado da
-      // function — precisa ser Content[] explícito (role "model"/"user"),
-      // o SDK não monta isso sozinho pra Parts de function (README do
-      // @google/genai, seção Function Calling: "This doesn't apply to
-      // FunctionCall and FunctionResponse parts... you need to explicitly
-      // provide the full Content[] structure").
-      const modelTurn = result.candidates?.[0]?.content ?? { role: "model", parts: [{ functionCall: call }] };
-      contents = [
-        ...contents,
-        modelTurn,
-        createUserContent(createPartFromFunctionResponse(call.id ?? call.name ?? "buscarProduto", call.name, funcResult)),
-      ];
-      ({ result, err } = await callGemini());
-      if (err) return respondWithError(err);
-      // Não deixa a IA encadear uma segunda function-call na mesma
-      // mensagem — se pedir de novo, trata como erro em vez de looping.
-      if (result.functionCalls && result.functionCalls.length > 0) {
-        console.error("assistant chat error: segunda function-call encadeada, abortando");
-        return res.status(500).json({ code: "AI_ERROR", error: "Não consegui responder agora." });
-      }
-    }
-
-    const reply = String(result?.text || "").trim();
-    if (!reply) return res.status(500).json({ code: "AI_ERROR", error: "Não consegui responder agora." });
-    res.json({ reply });
-  } catch (err: any) { res.status(500).json({ error: "Erro no assistente." }); }
+    res.json({ reply: String(reply || "").trim() });
+  } catch (err: any) {
+    const info = getOllamaErrorInfo(err);
+    if (info.notConfigured) return res.status(503).json({ code: "AI_UNAVAILABLE", error: "Assistente não configurado. Configure o Ollama no servidor." });
+    if (info.rateLimited) return res.status(429).json({ code: "AI_RATE_LIMIT", error: "Assistente ocupado agora. Tente de novo em instantes." });
+    if (info.unavailable) return res.status(503).json({ code: "AI_UNAVAILABLE", error: "Assistente temporariamente indisponível." });
+    console.error("assistant Ollama error:", info.message);
+    res.status(500).json({ code: "AI_ERROR", error: "Não consegui responder agora." });
+  }
 });
 
 // Página de produto: detalhe + galeria + relacionados do mesmo grupo.
@@ -1072,7 +1016,7 @@ router.post("/orders/:code/proof", async (req, res) => {
     const okType = /^(image\/(png|jpe?g|webp)|application\/pdf)$/i.test(String(fileType || ""));
     if (!okType) return res.status(400).json({ error: "Formato inválido. Envie imagem (JPG/PNG) ou PDF." });
     const approxBytes = Math.floor((data.length * 3) / 4);
-    if (approxBytes > MAX_PROOF_BYTES) return res.status(400).json({ error: "Arquivo muito grande (máx. 5 MB)." });
+    if (approxBytes > MAX_PROOF_BYTES) return res.status(400).json({ error: "Arquivo muito grande (máx. 3 MB)." });
 
     const [order] = await db.select().from(storeOrders).where(eq(storeOrders.code, code)).limit(1);
     if (!order) return res.status(404).json({ error: "Pedido não encontrado." });
@@ -1176,7 +1120,7 @@ router.post("/orders/:code/payments/:paymentId/proof", async (req, res) => {
     const okType = /^(image\/(png|jpe?g|webp)|application\/pdf)$/i.test(String(fileType || ""));
     if (!okType) return res.status(400).json({ error: "Formato inválido. Envie imagem (JPG/PNG) ou PDF." });
     const approxBytes = Math.floor((data.length * 3) / 4);
-    if (approxBytes > MAX_PROOF_BYTES) return res.status(400).json({ error: "Arquivo muito grande (máx. 5 MB)." });
+    if (approxBytes > MAX_PROOF_BYTES) return res.status(400).json({ error: "Arquivo muito grande (máx. 3 MB)." });
 
     const code = String(req.params.code || "").toUpperCase().trim();
     const [order] = await db.select().from(storeOrders).where(eq(storeOrders.code, code)).limit(1);
@@ -1343,7 +1287,7 @@ router.post("/admin/orders/:id/confirm", requireAuth, requirePermission("cash", 
 
       await logAction(req.user!.userId, "STORE_ORDER_CONFIRM", "store_orders", o.id, null, {
         code: o.code, total, received, missing: missing > 0 ? missing : 0, payerName: req.body?.payerName || null,
-      });
+      }, tx);
     });
 
     await createNotification(db, {

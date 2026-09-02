@@ -29,9 +29,7 @@ local (`DATABASE_URL` aponta pro Postgres local que o `db:local` sobe).
 `JWT_SECRET` — qualquer texto serve pra rodar local, não precisa ser o
 mesmo da produção.
 
-`GEMINI_API_KEY` — só necessário se for mexer no assistente da loja ou no
-gerador de descrição por IA. Pede a chave pro Wender direto (não sobe pro
-Git, nunca cola chave de API em arquivo versionado).
+`OLLAMA_API_KEY` — necessário em deploys Vercel quando o assistente, OCR ou gerador de descrição usa Ollama Cloud. Também pode usar `OLLAMA_BASE_URL` para um host Ollama acessível pela internet. Nunca sobe chave de API pro Git.
 
 ## 4. Regra de trabalho
 

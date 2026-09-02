@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { db } from "../db";
-import { users, roles, permissions, rolePermissions, sales, deliveryPaymentOverrides } from "../db/schema";
+import { users, roles, permissions, rolePermissions, sales, deliveryPaymentOverrides, products, productGroups, stockBalances } from "../db/schema";
 import { eq, sql, and, ne } from "drizzle-orm";
 import { requireAuth, requirePermission } from "./authMiddleware";
+import { v4 as uuidv4 } from "uuid";
 
 const router = Router();
 
@@ -17,6 +18,40 @@ router.get("/", async (_req, res) => {
     res.json({ status: "ok", db: "connected", time: new Date().toISOString() });
   } catch (err: any) {
     res.status(503).json({ status: "error", db: "unreachable", error: err.message });
+  }
+});
+
+// Smoke test de escrita usado apenas pelo Preview durante o deploy. Ele grava
+// um produto e o saldo dentro de uma transação e força rollback, portanto não
+// deixa nenhum dado de teste no Neon. Em produção a rota nem existe.
+router.post("/product-write-smoke", async (_req, res) => {
+  if (process.env.VERCEL_ENV !== "preview") return res.status(404).json({ error: "Not found" });
+  const rollbackMarker = `AURA_SMOKE_ROLLBACK_${Date.now()}`;
+  try {
+    const [group] = await db.select({ id: productGroups.id }).from(productGroups).limit(1);
+    await db.transaction(async (tx) => {
+      const id = uuidv4();
+      await tx.insert(products).values({
+        id,
+        sku: `SMOKE-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`.toUpperCase(),
+        name: "AURA DEPLOYMENT WRITE SMOKE",
+        groupId: group?.id || null,
+        salePriceA: "1.00",
+        salePriceB: "1.00",
+        salePriceC: "1.00",
+        technicalSpecs: [{ label: "smoke", value: "ok" }],
+        storeVisible: false,
+      });
+      await tx.insert(stockBalances).values({ productId: id, physicalStock: 0, reservedStock: 0 });
+      throw new Error(rollbackMarker);
+    });
+    return res.status(500).json({ status: "error", error: "Smoke transaction did not rollback" });
+  } catch (error: any) {
+    if (String(error?.message || "") === rollbackMarker) {
+      return res.json({ status: "ok", dbWrite: "verified", rolledBack: true });
+    }
+    console.error("Product write smoke failed:", error);
+    return res.status(500).json({ status: "error", dbWrite: "failed", error: String(error?.message || "unknown").slice(0, 300) });
   }
 });
 

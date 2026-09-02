@@ -14,7 +14,7 @@ const router = Router();
 router.use(requireAuth);
 
 const upload = multer({ storage: multer.memoryStorage() });
-const TRANSFER_INVOICE_MAX_BYTES = 10 * 1024 * 1024;
+const TRANSFER_INVOICE_MAX_BYTES = 4 * 1024 * 1024;
 const TRANSFER_INVOICE_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"];
 
 function asDate(value: unknown) {
@@ -151,7 +151,7 @@ router.post("/:id/invoice", requirePermission("purchase", "create"), upload.sing
       return res.status(400).json({ error: "Formato inválido. Use JPG, PNG, WEBP ou PDF." });
     }
     if (req.file.size > TRANSFER_INVOICE_MAX_BYTES) {
-      return res.status(400).json({ error: "Arquivo maior que 10 MB." });
+      return res.status(400).json({ error: "Arquivo maior que 4 MB." });
     }
 
     const [updated] = await db.update(stockTransfers).set({

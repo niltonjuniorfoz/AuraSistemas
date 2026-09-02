@@ -109,7 +109,7 @@ router.post("/ocr", requirePermission("purchase", "ocr"), upload.single("file"),
      
      const lang = (req.body.language || "pt") as string;
      
-     // Run Gemini OCR
+     // Run OCR (Ollama para imagens; fallback legado apenas para PDF)
      const ocrResult = await processInvoiceOcr(req.file.buffer, req.file.mimetype, lang);
      
      // Update job as completed

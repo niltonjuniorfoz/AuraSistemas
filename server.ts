@@ -642,7 +642,7 @@ async function startServer() {
   applyProductionSecurityHeaders(app);
 
   app.use(cors(buildCorsOptions()));
-  app.use(express.json({ limit: "5mb" }));
+  app.use(express.json({ limit: "4mb" }));
   app.use("/api", markResponseStart, apiPerformanceLogger);
 
   // Render Free pode acordar apenas quando alguém abre o sistema.

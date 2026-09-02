@@ -1,0 +1,185 @@
+export type OllamaRole = "system" | "user" | "assistant";
+
+export interface OllamaMessage {
+  role: OllamaRole;
+  content: string;
+  images?: string[];
+}
+
+export interface OllamaChatOptions {
+  messages: OllamaMessage[];
+  model?: string;
+  temperature?: number;
+  json?: boolean;
+  timeoutMs?: number;
+}
+
+export class OllamaRequestError extends Error {
+  status: number;
+  code: string;
+  retryAfterSeconds?: number;
+
+  constructor(message: string, status = 0, code = "OLLAMA_ERROR", retryAfterSeconds?: number) {
+    super(message);
+    this.name = "OllamaRequestError";
+    this.status = status;
+    this.code = code;
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+function normalizeBaseUrl(raw: string) {
+  const trimmed = raw.trim().replace(/\/+$/, "");
+  if (!trimmed) return "";
+  return trimmed.endsWith("/api") ? trimmed : `${trimmed}/api`;
+}
+
+export function getOllamaBaseUrl() {
+  const explicit = normalizeBaseUrl(process.env.OLLAMA_BASE_URL || "");
+  if (explicit) return explicit;
+  if (process.env.OLLAMA_API_KEY) return "https://ollama.com/api";
+  return "http://127.0.0.1:11434/api";
+}
+
+export function getOllamaModel(kind: "text" | "vision" = "text") {
+  if (kind === "vision") {
+    return process.env.OLLAMA_VISION_MODEL || process.env.OLLAMA_MODEL || "mistral-small3.2";
+  }
+  return process.env.OLLAMA_MODEL || "mistral-small3.2";
+}
+
+export function isOllamaConfigured() {
+  if (process.env.OLLAMA_BASE_URL) return true;
+  if (process.env.OLLAMA_API_KEY) return true;
+  // Local development can use Ollama's default localhost endpoint without a key.
+  return !process.env.VERCEL;
+}
+
+function parseRetryAfter(value: string | null) {
+  if (!value) return undefined;
+  const seconds = Number(value);
+  return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : undefined;
+}
+
+export function getOllamaErrorInfo(error: any) {
+  const status = Number(error?.status || 0);
+  const message = String(error?.message || error || "");
+  const code = String(error?.code || "OLLAMA_ERROR");
+  const rateLimited = status === 429 || /rate.?limit|too many requests|quota/i.test(message);
+  const unavailable = status === 503 || status >= 500 || /ECONNREFUSED|fetch failed|temporarily unavailable|service unavailable|timeout|timed out/i.test(message);
+  const notConfigured = code === "OLLAMA_NOT_CONFIGURED";
+  return {
+    status,
+    message,
+    code,
+    rateLimited,
+    unavailable,
+    notConfigured,
+    retryAfterSeconds: error?.retryAfterSeconds as number | undefined,
+  };
+}
+
+async function requestOnce(options: OllamaChatOptions) {
+  if (!isOllamaConfigured()) {
+    throw new OllamaRequestError(
+      "Ollama não configurado para este ambiente. Defina OLLAMA_API_KEY ou OLLAMA_BASE_URL.",
+      0,
+      "OLLAMA_NOT_CONFIGURED",
+    );
+  }
+
+  const baseUrl = getOllamaBaseUrl();
+  const apiKey = String(process.env.OLLAMA_API_KEY || "").trim();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Math.max(5_000, options.timeoutMs || 55_000));
+
+  try {
+    const body: Record<string, any> = {
+      model: options.model || getOllamaModel("text"),
+      messages: options.messages,
+      stream: false,
+      options: {
+        temperature: options.temperature ?? 0.2,
+      },
+    };
+
+    // Ollama Cloud currently does not support structured outputs. Local/custom
+    // hosts do, so use JSON mode there and keep strict JSON prompting as the
+    // fallback for cloud models.
+    if (options.json && !/https:\/\/ollama\.com\/api$/i.test(baseUrl)) {
+      body.format = "json";
+    }
+
+    const response = await fetch(`${baseUrl}/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    const text = await response.text();
+    let data: any = {};
+    try { data = text ? JSON.parse(text) : {}; } catch { data = {}; }
+
+    if (!response.ok) {
+      const message = String(data?.error || data?.message || text || `Ollama HTTP ${response.status}`);
+      throw new OllamaRequestError(
+        message.slice(0, 600),
+        response.status,
+        response.status === 429 ? "OLLAMA_RATE_LIMIT" : "OLLAMA_HTTP_ERROR",
+        parseRetryAfter(response.headers.get("retry-after")),
+      );
+    }
+
+    const content = String(data?.message?.content || data?.response || "").trim();
+    if (!content) {
+      throw new OllamaRequestError("Ollama respondeu sem conteúdo.", 502, "OLLAMA_EMPTY_RESPONSE");
+    }
+    return content;
+  } catch (error: any) {
+    if (error?.name === "AbortError") {
+      throw new OllamaRequestError("Tempo limite ao consultar o Ollama.", 504, "OLLAMA_TIMEOUT");
+    }
+    if (error instanceof OllamaRequestError) throw error;
+    throw new OllamaRequestError(String(error?.message || error || "Falha ao consultar o Ollama."), 0, "OLLAMA_NETWORK_ERROR");
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function ollamaChat(options: OllamaChatOptions) {
+  let lastError: any;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await requestOnce(options);
+    } catch (error: any) {
+      lastError = error;
+      const info = getOllamaErrorInfo(error);
+      const retryable = info.rateLimited || info.unavailable;
+      if (attempt === 0 && retryable) {
+        const delayMs = Math.min(4_000, Math.max(800, (info.retryAfterSeconds || 1) * 1_000));
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        continue;
+      }
+      break;
+    }
+  }
+  throw lastError;
+}
+
+export function extractJsonObject(text: string) {
+  const cleaned = String(text || "")
+    .replace(/```json/gi, "")
+    .replace(/```/g, "")
+    .trim();
+  try { return JSON.parse(cleaned); } catch {}
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    return JSON.parse(cleaned.slice(start, end + 1));
+  }
+  throw new Error("Resposta da IA não contém JSON válido.");
+}
