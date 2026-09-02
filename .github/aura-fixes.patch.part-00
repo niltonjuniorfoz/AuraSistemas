@@ -1,0 +1,235 @@
+diff --git a/.env.example b/.env.example
+index 3b409c6..a98ae27 100644
+--- a/.env.example
++++ b/.env.example
+@@ -20,8 +20,12 @@ AURA_MASTER_RESET_PASSWORD=""
+ PORT=3000
+ NODE_ENV="development"
+ 
+-# Gemini (Opcional - para OCR futuro)
+-GEMINI_API_KEY="MY_GEMINI_API_KEY"
++# Ollama (IA do ERP, assistente e OCR por imagem)
++# Ollama: em Vercel use a API Cloud (OLLAMA_API_KEY) ou informe um host acessível
++OLLAMA_API_KEY=""
++OLLAMA_BASE_URL="https://ollama.com/api"
++OLLAMA_MODEL="gemma4:31b"
++OLLAMA_VISION_MODEL="gemma4:31b"
+ 
+ # APP_URL
+ APP_URL="MY_APP_URL"
+diff --git a/.github/workflows/package-deploy-source.yml b/.github/workflows/package-deploy-source.yml
+index b04fa51..35ca2ec 100644
+--- a/.github/workflows/package-deploy-source.yml
++++ b/.github/workflows/package-deploy-source.yml
+@@ -36,10 +36,6 @@ jobs:
+       - name: Build Vercel frontend and bundled API
+         run: npm run build:vercel
+ 
+-      - name: Verify bundled runtime is current
+-        shell: bash
+-        run: git diff --exit-code -- api/runtime.js
+-
+       - name: Wait for current Vercel Preview
+         shell: bash
+         env:
+@@ -114,6 +110,17 @@ jobs:
+           test "$CODE" = "200"
+           grep -qi '<html' /tmp/aura-home.html
+ 
++      - name: Verify transactional product write on Neon
++        shell: bash
++        run: |
++          URL="https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app/api/__preview/product-write-selftest"
++          CODE=$(curl -sS --max-time 30 -H 'User-Agent: AuraSistemas-CI/1.0' -X POST -o /tmp/aura-write-selftest.json -w "%{http_code}" "$URL")
++          cat /tmp/aura-write-selftest.json
++          echo
++          test "$CODE" = "200"
++          grep -Eq '"ok"[[:space:]]*:[[:space:]]*true' /tmp/aura-write-selftest.json
++          grep -Eq '"rolledBack"[[:space:]]*:[[:space:]]*true' /tmp/aura-write-selftest.json
++
+       - name: Set up Python
+         uses: actions/setup-python@v5
+         with:
+@@ -125,14 +132,14 @@ jobs:
+       - name: Update Graphify incrementally
+         run: graphify update .
+ 
+-      - name: Commit refreshed graph to deployment branch
++      - name: Commit refreshed bundle and graph to deployment branch
+         shell: bash
+         run: |
+-          if ! git diff --quiet -- graphify-out; then
++          if ! git diff --quiet -- api/runtime.js graphify-out; then
+             git config user.name "github-actions[bot]"
+             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+-            git add graphify-out
+-            git commit -m "chore: refresh graphify [skip ci]"
++            git add api/runtime.js graphify-out
++            git commit -m "chore: refresh vercel bundle and graphify [skip ci]"
+             git push origin HEAD:deploy-vercel-neon-20260902
+           fi
+ 
+diff --git a/SETUP.md b/SETUP.md
+index 29e772f..395d289 100644
+--- a/SETUP.md
++++ b/SETUP.md
+@@ -29,9 +29,7 @@ local (`DATABASE_URL` aponta pro Postgres local que o `db:local` sobe).
+ `JWT_SECRET` — qualquer texto serve pra rodar local, não precisa ser o
+ mesmo da produção.
+ 
+-`GEMINI_API_KEY` — só necessário se for mexer no assistente da loja ou no
+-gerador de descrição por IA. Pede a chave pro Wender direto (não sobe pro
+-Git, nunca cola chave de API em arquivo versionado).
++`OLLAMA_API_KEY` — necessário em deploys Vercel quando o assistente, OCR ou gerador de descrição usa Ollama Cloud. Também pode usar `OLLAMA_BASE_URL` para um host Ollama acessível pela internet. Nunca sobe chave de API pro Git.
+ 
+ ## 4. Regra de trabalho
+ 
+diff --git a/api/handler.ts b/api/handler.ts
+index 9e4dcde..feae182 100644
+--- a/api/handler.ts
++++ b/api/handler.ts
+@@ -40,6 +40,10 @@ import intelligenceRouter from "../src/server/intelligence";
+ import statementsRouter from "../src/server/statements";
+ import { router as maintenanceRouter } from "../src/server/maintenance";
+ import { apiPerformanceLogger, markResponseStart } from "../src/server/performance";
++import { db } from "../src/db";
++import { products, stockBalances, users } from "../src/db/schema";
++import { logAction } from "../src/server/audit";
++import { v4 as uuidv4 } from "uuid";
+ 
+ function buildCorsOptions(): CorsOptions {
+   const allowedOrigins = (process.env.CORS_ORIGINS || "")
+@@ -129,6 +133,44 @@ app.get("/api/ping", (_req, res) => {
+   });
+ });
+ 
++// Diagnóstico temporário e rollback-only usado pela branch de Preview para
++// provar escrita real no Neon com DB_POOL_MAX=1. Nunca persiste produto e
++// nunca fica disponível em Production. Remover antes do merge em main.
++app.post("/api/__preview/product-write-selftest", async (_req, res) => {
++  if (process.env.VERCEL_ENV !== "preview") return res.status(404).json({ error: "Not found" });
++
++  let rolledBack = false;
++  try {
++    await db.transaction(async (tx) => {
++      const [actor] = await tx.select({ id: users.id }).from(users).limit(1);
++      if (!actor) throw new Error("SELFTEST_NO_USER");
++
++      const id = uuidv4();
++      await tx.insert(products).values({
++        id,
++        sku: `AURA-SELFTEST-${Date.now()}`,
++        name: "AURA PREVIEW WRITE SELFTEST",
++        unitMeasure: "UN",
++        salePriceA: "1.00",
++        salePriceB: "1.00",
++        salePriceC: "1.00",
++      });
++      await tx.insert(stockBalances).values({ productId: id, physicalStock: 0, reservedStock: 0 });
++      await logAction(actor.id, "SELF_TEST", "products", id, null, { preview: true }, tx);
++
++      throw new Error("__AURA_SELFTEST_ROLLBACK__");
++    });
++  } catch (error: any) {
++    if (error?.message === "__AURA_SELFTEST_ROLLBACK__") rolledBack = true;
++    else {
++      console.error("Preview product write selftest failed:", error);
++      return res.status(500).json({ ok: false, error: "Product write self-test failed" });
++    }
++  }
++
++  res.json({ ok: rolledBack, rolledBack });
++});
++
+ app.use((error: any, _req: any, res: any, _next: any) => {
+   console.error("Erro não tratado na API:", error);
+   if (!res.headersSent) res.status(500).json({ error: "Erro interno do servidor" });
+diff --git a/server.ts b/server.ts
+index d8f9ccd..e1af618 100644
+--- a/server.ts
++++ b/server.ts
+@@ -642,7 +642,7 @@ async function startServer() {
+   applyProductionSecurityHeaders(app);
+ 
+   app.use(cors(buildCorsOptions()));
+-  app.use(express.json({ limit: "5mb" }));
++  app.use(express.json({ limit: "4mb" }));
+   app.use("/api", markResponseStart, apiPerformanceLogger);
+ 
+   // Render Free pode acordar apenas quando alguém abre o sistema.
+diff --git a/src/index.css b/src/index.css
+index ef9db94..cb08a83 100644
+--- a/src/index.css
++++ b/src/index.css
+@@ -4312,3 +4312,78 @@ body {
+     animation: none !important;
+   }
+ }
++
++/* ------------------------------------------------------------------
++   Modo claro consistente — remove os últimos blocos pretos legados.
++   O ERP antigo usa centenas de bg-[#171717] diretamente. Essas classes
++   arbitrárias não acompanham os tokens semânticos, então no light mode
++   ficavam tabelas/inputs pretos no meio de cards brancos. A loja pública
++   não herda data-theme e, portanto, não é afetada por este bloco.
++   ------------------------------------------------------------------ */
++[data-theme="light"] {
++  --sidebar: #ffffff;
++  --sidebar-foreground: #334155;
++  --sidebar-accent: #f1f5f9;
++  --sidebar-accent-foreground: #0f172a;
++  --sidebar-border: #dde3ee;
++}
++
++[data-theme="light"] .bg-\[\#171717\],
++[data-theme="light"] .bg-\[\#1c1c1c\],
++[data-theme="light"] .bg-\[\#0a0a0a\],
++[data-theme="light"] .bg-\[\#070b14\],
++[data-theme="light"] .bg-black {
++  background-color: #ffffff !important;
++}
++
++[data-theme="light"] input,
++[data-theme="light"] textarea,
++[data-theme="light"] select {
++  color: #172033;
++  caret-color: #172033;
++}
++
++[data-theme="light"] input:disabled,
++[data-theme="light"] textarea:disabled,
++[data-theme="light"] select:disabled {
++  color: #64748b;
++}
++
++[data-theme="light"] table,
++[data-theme="light"] thead,
++[data-theme="light"] tbody,
++[data-theme="light"] tr {
++  color: #1e293b;
++}
++
++[data-theme="light"] .shadow-2xl,
++[data-theme="light"] .shadow-xl,
++[data-theme="light"] .shadow-lg {
++  --tw-shadow-color: rgb(15 23 42 / 0.10);
++}
++
++
++/* Últimos fundos legados com alpha: no modo claro eles não podem deixar
++   blocos pretos isolados dentro de tabelas, formulários e cards. Backdrops
++   de modal (normalmente /50 ou mais) ficam intactos para preservar contraste. */
++[data-theme="light"] .bg-black\/10,
++[data-theme="light"] .bg-black\/20,
++[data-theme="light"] .bg-black\/25,
++[data-theme="light"] .bg-black\/30 {
++  background-color: rgb(241 245 249 / 0.92) !important;
++}
++[data-theme="light"] .bg-gray-950,
++[data-theme="light"] .bg-gray-950\/50,
++[data-theme="light"] .bg-gray-900\/80,
++[data-theme="light"] .bg-gray-900\/70,
++[data-theme="light"] .bg-gray-800\/70,
++[data-theme="light"] .bg-gray-800\/50,
++[data-theme="light"] .bg-gray-800\/40,
++[data-theme="light"] .bg-gray-800\/30 {
