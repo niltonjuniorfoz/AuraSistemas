@@ -6,17 +6,10 @@ import { requireAuth, requirePermission, AuthRequest } from "./authMiddleware";
 import { logAction } from "./audit";
 import { eq, sql } from "drizzle-orm";
 import PDFDocument from "pdfkit";
-import fs from "fs";
-import path from "path";
 import multer from "multer";
 import { loadImageBuffer } from "./pdfHelpers";
 import { getBackupSettings, runManualBackup, isDropboxConfigured, checkPendingAutomaticBackupNow } from "./backupService";
 import { clearApiCache, withApiCache } from "./cache";
-
-const uploadDir = path.join(process.cwd(), "uploads", "company");
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage, limits: { fileSize: 1 * 1024 * 1024 } }); // 1MB limit

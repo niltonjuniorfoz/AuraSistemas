@@ -126,7 +126,7 @@ app.get("/api/ping", (_req, res) => {
 });
 
 function rebuildApiUrl(req: any) {
-  const rawPath = req.query?.path;
+  const rawPath = req.query?.__path;
   const pathParts = Array.isArray(rawPath)
     ? rawPath.map(String)
     : String(rawPath || "")
@@ -135,7 +135,7 @@ function rebuildApiUrl(req: any) {
 
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(req.query || {})) {
-    if (key === "path" || value === undefined || value === null) continue;
+    if (key === "__path" || value === undefined || value === null) continue;
     if (Array.isArray(value)) {
       value.forEach((item) => query.append(key, String(item)));
     } else {

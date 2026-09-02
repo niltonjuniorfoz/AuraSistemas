@@ -73,8 +73,7 @@ router.post("/import/spreadsheet", requirePermission("purchase", "import"), uplo
 
 // OCR Import Route
 router.post("/ocr", requirePermission("purchase", "ocr"), upload.single("file"), async (req: AuthRequest, res) => {
-  let jobId = uuidv4();
-  let uploadedFilePath: string | null = null;
+  const jobId = uuidv4();
   
   try {
      if (!req.file) {
@@ -86,31 +85,24 @@ router.post("/ocr", requirePermission("purchase", "ocr"), upload.single("file"),
         return res.status(400).json({ error: "Formato de arquivo inválido. Formatos suportados: JPG, JPEG, PNG, WEBP, PDF." });
      }
      
-     // Limit to 10 MB
-     const maxBytes = 10 * 1024 * 1024;
+     // Vercel Functions aceitam no maximo 4,5 MB por request; usamos 4 MB para
+     // rejeitar de forma previsivel antes do proxy da plataforma.
+     const maxBytes = 4 * 1024 * 1024;
      if (req.file.size > maxBytes) {
-        return res.status(400).json({ error: "O tamanho do arquivo excede o limite de 10 MB." });
+        return res.status(400).json({ error: "O tamanho do arquivo excede o limite de 4 MB." });
      }
 
-     const ocrUploadsDir = path.join(process.cwd(), "uploads", "ocr");
-     if (!fs.existsSync(ocrUploadsDir)) {
-        fs.mkdirSync(ocrUploadsDir, { recursive: true });
-     }
-     
-     const fileExt = req.file.originalname.split(".").pop()?.toLowerCase() || "bin";
-     const ocrFileName = `${jobId}.${fileExt}`;
-     uploadedFilePath = path.join(ocrUploadsDir, ocrFileName);
-     
-     // Write file asynchronously
-     await fs.promises.writeFile(uploadedFilePath, req.file.buffer);
-     
+     // Persistencia serverless: o arquivo fica no Postgres em data URL, nao em disco efemero.
+     // Leitura/limpeza abaixo continua aceitando caminhos /uploads/ de instalacoes antigas.
+     const persistentFilePath = `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`;
+
      // Create pending ocr job
      await db.insert(purchaseOcrJobs).values({
         id: jobId,
         fileName: req.file.originalname,
         fileType: req.file.mimetype,
         fileSize: req.file.size,
-        filePath: `/uploads/ocr/${ocrFileName}`,
+        filePath: persistentFilePath,
         status: "PROCESSING",
         createdBy: req.user?.userId || null,
      });
@@ -259,9 +251,9 @@ router.delete("/ocr/jobs/:id", requirePermission("purchase", "ocr"), async (req:
         return res.status(404).json({ error: "Trabalho OCR não encontrado" });
      }
 
-     // Delete physical file
-     if (job.filePath) {
-        const localPath = path.join(process.cwd(), job.filePath.replace(/^\//, ""));
+     // Compatibilidade com OCRs antigos salvos no filesystem. Novos arquivos ficam no Postgres.
+     if (job.filePath && String(job.filePath).startsWith("/uploads/")) {
+        const localPath = path.join(process.cwd(), String(job.filePath).replace(/^\//, ""));
         if (fs.existsSync(localPath)) {
            try {
               fs.unlinkSync(localPath);
@@ -291,13 +283,16 @@ async function attachOcrInvoiceToSupplier(tx: any, data: any, purchaseOrderId: s
     const [existing] = await tx.select().from(supplierInvoiceFiles).where(eq(supplierInvoiceFiles.ocrJobId, data.ocrJobId)).limit(1);
 
     let persistentFilePath = job.filePath;
-    try {
-        const localPath = path.join(process.cwd(), String(job.filePath).replace(/^\//, ""));
-        if (fs.existsSync(localPath) && job.fileType) {
-            const fileBuffer = await fs.promises.readFile(localPath);
-            persistentFilePath = `data:${job.fileType};base64,${fileBuffer.toString("base64")}`;
-        }
-    } catch {}
+    // Migra transparentemente anexos OCR legados do filesystem para o formato persistente em DB.
+    if (String(job.filePath).startsWith("/uploads/")) {
+      try {
+          const localPath = path.join(process.cwd(), String(job.filePath).replace(/^\//, ""));
+          if (fs.existsSync(localPath) && job.fileType) {
+              const fileBuffer = await fs.promises.readFile(localPath);
+              persistentFilePath = `data:${job.fileType};base64,${fileBuffer.toString("base64")}`;
+          }
+      } catch {}
+    }
 
     const values = {
         supplierId: data.supplierId,

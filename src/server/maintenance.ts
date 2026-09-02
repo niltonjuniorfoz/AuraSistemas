@@ -24,8 +24,8 @@ export async function purgeOldOcrJobs() {
     let totalDeleted = 0;
 
     for (const job of oldJobs) {
-      if (job.filePath) {
-        const localPath = path.join(process.cwd(), job.filePath.replace(/^\//, ""));
+      if (job.filePath && String(job.filePath).startsWith("/uploads/")) {
+        const localPath = path.join(process.cwd(), String(job.filePath).replace(/^\//, ""));
         if (fs.existsSync(localPath)) {
           try {
             fs.unlinkSync(localPath);
