@@ -1,0 +1,163 @@
+               [BadgeCheck, "Produtos Originais", "Selo de garantia"],
+               [Truck, "Entrega Rápida", "Para todo o Brasil"],
+               [ShieldCheck, "Compra Segura", "Seus dados protegidos"],
+               [Headphones, "Suporte Especializado", "Atendimento humanizado"],
+             ].map(([Icon, title, desc]: any) => (
+-              <div key={title} className="flex items-center justify-center gap-3 px-3 py-4 text-left">
+-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--store-accent,#d46a86)]/30 bg-white/70 text-[var(--store-accent,#d46a86)]"><Icon className="h-5 w-5" strokeWidth={1.5} /></span>
+-                <div><div className="text-[11px] font-bold text-[#6b5b5a]">{title}</div><div className="text-[10px] text-[#8a797c]">{desc}</div></div>
++              <div key={title} className="flex min-w-0 flex-col items-center justify-center gap-1.5 px-1 py-3 text-center sm:flex-row sm:gap-3 sm:px-3 sm:py-4 sm:text-left">
++                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--store-accent,#d46a86)]/30 bg-white/70 text-[var(--store-accent,#d46a86)] sm:h-10 sm:w-10"><Icon className="h-4 w-4 sm:h-5 sm:w-5" strokeWidth={1.5} /></span>
++                <div className="min-w-0"><div className="text-[8px] font-bold leading-tight text-[#6b5b5a] min-[390px]:text-[9px] sm:text-[11px]">{title}</div><div className="mt-0.5 text-[7px] leading-tight text-[#8a797c] min-[390px]:text-[8px] sm:text-[10px]">{desc}</div></div>
+               </div>
+             ))}
+           </div>
+diff --git a/src/server/aiReports.ts b/src/server/aiReports.ts
+index e2c19ae..e042683 100644
+--- a/src/server/aiReports.ts
++++ b/src/server/aiReports.ts
+@@ -1,29 +1,10 @@
+ import { Router } from "express";
+-import { GoogleGenAI } from "@google/genai";
+ import { AuthRequest, requireAuth, requirePermission } from "./authMiddleware";
++import { getOllamaErrorInfo, ollamaChat } from "./ollama";
+ 
+ const router = Router();
+ router.use(requireAuth);
+ 
+-function getAiFailure(error: any) {
+-  const message = String(error?.message || error || "");
+-  const status = Number(error?.status || error?.code || 0);
+-  const rateLimited = status === 429 || /RESOURCE_EXHAUSTED|quota exceeded|rate.?limit|too many requests/i.test(message);
+-  const unavailable = status === 503 || /UNAVAILABLE|temporarily unavailable|service unavailable/i.test(message);
+-  const retryMatch = message.match(/retry(?:\s+in|Delay[^0-9]*)\s*([0-9]+(?:\.[0-9]+)?)s/i);
+-  return { message, status, rateLimited, unavailable, retryAfterSeconds: retryMatch ? Math.ceil(Number(retryMatch[1])) : null };
+-}
+-
+-let aiClient: GoogleGenAI | null = null;
+-function getAiClient() {
+-  if (!aiClient) {
+-    const key = process.env.GEMINI_API_KEY;
+-    if (!key) throw new Error("GEMINI_API_KEY_MISSING");
+-    aiClient = new GoogleGenAI({ apiKey: key });
+-  }
+-  return aiClient;
+-}
+-
+ const cleanData = (data: any) => {
+   const json = JSON.stringify(data ?? {}, (_key, value) => {
+     if (typeof value === "string" && value.length > 400) return `${value.slice(0, 400)}...`;
+@@ -59,25 +40,30 @@ Rules:
+ - Keep it concise but useful for decision-making.
+ `;
+ 
+-    const response = await getAiClient().models.generateContent({
+-      model: process.env.GEMINI_REPORT_MODEL || "gemini-3.6-flash",
+-      contents: prompt,
++    const analysis = await ollamaChat({
++      messages: [
++        { role: "system", content: "Você é um auditor financeiro sênior e analista de ERP. Não invente números nem fatos ausentes." },
++        { role: "user", content: prompt },
++      ],
++      model: process.env.OLLAMA_REPORT_MODEL || process.env.OLLAMA_MODEL,
++      temperature: 0.15,
++      timeoutMs: 58_000,
+     });
+ 
+-    res.json({ analysis: response.text || "Não foi possível gerar análise." });
++    res.json({ analysis: analysis || "Não foi possível gerar análise." });
+   } catch (error: any) {
+-    if (error.message === "GEMINI_API_KEY_MISSING") {
+-      return res.status(400).json({ error: "Recurso de IA não configurado. Solicite a configuração ao administrador do sistema." });
++    const failure = getOllamaErrorInfo(error);
++    if (failure.notConfigured) {
++      return res.status(400).json({ code: "AI_NOT_CONFIGURED", error: "Ollama não configurado. Defina OLLAMA_API_KEY ou OLLAMA_BASE_URL." });
+     }
+-    const failure = getAiFailure(error);
+     if (failure.rateLimited) {
+       const wait = failure.retryAfterSeconds ? ` Aguarde cerca de ${failure.retryAfterSeconds} segundos e tente novamente.` : " Aguarde um momento e tente novamente.";
+       return res.status(429).json({ code: "AI_RATE_LIMIT", error: `Limite temporário da IA atingido.${wait}`, retryAfterSeconds: failure.retryAfterSeconds });
+     }
+     if (failure.unavailable) {
+-      return res.status(503).json({ code: "AI_UNAVAILABLE", error: "A IA está temporariamente indisponível. Tente novamente em alguns instantes." });
++      return res.status(503).json({ code: "AI_UNAVAILABLE", error: "O Ollama está temporariamente indisponível. Tente novamente em alguns instantes." });
+     }
+-    console.error("AI report error:", failure.message);
++    console.error("Ollama report error:", failure.message);
+     res.status(500).json({ code: "AI_ERROR", error: "Não foi possível gerar a análise com IA agora. Tente novamente mais tarde." });
+   }
+ });
+diff --git a/src/server/audit.ts b/src/server/audit.ts
+index a9082cf..6a60501 100644
+--- a/src/server/audit.ts
++++ b/src/server/audit.ts
+@@ -2,9 +2,13 @@ import { db } from "../db";
+ import { auditLogs } from "../db/schema";
+ import { v4 as uuidv4 } from "uuid";
+ 
+-export async function logAction(userId: string, action: string, tableName: string, recordId: string, oldValues?: any, newValues?: any) {
++export async function logAction(userId: string, action: string, tableName: string, recordId: string, oldValues?: any, newValues?: any, executor: any = db) {
+   try {
+-    await db.insert(auditLogs).values({
++    // Quando a ação principal já está dentro de uma transação, use o mesmo `tx`.
++    // Em Vercel o pool roda com DB_POOL_MAX=1; abrir uma segunda consulta pelo
++    // `db` global enquanto a transação segura a única conexão causa espera até
++    // timeout e fazia operações como criar produto parecerem que "não salvam".
++    await executor.insert(auditLogs).values({
+       id: uuidv4(),
+       userId,
+       action,
+diff --git a/src/server/health.ts b/src/server/health.ts
+index ca0cbfb..460717a 100644
+--- a/src/server/health.ts
++++ b/src/server/health.ts
+@@ -1,8 +1,9 @@
+ import { Router } from "express";
+ import { db } from "../db";
+-import { users, roles, permissions, rolePermissions, sales, deliveryPaymentOverrides } from "../db/schema";
++import { users, roles, permissions, rolePermissions, sales, deliveryPaymentOverrides, products, productGroups, stockBalances } from "../db/schema";
+ import { eq, sql, and, ne } from "drizzle-orm";
+ import { requireAuth, requirePermission } from "./authMiddleware";
++import { v4 as uuidv4 } from "uuid";
+ 
+ const router = Router();
+ 
+@@ -20,6 +21,40 @@ router.get("/", async (_req, res) => {
+   }
+ });
+ 
++// Smoke test de escrita usado apenas pelo Preview durante o deploy. Ele grava
++// um produto e o saldo dentro de uma transação e força rollback, portanto não
++// deixa nenhum dado de teste no Neon. Em produção a rota nem existe.
++router.post("/product-write-smoke", async (_req, res) => {
++  if (process.env.VERCEL_ENV !== "preview") return res.status(404).json({ error: "Not found" });
++  const rollbackMarker = `AURA_SMOKE_ROLLBACK_${Date.now()}`;
++  try {
++    const [group] = await db.select({ id: productGroups.id }).from(productGroups).limit(1);
++    await db.transaction(async (tx) => {
++      const id = uuidv4();
++      await tx.insert(products).values({
++        id,
++        sku: `SMOKE-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`.toUpperCase(),
++        name: "AURA DEPLOYMENT WRITE SMOKE",
++        groupId: group?.id || null,
++        salePriceA: "1.00",
++        salePriceB: "1.00",
++        salePriceC: "1.00",
++        technicalSpecs: [{ label: "smoke", value: "ok" }],
++        storeVisible: false,
++      });
++      await tx.insert(stockBalances).values({ productId: id, physicalStock: 0, reservedStock: 0 });
++      throw new Error(rollbackMarker);
++    });
++    return res.status(500).json({ status: "error", error: "Smoke transaction did not rollback" });
++  } catch (error: any) {
++    if (String(error?.message || "") === rollbackMarker) {
++      return res.json({ status: "ok", dbWrite: "verified", rolledBack: true });
++    }
++    console.error("Product write smoke failed:", error);
++    return res.status(500).json({ status: "error", dbWrite: "failed", error: String(error?.message || "unknown").slice(0, 300) });
++  }
++});
++
+ router.get("/flow", requireAuth, requirePermission("admin", "manage"), async (req, res) => {
