@@ -21,11 +21,51 @@ jobs:
       - name: Apply prepared fixes
         shell: bash
         run: |
+          set -euo pipefail
           cat .github/aura-fixes.patch.part-* > /tmp/aura-fixes.patch
           git apply --check /tmp/aura-fixes.patch
           git apply /tmp/aura-fixes.patch
+
+          # O GITHUB_TOKEN deste job não tem permissão para alterar workflows.
+          # Restaura os workflows antes do commit; eles serão atualizados depois
+          # diretamente pelo conector GitHub.
+          git checkout HEAD -- .github/workflows/package-deploy-source.yml .github/workflows/apply-aura-fixes.yml
+
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path('.')
+
+          p = root / '.env.example'
+          s = p.read_text()
+          s = s.replace('OLLAMA_MODEL="gemma4:31b"', 'OLLAMA_MODEL="mistral-small3.2"')
+          s = s.replace('OLLAMA_VISION_MODEL="gemma4:31b"', 'OLLAMA_VISION_MODEL="mistral-small3.2"')
+          if 'OLLAMA_REPORT_MODEL=' not in s:
+              s = s.replace('OLLAMA_VISION_MODEL="mistral-small3.2"', 'OLLAMA_VISION_MODEL="mistral-small3.2"\nOLLAMA_REPORT_MODEL="mistral-small3.2"')
+          p.write_text(s)
+
+          p = root / 'src/server/ollama.ts'
+          p.write_text(p.read_text().replace('"gemma4:31b"', '"mistral-small3.2"'))
+
+          p = root / 'src/server/store.ts'
+          s = p.read_text()
+          s = s.replace('const MAX_PROOF_BYTES = 5 * 1024 * 1024; // 5 MB', 'const MAX_PROOF_BYTES = 3 * 1024 * 1024; // 3 MB: base64 + JSON precisa caber no limite HTTP de 4 MB')
+          s = s.replace('Arquivo muito grande (máx. 5 MB).', 'Arquivo muito grande (máx. 3 MB).')
+          p.write_text(s)
+
+          p = root / 'src/pages/store/OrderStatus.tsx'
+          p.write_text(p.read_text().replace('file.size > 5 * 1024 * 1024', 'file.size > 3 * 1024 * 1024'))
+
+          p = root / 'src/pages/store/i18n.ts'
+          s = p.read_text().replace('máx. 5 MB', 'máx. 3 MB').replace('max. 5 MB', 'max. 3 MB')
+          p.write_text(s)
+          PY
+
+          npm pkg delete 'dependencies.@google/genai'
+          npm install --package-lock-only --ignore-scripts
+
           rm -f .github/aura-fixes.patch.part-* .github/aura-fixes.patch.gz.b64.part-* .github/aura-fixes.apply-trigger
-          rm .github/workflows/apply-aura-fixes.yml
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
