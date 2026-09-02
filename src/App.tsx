@@ -6,6 +6,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { apiFetch } from './lib/api';
 import { setBrlExchangeRate, setSystemCurrency } from './lib/i18n';
 import { ToastHost } from './components/Toast';
+import { ScrollToTop } from './components/ScrollToTop';
 
 // Cada página vira o próprio pedaço de JS, baixado só quando a rota é visitada — antes o bundle
 // inteiro (3,37 MB) carregava de uma vez até pra abrir só a tela de login. `lazyNamed` existe porque
@@ -146,6 +147,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <ToastHost />
+      <ScrollToTop />
       <Suspense fallback={<RouteFallback />}>
       <Routes>
         <Route path="/login" element={<Login />} />
@@ -229,4 +231,3 @@ export default function App() {
     </BrowserRouter>
   );
 }
-
