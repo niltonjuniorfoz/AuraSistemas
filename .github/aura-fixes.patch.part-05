@@ -1,0 +1,191 @@
+-                  rawText: { type: Type.STRING, description: "Original raw text/description line of the item from the invoice" }
+-                },
+-                required: ["name", "quantity", "unitCost"]
+-              }
+-            },
+-            rawText: { type: Type.STRING, description: "The full detected text content of the invoice for verification" },
+-            warnings: {
+-              type: Type.ARRAY,
+-              items: { type: Type.STRING },
+-              description: "Any warnings or notices (e.g. calculation mismatch, blurry parts)"
+-            }
+-          },
+-          required: ["supplier", "invoice", "items"]
+-        },
+-      },
+-    });
+-
+-    if (!response.text) {
+-      throw new Error("Não foi possível obter texto estruturado do modelo Gemini.");
++    if (mimeType === "application/pdf") {
++      return await processPdfWithOllama();
+     }
+-
+-    const result = JSON.parse(response.text.trim()) as OcrResult;
+-    return result;
++    if (!mimeType.startsWith("image/")) {
++      throw new Error("OCR_UNSUPPORTED_TYPE");
++    }
++    return await processImageWithOllama(fileBuffer, language);
+   } catch (error: any) {
+-    console.error("Gemini OCR extraction failed:", error);
+-    throw new Error(error.message || "Erro no processamento OCR com Gemini API.");
++    if (error?.message === "OCR_PDF_NEEDS_IMAGE") {
++      throw new Error("PDF ainda precisa ser convertido para imagem antes do OCR com Ollama. Envie JPG, PNG ou WEBP.");
++    }
++    if (error?.message === "OCR_UNSUPPORTED_TYPE") {
++      throw new Error("Formato não suportado para OCR.");
++    }
++    const info = getOllamaErrorInfo(error);
++    if (info.notConfigured) {
++      throw new Error("OCR com Ollama não configurado. Defina OLLAMA_API_KEY ou OLLAMA_BASE_URL.");
++    }
++    console.error("OCR extraction failed:", info.message || error?.message || error);
++    throw new Error(error?.message || "Erro no processamento OCR.");
+   }
+ }
+diff --git a/src/server/products.ts b/src/server/products.ts
+index f9373a0..7eb636a 100644
+--- a/src/server/products.ts
++++ b/src/server/products.ts
+@@ -9,47 +9,20 @@ import { addCostLayer, consumeFifo } from "./costLayers";
+ import { v4 as uuidv4 } from "uuid";
+ import { toUpperText, handleDbError } from "./utils";
+ import { isValidCurrency } from "../lib/currency";
++import { extractJsonObject, getOllamaErrorInfo, ollamaChat } from "./ollama";
+ 
+ const router = Router();
+ router.use(requireAuth);
+ 
+-const AI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+-
+-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+-
+-function getAiErrorInfo(error: any) {
+-  const rawMessage = String(error?.message || error || "");
+-  const rawStatus = Number(error?.status || error?.code || 0);
+-  const isRateLimit = rawStatus === 429 || /RESOURCE_EXHAUSTED|quota exceeded|rate.?limit|too many requests/i.test(rawMessage);
+-  const isUnavailable = rawStatus === 503 || /UNAVAILABLE|temporarily unavailable|service unavailable/i.test(rawMessage);
+-  const retryMatch = rawMessage.match(/retry(?:\s+in|Delay[^0-9]*)\s*([0-9]+(?:\.[0-9]+)?)s/i);
+-  const retryAfterSeconds = retryMatch ? Math.max(1, Math.ceil(Number(retryMatch[1]))) : undefined;
+-  return { rawMessage, rawStatus, isRateLimit, isUnavailable, retryAfterSeconds };
+-}
+-
+-async function generateAiContent(ai: any, prompt: string) {
+-  let lastError: any;
+-  for (let attempt = 0; attempt < 2; attempt += 1) {
+-    try {
+-      return await ai.models.generateContent({ model: AI_MODEL, contents: prompt });
+-    } catch (error: any) {
+-      lastError = error;
+-      const info = getAiErrorInfo(error);
+-      const canRetryRateLimit = info.isRateLimit && (info.retryAfterSeconds || 0) <= 4;
+-      const canRetryTransient = info.isUnavailable || info.rawStatus >= 500;
+-      if (attempt === 0 && (canRetryRateLimit || canRetryTransient)) {
+-        await sleep(Math.min(4000, Math.max(900, (info.retryAfterSeconds || 1) * 1000)));
+-        continue;
+-      }
+-      break;
+-    }
+-  }
+-  throw lastError;
+-}
+-
+ function sendFriendlyAiError(res: any, error: any, operation: string) {
+-  const info = getAiErrorInfo(error);
+-  if (info.isRateLimit) {
++  const info = getOllamaErrorInfo(error);
++  if (info.notConfigured) {
++    return res.status(400).json({
++      code: "AI_NOT_CONFIGURED",
++      error: "Ollama não configurado. Defina OLLAMA_API_KEY ou OLLAMA_BASE_URL no ambiente do sistema.",
++    });
++  }
++  if (info.rateLimited) {
+     const waitText = info.retryAfterSeconds ? ` Aguarde cerca de ${info.retryAfterSeconds} segundos e tente novamente.` : " Aguarde um momento e tente novamente.";
+     return res.status(429).json({
+       code: "AI_RATE_LIMIT",
+@@ -57,13 +30,13 @@ function sendFriendlyAiError(res: any, error: any, operation: string) {
+       retryAfterSeconds: info.retryAfterSeconds || null,
+     });
+   }
+-  if (info.isUnavailable) {
++  if (info.unavailable) {
+     return res.status(503).json({
+       code: "AI_UNAVAILABLE",
+-      error: "A IA está temporariamente indisponível. Tente novamente em alguns instantes.",
++      error: "O Ollama está temporariamente indisponível. Verifique o host/modelo configurado e tente novamente.",
+     });
+   }
+-  console.error(`AI ${operation} error:`, info.rawMessage);
++  console.error(`Ollama ${operation} error:`, info.message);
+   return res.status(500).json({
+     code: "AI_ERROR",
+     error: `Não foi possível ${operation} com a IA agora. Tente novamente ou preencha o campo manualmente.`,
+@@ -683,7 +656,7 @@ router.post("/", requirePermission("product", "manage"), async (req: AuthRequest
+         }
+       }
+       
+-      await logAction(req.user!.userId, "CREATE", "products", id, null, data);
++      await logAction(req.user!.userId, "CREATE", "products", id, null, data, tx);
+     });
+ 
+     res.status(201).json({ id });
+@@ -1131,26 +1104,24 @@ router.get("/:id/cost-history", async (req: AuthRequest, res) => {
+ router.post("/ai/description", requirePermission("product", "manage"), async (req: AuthRequest, res) => {
+   try {
+     const { name, brand, model, group, subgroup, upc } = req.body;
+-    const apiKey = process.env.GEMINI_API_KEY;
+-    if (!apiKey) {
+-      return res.status(400).json({ error: "Recurso de IA não configurado. Solicite a configuração ao administrador do sistema." });
+-    }
+-    
+-    // dynamically import SDK so if not updated it won't crash
+-    const { GoogleGenAI } = await import("@google/genai");
+-    const ai = new GoogleGenAI({ apiKey });
+-
+-    const prompt = `Escreva uma descrição curta, clara e objetiva para o seguinte produto. No máximo 3 a 5 linhas. Não escreva um texto longo de propaganda ou marketing, seja direto, útil para cadastro interno e ficha técnica.
+-    Nome: ${name || ""}
+-    Marca: ${brand || ""}
+-    Modelo: ${model || ""}
+-    Grupo: ${group || ""}
+-    Subgrupo: ${subgroup || ""}
+-    UPC: ${upc || ""}`;
+-
+-    const response = await generateAiContent(ai, prompt);
++    const prompt = `Escreva uma descrição curta, clara e objetiva para cadastro interno do produto abaixo.
++Use português do Brasil. Máximo de 3 a 5 linhas. Não use markdown, não invente características e evite texto publicitário exagerado.
++Nome: ${name || ""}
++Marca: ${brand || ""}
++Modelo: ${model || ""}
++Grupo: ${group || ""}
++Subgrupo: ${subgroup || ""}
++UPC: ${upc || ""}`;
++
++    const description = await ollamaChat({
++      messages: [
++        { role: "system", content: "Você auxilia no cadastro de produtos de um ERP. Seja preciso, curto e não invente dados." },
++        { role: "user", content: prompt },
++      ],
++      temperature: 0.2,
++    });
+ 
+-    res.json({ description: response.text });
++    res.json({ description });
+   } catch (error: any) {
+     return sendFriendlyAiError(res, error, "gerar a descrição");
+   }
+@@ -1159,54 +1130,45 @@ router.post("/ai/description", requirePermission("product", "manage"), async (re
+ router.post("/ai/specs", requirePermission("product", "manage"), async (req: AuthRequest, res) => {
+   try {
+     const { name, brand, model, group, subgroup, upc } = req.body;
+-    const apiKey = process.env.GEMINI_API_KEY;
+-    if (!apiKey) {
+-      return res.status(400).json({ error: "Recurso de IA não configurado. Solicite a configuração ao administrador do sistema." });
+-    }
+-    
+-    const { GoogleGenAI } = await import("@google/genai");
+-    const ai = new GoogleGenAI({ apiKey });
+-
+-    const prompt = `Gere uma descrição curta (sem propaganda, objetiva, 3-5 linhas) e uma lista de especificações técnicas para o produto abaixo.
+-    Retorne APENAS um JSON válido. Não adicione nenhum markdown (\`\`\`json) na resposta, apenas o texto bruto do JSON.
