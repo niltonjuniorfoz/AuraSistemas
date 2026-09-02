@@ -36,23 +36,11 @@ jobs:
       - name: Build Vercel frontend and bundled API
         run: npm run build:vercel
 
-      - name: Refresh checked-in Vercel runtime bundle
-        id: bundle
+      - name: Verify bundled runtime is current
         shell: bash
-        run: |
-          if ! git diff --quiet -- api/runtime.js; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add api/runtime.js
-            git commit -m "build: refresh bundled Vercel runtime"
-            git push origin HEAD:deploy-vercel-neon-20260902
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          fi
+        run: git diff --exit-code -- api/runtime.js
 
       - name: Wait for current Vercel Preview
-        if: steps.bundle.outputs.changed != 'true'
         shell: bash
         env:
           EXPECTED_SHA: ${{ github.sha }}
@@ -85,7 +73,6 @@ jobs:
           fi
 
       - name: Verify API ping
-        if: steps.bundle.outputs.changed != 'true'
         shell: bash
         run: |
           URL="https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app/api/ping"
@@ -96,7 +83,6 @@ jobs:
           grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' /tmp/aura-final-ping.txt
 
       - name: Verify login reaches Neon
-        if: steps.bundle.outputs.changed != 'true'
         shell: bash
         run: |
           URL="https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app/api/auth/login"
@@ -115,7 +101,6 @@ jobs:
           grep -Fq 'Credenciais inválidas' /tmp/aura-login-probe.txt
 
       - name: Verify frontend
-        if: steps.bundle.outputs.changed != 'true'
         shell: bash
         run: |
           URL="https://aura-sistemas-git-deploy-vercel-neon-20260902-niltonjrfoz-5292.vercel.app/"
@@ -124,21 +109,17 @@ jobs:
           grep -qi '<html' /tmp/aura-home.html
 
       - name: Set up Python
-        if: steps.bundle.outputs.changed != 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
       - name: Install Graphify
-        if: steps.bundle.outputs.changed != 'true'
         run: pipx install graphifyy
 
       - name: Update Graphify incrementally
-        if: steps.bundle.outputs.changed != 'true'
         run: graphify update .
 
       - name: Commit refreshed graph to deployment branch
-        if: steps.bundle.outputs.changed != 'true'
         shell: bash
         run: |
           if ! git diff --quiet -- graphify-out; then
@@ -150,12 +131,10 @@ jobs:
           fi
 
       - name: Package tracked source
-        if: steps.bundle.outputs.changed != 'true'
         shell: bash
         run: git archive --format=tar.gz -o /tmp/aura-source.tgz HEAD
 
       - name: Upload source artifact
-        if: steps.bundle.outputs.changed != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: aura-deploy-source
