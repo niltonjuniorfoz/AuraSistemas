@@ -136,14 +136,15 @@ export const ShopProductCard: React.FC<{ p: any }> = ({ p }) => {
         {!p.hasVariants && inCart && <span className="mt-1 text-[10px] font-bold text-[var(--store-accent,#C99C5A)]">{t("product.naSacola")} ({inCart.quantity})</span>}
         <div className="mt-3 flex w-full flex-col items-center gap-1.5">
           {p.sku && (
-            <button onClick={copySku} title={t("product.copiarCodigo", "Copiar código")} className="max-w-full truncate text-[7px] tracking-[0.04em] text-stone-300 transition hover:text-stone-500 sm:text-[8px]">
-              {p.sku} {copied ? <Check className="h-2.5 w-2.5 text-emerald-600" /> : <Copy className="h-2.5 w-2.5" />}
+            <button onClick={copySku} title={t("product.copiarCodigo", "Copiar código")} className="flex max-w-full items-center justify-center gap-0.5 truncate text-[6px] leading-none tracking-[0.02em] text-stone-300 transition hover:text-stone-500 sm:text-[7px]">
+              {p.sku} {copied ? <Check className="h-2 w-2 text-emerald-600 sm:h-2.5 sm:w-2.5" /> : <Copy className="h-2 w-2 sm:h-2.5 sm:w-2.5" />}
             </button>
           )}
           {/* Botão de sacola: CTA premium compartilhado (preenchido + shimmer),
               coerente com o resto da loja. */}
           <PremiumCta
             size="sm"
+            className="!gap-1 !px-1.5 !text-[9px] whitespace-nowrap sm:!gap-1.5 sm:!px-3 sm:!text-[11px]"
             onClick={(e) => {
               if (p.hasVariants) {
                 // Se tem opções, o link já vai pra página de detalhes. No editor
@@ -156,7 +157,7 @@ export const ShopProductCard: React.FC<{ p: any }> = ({ p }) => {
             }}
             disabled={soldOutForMe && !p.hasVariants}
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
             {t("product.adicionarSacola")}
           </PremiumCta>
         </div>
