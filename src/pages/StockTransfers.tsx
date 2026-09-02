@@ -202,8 +202,8 @@ export function StockTransfers() {
   const selectInvoiceFile = (file: File | null, input?: HTMLInputElement) => {
     if (input) input.value = "";
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) {
-      alert("A nota deve ter no máximo 10 MB.");
+    if (file.size > 4 * 1024 * 1024) {
+      alert("A nota deve ter no máximo 4 MB.");
       return;
     }
     setTransferInvoiceFile(file);

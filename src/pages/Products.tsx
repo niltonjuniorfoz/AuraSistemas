@@ -587,6 +587,7 @@ export function Products() {
 
   const getAiErrorMessage = (data: any, fallback: string) => {
     if (data?.code === "AI_RATE_LIMIT") return data.error || "Limite temporário da IA atingido. Aguarde um momento e tente novamente.";
+    if (data?.code === "AI_NOT_CONFIGURED") return data.error || "Ollama ainda não foi configurado no servidor.";
     if (data?.code === "AI_UNAVAILABLE") return data.error || "A IA está temporariamente indisponível.";
     return data?.error || fallback;
   };

@@ -12,7 +12,7 @@ const router = Router();
 router.use(requireAuth);
 
 const upload = multer({ storage: multer.memoryStorage() });
-const SUPPLIER_INVOICE_MAX_BYTES = 10 * 1024 * 1024;
+const SUPPLIER_INVOICE_MAX_BYTES = 4 * 1024 * 1024;
 const SUPPLIER_INVOICE_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"];
 
 function toSafeDate(value: any) {
@@ -114,7 +114,7 @@ router.post("/:id/invoices", requirePermission("supplier", "edit"), upload.singl
         return res.status(400).json({ error: "Formato inválido. Use JPG, PNG, WEBP ou PDF." });
      }
      if (req.file.size > SUPPLIER_INVOICE_MAX_BYTES) {
-        return res.status(400).json({ error: "Arquivo maior que 10 MB." });
+        return res.status(400).json({ error: "Arquivo maior que 4 MB." });
      }
 
      const id = uuidv4();

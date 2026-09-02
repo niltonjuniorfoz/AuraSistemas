@@ -7,11 +7,19 @@ export function extractList<T = any>(json: any): T[] {
 }
 
 export async function parseApiError(res: Response) {
-  const data = await res.json().catch(() => ({}));
+  const raw = await res.text().catch(() => "");
+  let data: any = {};
+  try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
+
+  let fallback = raw && !raw.trim().startsWith("<") ? raw.trim().slice(0, 400) : "Erro desconhecido.";
+  if (res.status === 413) fallback = "O envio excedeu o limite de 4 MB. Reduza o arquivo/imagem e tente novamente.";
+  if (res.status >= 500 && (!raw || raw.trim().startsWith("<"))) fallback = "O servidor não conseguiu processar a operação. Tente novamente em instantes.";
+
   return {
     status: res.status,
-    message: data.error || data.message || "Erro desconhecido.",
-    fields: data.fields || {}
+    message: data.error || data.message || fallback,
+    fields: data.fields || {},
+    code: data.code || undefined,
   };
 }
 

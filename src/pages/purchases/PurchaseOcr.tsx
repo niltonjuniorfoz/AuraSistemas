@@ -352,14 +352,14 @@ export function PurchaseOcr() {
   };
 
   const processSelectedFile = (selectedFile: File) => {
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf'];
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
     if (!allowedTypes.includes(selectedFile.type)) {
-      setError('Formato ou tipo de arquivo inválido. Formas suportadas: JPG, PNG, WEBP e PDF.');
+      setError('Formato ou tipo de arquivo inválido. Formatos suportados: JPG, PNG e WEBP.');
       return;
     }
-    // Limit to 10MB
-    if (selectedFile.size > 10 * 1024 * 1024) {
-      setError('O tamanho do arquivo excede o limite estipulado de 10 MB.');
+    // Limit to 4MB
+    if (selectedFile.size > 4 * 1024 * 1024) {
+      setError('O tamanho do arquivo excede o limite estipulado de 4 MB.');
       return;
     }
 
@@ -869,13 +869,13 @@ export function PurchaseOcr() {
 
             <h2 className="text-2xl font-bold text-white mb-2">Selecione o arquivo da Nota Fiscal ou Foto</h2>
             <p className="text-gray-400 mb-6 text-center max-w-lg text-sm leading-relaxed">
-              Arraste e solte o arquivo aqui ou faça upload manual. Suporta imagens <span className="text-brand-gold">JPG, PNG, WEBP</span> ou arquivos <span className="text-brand-gold">PDF</span> com tabelas ou notas legíveis de até 10 MB.
+              Arraste e solte o arquivo aqui ou faça upload manual. Suporta imagens <span className="text-brand-gold">JPG, PNG, WEBP</span> com notas legíveis de até 4 MB.
             </p>
 
             <input 
               type="file" 
               ref={fileInputRef}
-              accept="image/*,.pdf" 
+              accept="image/jpeg,image/png,image/webp" 
               onChange={handleFileInputChange} 
               className="hidden" 
             />
@@ -896,7 +896,7 @@ export function PurchaseOcr() {
                   onClick={() => fileInputRef.current?.click()}
                   className="h-auto rounded-xl bg-brand-gold px-8 py-3 font-bold text-brand-navydark shadow-lg shadow-brand-gold/15 hover:bg-brand-goldhover active:scale-95"
                 >
-                  Selecionar Arquivo / PDF
+                  Selecionar Imagem
                 </Button>
                 <Button
                   type="button"

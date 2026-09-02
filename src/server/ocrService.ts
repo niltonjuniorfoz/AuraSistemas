@@ -1,27 +1,4 @@
-import { GoogleGenAI, Type } from "@google/genai";
-import fs from "fs";
-import path from "path";
-
-// Initialize Gemini client dynamically to avoid throwing load-time errors if API key is missing
-let aiClient: GoogleGenAI | null = null;
-
-function getAiClient(): GoogleGenAI {
-  if (!aiClient) {
-    const key = process.env.GEMINI_API_KEY;
-    if (!key) {
-      throw new Error("GEMINI_API_KEY_MISSING");
-    }
-    aiClient = new GoogleGenAI({
-      apiKey: key,
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build",
-        },
-      },
-    });
-  }
-  return aiClient;
-}
+import { extractJsonObject, getOllamaErrorInfo, getOllamaModel, ollamaChat } from "./ollama";
 
 export interface OcrResult {
   supplier: {
@@ -47,122 +24,98 @@ export interface OcrResult {
   warnings?: string[];
 }
 
+const OCR_JSON_SHAPE = `{
+  "supplier": {"name":"string","document":"string opcional"},
+  "invoice": {"number":"string","date":"YYYY-MM-DD opcional","total":0},
+  "items": [{"sku":"opcional","upc":"opcional","name":"string","quantity":1,"unitCost":0,"totalCost":0,"confidence":0.0,"rawText":"opcional"}],
+  "rawText":"texto detectado opcional",
+  "warnings":["avisos opcionais"]
+}`;
+
+function normalizeOcrResult(value: any): OcrResult {
+  const supplier = value?.supplier && typeof value.supplier === "object" ? value.supplier : {};
+  const invoice = value?.invoice && typeof value.invoice === "object" ? value.invoice : {};
+  const items = Array.isArray(value?.items) ? value.items : [];
+
+  return {
+    supplier: {
+      name: String(supplier.name || "Não informado"),
+      ...(supplier.document ? { document: String(supplier.document) } : {}),
+    },
+    invoice: {
+      number: String(invoice.number || "Não informado"),
+      ...(invoice.date ? { date: String(invoice.date) } : {}),
+      ...(Number.isFinite(Number(invoice.total)) ? { total: Number(invoice.total) } : {}),
+    },
+    items: items
+      .filter((item: any) => item && typeof item === "object")
+      .slice(0, 250)
+      .map((item: any) => ({
+        ...(item.sku ? { sku: String(item.sku) } : {}),
+        ...(item.upc ? { upc: String(item.upc) } : {}),
+        name: String(item.name || "Item não identificado"),
+        quantity: Math.max(0, Math.round(Number(item.quantity) || 0)),
+        unitCost: Number(item.unitCost) || 0,
+        ...(Number.isFinite(Number(item.totalCost)) ? { totalCost: Number(item.totalCost) } : {}),
+        confidence: Math.min(1, Math.max(0, Number(item.confidence) || 0)),
+        ...(item.rawText ? { rawText: String(item.rawText) } : {}),
+      })),
+    ...(value?.rawText ? { rawText: String(value.rawText) } : {}),
+    ...(Array.isArray(value?.warnings) ? { warnings: value.warnings.map(String).slice(0, 30) } : {}),
+  };
+}
+
+async function processImageWithOllama(fileBuffer: Buffer, language: string) {
+  const outputLanguage = language?.toLowerCase().startsWith("es") ? "Spanish (Paraguay)" : "Brazilian Portuguese";
+  const base64Data = fileBuffer.toString("base64");
+  const prompt = `Analise esta imagem de nota fiscal, fatura comercial ou recibo de compra.
+Extraia fornecedor, documento fiscal, número/data/total da nota e todos os itens visíveis com SKU/código, UPC/EAN/GTIN, descrição, quantidade, custo unitário, total da linha, confiança de 0 a 1 e texto bruto quando útil.
+Não invente valores que não estejam legíveis. Se algo estiver incerto, registre um aviso.
+Todos os avisos e observações devem estar em ${outputLanguage}.
+Retorne APENAS JSON válido neste formato: ${OCR_JSON_SHAPE}`;
+
+  const text = await ollamaChat({
+    model: getOllamaModel("vision"),
+    messages: [{ role: "user", content: prompt, images: [base64Data] }],
+    temperature: 0,
+    json: true,
+    timeoutMs: 58_000,
+  });
+  return normalizeOcrResult(extractJsonObject(text));
+}
+
+// Ollama recebe imagens para visão. PDF bruto não é enviado para outro
+// provedor: o sistema agora usa Ollama exclusivamente. Para PDF, o usuário
+// deve exportar/rasterizar a página como JPG/PNG/WEBP antes do OCR.
+async function processPdfWithOllama(): Promise<OcrResult> {
+  throw new Error("OCR_PDF_NEEDS_IMAGE");
+}
+
 export async function processInvoiceOcr(
   fileBuffer: Buffer,
   mimeType: string,
-  language: string = "pt"
+  language: string = "pt",
 ): Promise<OcrResult> {
-  // Validate API configuration
   try {
-    getAiClient();
-  } catch (error: any) {
-    if (error.message === "GEMINI_API_KEY_MISSING") {
-      throw new Error("OCR não configurado. Configure a chave em Configurações > Sistema ou no .env.");
+    if (mimeType === "application/pdf") {
+      return await processPdfWithOllama();
     }
-    throw error;
-  }
-
-  const base64Data = fileBuffer.toString("base64");
-  const outputLanguage = language?.toLowerCase().startsWith("es") ? "Spanish (Paraguay)" : "Brazilian Portuguese";
-
-  const prompt = `
-    Analyze the uploaded document which is a commercial invoice or purchase receipt.
-    Extract the following details:
-    1. Supplier Corporate Name or Trade Name.
-    2. Supplier Tax ID / Document Number (like CNPJ, CPF, RUC, RUT, NIT, etc.).
-    3. Invoice Number.
-    4. Invoice Date in standard YYYY-MM-DD format (if only partial date is shown, estimate or complete it relative to year 2026 if context suggests).
-    5. Invoice Total numeric amount.
-    6. Main tabular products/items, including:
-       - SKU/Code (Part Number, reference, etc.)
-       - UPC/EAN/GTIN barcode number if printed
-       - Product description/name (completely and cleanly capitalized)
-       - Quantity purchased
-       - Unit cost price
-       - Total cost price for that line item (Quantity * Unit Cost)
-       - Your confidence level (between 0.0 and 1.0) for this item extraction
-       - Raw description line text from the document for auditing
-
-    Language setting requested: ${language}.
-    All warnings, notices, observations and any explanatory text in the JSON must be written only in ${outputLanguage}. Do not write warnings or notes in English.
-    Product names may remain as printed on the document, but warnings must respect the requested language.
-    Verify that the item totals sum up correctly and flag any warnings if math differences arise.
-    If quantities for weighted products must be rounded to integers because of the schema, explain that warning in ${outputLanguage}.
-    Provide the detailed output parsed into the strictly matched JSON schema object.
-  `;
-
-  try {
-    const response = await getAiClient().models.generateContent({
-      model: "gemini-3.6-flash",
-      contents: [
-        {
-          inlineData: {
-            mimeType,
-            data: base64Data,
-          },
-        },
-        prompt,
-      ],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            supplier: {
-              type: Type.OBJECT,
-              properties: {
-                name: { type: Type.STRING, description: "Supplier corporate name or trade name found on the invoice" },
-                document: { type: Type.STRING, description: "Supplier document or tax number (RUC/CNPJ/CPF/RUT/etc)" }
-              },
-              required: ["name"]
-            },
-            invoice: {
-              type: Type.OBJECT,
-              properties: {
-                number: { type: Type.STRING, description: "Invoice number or document identifier" },
-                date: { type: Type.STRING, description: "Invoice date in YYYY-MM-DD format" },
-                total: { type: Type.NUMBER, description: "Total amount on the invoice" }
-              },
-              required: ["number"]
-            },
-            items: {
-              type: Type.ARRAY,
-              description: "List of products or items listed in the invoice table",
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  sku: { type: Type.STRING, description: "Part Number, SKU, reference code or code internal to the supplier" },
-                  upc: { type: Type.STRING, description: "UPC, EAN, GTIN barcode number if present" },
-                  name: { type: Type.STRING, description: "Description or name of the item" },
-                  quantity: { type: Type.INTEGER, description: "Quantity purchased" },
-                  unitCost: { type: Type.NUMBER, description: "Unit price or unit cost of the item" },
-                  totalCost: { type: Type.NUMBER, description: "Total price/total cost of this item line" },
-                  confidence: { type: Type.NUMBER, description: "A confidence score between 0.0 and 1.0 for this item extraction" },
-                  rawText: { type: Type.STRING, description: "Original raw text/description line of the item from the invoice" }
-                },
-                required: ["name", "quantity", "unitCost"]
-              }
-            },
-            rawText: { type: Type.STRING, description: "The full detected text content of the invoice for verification" },
-            warnings: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: "Any warnings or notices (e.g. calculation mismatch, blurry parts)"
-            }
-          },
-          required: ["supplier", "invoice", "items"]
-        },
-      },
-    });
-
-    if (!response.text) {
-      throw new Error("Não foi possível obter texto estruturado do modelo Gemini.");
+    if (!mimeType.startsWith("image/")) {
+      throw new Error("OCR_UNSUPPORTED_TYPE");
     }
-
-    const result = JSON.parse(response.text.trim()) as OcrResult;
-    return result;
+    return await processImageWithOllama(fileBuffer, language);
   } catch (error: any) {
-    console.error("Gemini OCR extraction failed:", error);
-    throw new Error(error.message || "Erro no processamento OCR com Gemini API.");
+    if (error?.message === "OCR_PDF_NEEDS_IMAGE") {
+      throw new Error("PDF ainda precisa ser convertido para imagem antes do OCR com Ollama. Envie JPG, PNG ou WEBP.");
+    }
+    if (error?.message === "OCR_UNSUPPORTED_TYPE") {
+      throw new Error("Formato não suportado para OCR.");
+    }
+    const info = getOllamaErrorInfo(error);
+    if (info.notConfigured) {
+      throw new Error("OCR com Ollama não configurado. Defina OLLAMA_API_KEY ou OLLAMA_BASE_URL.");
+    }
+    console.error("OCR extraction failed:", info.message || error?.message || error);
+    throw new Error(error?.message || "Erro no processamento OCR.");
   }
 }

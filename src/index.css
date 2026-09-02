@@ -4312,3 +4312,78 @@ body {
     animation: none !important;
   }
 }
+
+/* ------------------------------------------------------------------
+   Modo claro consistente — remove os últimos blocos pretos legados.
+   O ERP antigo usa centenas de bg-[#171717] diretamente. Essas classes
+   arbitrárias não acompanham os tokens semânticos, então no light mode
+   ficavam tabelas/inputs pretos no meio de cards brancos. A loja pública
+   não herda data-theme e, portanto, não é afetada por este bloco.
+   ------------------------------------------------------------------ */
+[data-theme="light"] {
+  --sidebar: #ffffff;
+  --sidebar-foreground: #334155;
+  --sidebar-accent: #f1f5f9;
+  --sidebar-accent-foreground: #0f172a;
+  --sidebar-border: #dde3ee;
+}
+
+[data-theme="light"] .bg-\[\#171717\],
+[data-theme="light"] .bg-\[\#1c1c1c\],
+[data-theme="light"] .bg-\[\#0a0a0a\],
+[data-theme="light"] .bg-\[\#070b14\],
+[data-theme="light"] .bg-black {
+  background-color: #ffffff !important;
+}
+
+[data-theme="light"] input,
+[data-theme="light"] textarea,
+[data-theme="light"] select {
+  color: #172033;
+  caret-color: #172033;
+}
+
+[data-theme="light"] input:disabled,
+[data-theme="light"] textarea:disabled,
+[data-theme="light"] select:disabled {
+  color: #64748b;
+}
+
+[data-theme="light"] table,
+[data-theme="light"] thead,
+[data-theme="light"] tbody,
+[data-theme="light"] tr {
+  color: #1e293b;
+}
+
+[data-theme="light"] .shadow-2xl,
+[data-theme="light"] .shadow-xl,
+[data-theme="light"] .shadow-lg {
+  --tw-shadow-color: rgb(15 23 42 / 0.10);
+}
+
+
+/* Últimos fundos legados com alpha: no modo claro eles não podem deixar
+   blocos pretos isolados dentro de tabelas, formulários e cards. Backdrops
+   de modal (normalmente /50 ou mais) ficam intactos para preservar contraste. */
+[data-theme="light"] .bg-black\/10,
+[data-theme="light"] .bg-black\/20,
+[data-theme="light"] .bg-black\/25,
+[data-theme="light"] .bg-black\/30 {
+  background-color: rgb(241 245 249 / 0.92) !important;
+}
+[data-theme="light"] .bg-gray-950,
+[data-theme="light"] .bg-gray-950\/50,
+[data-theme="light"] .bg-gray-900\/80,
+[data-theme="light"] .bg-gray-900\/70,
+[data-theme="light"] .bg-gray-800\/70,
+[data-theme="light"] .bg-gray-800\/50,
+[data-theme="light"] .bg-gray-800\/40,
+[data-theme="light"] .bg-gray-800\/30 {
+  background-color: #f1f5f9 !important;
+}
+[data-theme="light"] .text-gray-700,
+[data-theme="light"] .text-gray-800,
+[data-theme="light"] .text-gray-900 {
+  color: #1e293b;
+}

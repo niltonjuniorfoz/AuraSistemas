@@ -218,7 +218,10 @@ export async function saveBackupSettings(settings: Partial<BackupSettings>): Pro
 }
 
 function backupsDir() {
-  const dir = path.join(process.cwd(), "backups");
+  // Vercel Functions possuem filesystem efemero; /tmp e a area gravavel por invocacao.
+  // Fora do Vercel preservamos o comportamento atual para Render/local.
+  const baseDir = process.env.VERCEL ? "/tmp" : process.cwd();
+  const dir = path.join(baseDir, "backups");
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
