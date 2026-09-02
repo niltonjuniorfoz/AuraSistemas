@@ -40,10 +40,6 @@ import intelligenceRouter from "../src/server/intelligence";
 import statementsRouter from "../src/server/statements";
 import { router as maintenanceRouter } from "../src/server/maintenance";
 import { apiPerformanceLogger, markResponseStart } from "../src/server/performance";
-import { db } from "../src/db";
-import { products, stockBalances, users } from "../src/db/schema";
-import { logAction } from "../src/server/audit";
-import { v4 as uuidv4 } from "uuid";
 
 function buildCorsOptions(): CorsOptions {
   const allowedOrigins = (process.env.CORS_ORIGINS || "")
@@ -131,44 +127,6 @@ app.get("/api/ping", (_req, res) => {
     runtime: "vercel",
     commit: process.env.VERCEL_GIT_COMMIT_SHA || null,
   });
-});
-
-// Diagnóstico temporário e rollback-only usado pela branch de Preview para
-// provar escrita real no Neon com DB_POOL_MAX=1. Nunca persiste produto e
-// nunca fica disponível em Production. Remover antes do merge em main.
-app.post("/api/__preview/product-write-selftest", async (_req, res) => {
-  if (process.env.VERCEL_ENV !== "preview") return res.status(404).json({ error: "Not found" });
-
-  let rolledBack = false;
-  try {
-    await db.transaction(async (tx) => {
-      const [actor] = await tx.select({ id: users.id }).from(users).limit(1);
-      if (!actor) throw new Error("SELFTEST_NO_USER");
-
-      const id = uuidv4();
-      await tx.insert(products).values({
-        id,
-        sku: `AURA-SELFTEST-${Date.now()}`,
-        name: "AURA PREVIEW WRITE SELFTEST",
-        unitMeasure: "UN",
-        salePriceA: "1.00",
-        salePriceB: "1.00",
-        salePriceC: "1.00",
-      });
-      await tx.insert(stockBalances).values({ productId: id, physicalStock: 0, reservedStock: 0 });
-      await logAction(actor.id, "SELF_TEST", "products", id, null, { preview: true }, tx);
-
-      throw new Error("__AURA_SELFTEST_ROLLBACK__");
-    });
-  } catch (error: any) {
-    if (error?.message === "__AURA_SELFTEST_ROLLBACK__") rolledBack = true;
-    else {
-      console.error("Preview product write selftest failed:", error);
-      return res.status(500).json({ ok: false, error: "Product write self-test failed" });
-    }
-  }
-
-  res.json({ ok: rolledBack, rolledBack });
 });
 
 app.use((error: any, _req: any, res: any, _next: any) => {
