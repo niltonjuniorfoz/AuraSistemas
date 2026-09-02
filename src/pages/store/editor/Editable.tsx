@@ -42,7 +42,17 @@ export function Editable({ panelKey, label, children, className, elementId, onMo
       data-editable={elementId || panelKey || "1"}
       data-hovered={hovered || undefined}
       className={`relative outline-2 outline-offset-2 transition ${hovered ? "outline-dashed outline-amber-500" : "outline-transparent"} ${panelKey ? "cursor-pointer" : ""} ${className || ""}`}
-      onClick={panelKey ? (e) => { e.stopPropagation(); ctx.openPanel(panelKey); } : undefined}
+      onClick={panelKey ? (e) => {
+        // Botões/controles internos são donos do próprio clique. Antes, por
+        // exemplo, "Editar 2 banners" abria sideBanner e o evento continuava
+        // até este Editable da seção Vitrines, que imediatamente trocava o
+        // painel para "vitrines". Ignorar controles internos evita que o pai
+        // sobrescreva a ação escolhida pelo usuário.
+        const target = e.target as Element;
+        if (target.closest("button, input, select, textarea, label, [role='button']")) return;
+        e.stopPropagation();
+        ctx.openPanel(panelKey);
+      } : undefined}
       onPointerOver={(e) => {
         // Hovered só se o alvo não estiver dentro de um [data-editable]
         // descendente (aninhamento). pointerover/pointerout borbulham — um
