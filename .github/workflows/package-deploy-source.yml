@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   validate:
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -22,9 +23,6 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-
-      - name: Apply Vercel hardening
-        run: node scripts/apply-vercel-hardening.cjs
 
       - name: Install dependencies
         run: npm ci
@@ -49,18 +47,14 @@ jobs:
       - name: Update Graphify incrementally
         run: graphify update .
 
-      - name: Commit hardened deployment branch
+      - name: Commit refreshed graph to deployment branch
         shell: bash
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .env.example package.json vercel.json
-          git add -A api
-          git add src/db/index.ts src/db/hardenProductionUsers.ts
-          git add src/server/settings.ts src/server/purchases.ts src/server/maintenance.ts src/server/backupService.ts
-          git add graphify-out
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: harden Vercel deployment [skip ci]"
+          if ! git diff --quiet -- graphify-out; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add graphify-out
+            git commit -m "chore: refresh graphify [skip ci]"
             git push origin HEAD:deploy-vercel-neon-20260902
           fi
 
