@@ -80,9 +80,9 @@ router.post("/ocr", requirePermission("purchase", "ocr"), upload.single("file"),
         return res.status(400).json({ error: "Nenhum arquivo enviado" });
      }
      
-     const allowedMimeTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"];
+     const allowedMimeTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
      if (!allowedMimeTypes.includes(req.file.mimetype)) {
-        return res.status(400).json({ error: "Formato de arquivo inválido. Formatos suportados: JPG, JPEG, PNG, WEBP, PDF." });
+        return res.status(400).json({ error: "Formato de arquivo inválido. Formatos suportados para OCR com Ollama: JPG, JPEG, PNG e WEBP." });
      }
      
      // Vercel Functions aceitam no maximo 4,5 MB por request; usamos 4 MB para
@@ -109,7 +109,7 @@ router.post("/ocr", requirePermission("purchase", "ocr"), upload.single("file"),
      
      const lang = (req.body.language || "pt") as string;
      
-     // Run OCR (Ollama para imagens; fallback legado apenas para PDF)
+     // Run OCR visual com Ollama (JPG, PNG ou WEBP).
      const ocrResult = await processInvoiceOcr(req.file.buffer, req.file.mimetype, lang);
      
      // Update job as completed
