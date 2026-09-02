@@ -20,7 +20,19 @@ jobs:
           fetch-depth: 0
 
       - name: Apply fixes
-        run: python3 .github/storefront_polish.py
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/storefront_polish.py')
+          source = path.read_text(encoding='utf-8')
+          old = "related_pattern = r'      /\\* Relacionados \\*/"
+          new = "related_pattern = r'      \\{/\\* Relacionados \\*/\\}"
+          if old not in source:
+              raise SystemExit('Padrão antigo de relacionados não encontrado no aplicador.')
+          path.write_text(source.replace(old, new, 1), encoding='utf-8')
+          PY
+          python3 .github/storefront_polish.py
 
       - name: Setup Node 24
         uses: actions/setup-node@v4
