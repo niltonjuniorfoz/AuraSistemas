@@ -52,10 +52,14 @@ jobs:
       - name: Commit hardened deployment branch
         shell: bash
         run: |
-          if [ -n "$(git status --porcelain)" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add -A
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .env.example package.json vercel.json
+          git add -A api
+          git add src/db/index.ts src/db/hardenProductionUsers.ts
+          git add src/server/settings.ts src/server/purchases.ts src/server/maintenance.ts src/server/backupService.ts
+          git add graphify-out
+          if ! git diff --cached --quiet; then
             git commit -m "chore: harden Vercel deployment [skip ci]"
             git push origin HEAD:deploy-vercel-neon-20260902
           fi
