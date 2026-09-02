@@ -13,6 +13,54 @@ import { BorderBeam } from "../../components/ui/border-beam";
 import { PremiumCta } from "./PremiumCta";
 import { CodeFlag } from "./flagIcons";
 
+type PromotionType = "oferta" | "outlet";
+
+// O endpoint publico ja sabe quais produtos pertencem aos canais Oferta e
+// Outlet, mas a resposta do catalogo normal nao carrega essa informacao. Para
+// nao fazer 2 requisicoes POR card, todos os cards compartilham um unico mapa
+// carregado em lote e renovado depois de alguns segundos. Assim o selo aparece
+// tambem nas vitrines normais sem alterar preco/estoque do produto.
+let promotionMapPromise: Promise<Map<string, PromotionType>> | null = null;
+let promotionMapCache: Map<string, PromotionType> | null = null;
+let promotionMapFetchedAt = 0;
+const PROMOTION_CACHE_MS = 15_000;
+
+function loadPromotionMap(): Promise<Map<string, PromotionType>> {
+  const now = Date.now();
+  if (promotionMapCache && now - promotionMapFetchedAt < PROMOTION_CACHE_MS) {
+    return Promise.resolve(promotionMapCache);
+  }
+  if (promotionMapPromise) return promotionMapPromise;
+
+  const load = async (canal: PromotionType) => {
+    try {
+      const res = await fetch(`/api/store/products?canal=${canal}&limit=120`, { cache: "no-store" });
+      if (!res.ok) return [] as any[];
+      const json = await res.json();
+      return Array.isArray(json?.data) ? json.data : [];
+    } catch {
+      return [] as any[];
+    }
+  };
+
+  promotionMapPromise = Promise.all([load("outlet"), load("oferta")])
+    .then(([outletRows, ofertaRows]) => {
+      const map = new Map<string, PromotionType>();
+      // Oferta tem prioridade visual se o mesmo produto tiver unidades nos
+      // dois canais ao mesmo tempo.
+      for (const item of outletRows) if (item?.id) map.set(String(item.id), "outlet");
+      for (const item of ofertaRows) if (item?.id) map.set(String(item.id), "oferta");
+      promotionMapCache = map;
+      promotionMapFetchedAt = Date.now();
+      return map;
+    })
+    .finally(() => {
+      promotionMapPromise = null;
+    });
+
+  return promotionMapPromise;
+}
+
 // Card de vitrine (home, catálogo e relacionados). Clique abre a página do
 // produto; o botão + adiciona direto na sacola.
 export const ShopProductCard: React.FC<{ p: any }> = ({ p }) => {
@@ -44,6 +92,19 @@ export const ShopProductCard: React.FC<{ p: any }> = ({ p }) => {
       storeApiFetch("/api/store/account/wishlist", { method: "POST", body: JSON.stringify({ productId: p.id }) }).catch(() => favRemove(p.id));
     }
   };
+
+  const [promotionType, setPromotionType] = useState<PromotionType | null>(null);
+  const [promotionChecked, setPromotionChecked] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    setPromotionChecked(false);
+    loadPromotionMap().then((map) => {
+      if (!alive) return;
+      setPromotionType(map.get(String(p.id)) || null);
+      setPromotionChecked(true);
+    });
+    return () => { alive = false; };
+  }, [p.id]);
 
   // Troca automática de foto no hover: mostra a 2ª foto assim que o mouse
   // entra, segura 2s, vai pra 3ª (segura 3s), pra 4ª (segura 3s) e volta pra
@@ -83,13 +144,19 @@ export const ShopProductCard: React.FC<{ p: any }> = ({ p }) => {
     }).catch(() => {});
   };
 
-  // Segunda linha de preço: BRL como referência (ou USD, se a moeda ativa já
-  // for BRL) — sempre as DUAS moedas juntas, uma embaixo da outra.
+  // Segunda linha de preço só existe quando a loja realmente disponibiliza
+  // mais de uma moeda. Se BRL for a unica moeda, alem de esconder a segunda
+  // linha tambem nao faz sentido repetir a bandeira do Brasil no preco.
   const secondaryCurrency = allowedCurrencies.length > 1 ? (currency === "BRL" ? allowedCurrencies.find((code) => code !== "BRL") || null : "BRL") : null;
+  const hidePrimaryFlag = allowedCurrencies.length === 1 && currency === "BRL";
+
+  const stockQty = Number(p.stockQty || 0);
+  const isOutOfStock = p.stockStatus === "out" || Number(p.maxQty || 0) <= 0;
+  const showLastUnits = !p.hasVariants && !isOutOfStock && promotionChecked && !promotionType && stockQty > 0 && stockQty <= 3;
 
   return (
     <Link to={`/loja/produto/${p.id}`} onMouseEnter={startPhotoCycle} onMouseLeave={stopPhotoCycle}
-      className="group relative flex flex-col overflow-hidden rounded-xl border border-[var(--store-accent,#C99C5A)]/20 bg-white transition duration-200 hover:-translate-y-0.5 hover:border-[var(--store-accent,#C99C5A)]/60 hover:shadow-md hover:shadow-stone-200/50">
+      className="group relative flex h-full flex-col overflow-hidden rounded-xl border border-[var(--store-accent,#C99C5A)]/20 bg-white transition duration-200 hover:-translate-y-0.5 hover:border-[var(--store-accent,#C99C5A)]/60 hover:shadow-md hover:shadow-stone-200/50">
       <div className="pointer-events-none absolute inset-0 z-10 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
         <BorderBeam colorFrom="var(--store-accent, #C99C5A)" colorTo="var(--store-accent, #C99C5A)" duration={4} size={80} />
       </div>
@@ -99,8 +166,14 @@ export const ShopProductCard: React.FC<{ p: any }> = ({ p }) => {
           : <div className="flex h-full items-center justify-center"><Package className="h-10 w-10 text-stone-300" /></div>}
         {p.hasVariants ? (
           <span className="absolute left-2 top-2 rounded-full bg-stone-900 px-2.5 py-1 text-[10px] font-bold text-white">{t("product.opcoes")}</span>
-        ) : p.stockStatus && p.stockStatus !== "available" ? (
-          <span className="absolute left-2 top-2 rounded-full bg-red-600 px-2.5 py-1 text-[10px] font-bold text-white">{translateStockStatus(t, p.stockStatus, p.stockQty)}</span>
+        ) : isOutOfStock ? (
+          <span className="absolute left-2 top-2 rounded-full bg-red-600 px-2.5 py-1 text-[10px] font-bold text-white">{translateStockStatus(t, "out", undefined)}</span>
+        ) : promotionChecked && promotionType ? (
+          <span className={`absolute left-2 top-2 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-white ${promotionType === "oferta" ? "bg-rose-500" : "bg-slate-700"}`}>
+            {promotionType === "oferta" ? "Oferta" : "Outlet"}
+          </span>
+        ) : showLastUnits ? (
+          <span className="absolute left-2 top-2 rounded-full bg-red-600 px-2.5 py-1 text-[10px] font-bold text-white">{translateStockStatus(t, "low", stockQty)}</span>
         ) : null}
         {/* Coração só aparece no hover/foco (como no card ativo da referência) —
             exceto se já favoritado, aí fica sempre visível pro cliente gerenciar. */}
@@ -118,12 +191,14 @@ export const ShopProductCard: React.FC<{ p: any }> = ({ p }) => {
         )}
       </div>
       <div className="flex flex-1 flex-col items-center px-2.5 pb-2.5 text-center sm:px-3 sm:pb-3">
-        {p.groupName && <div className="text-[8px] font-semibold uppercase tracking-[0.12em] text-stone-400 sm:text-[9px]">{translateCategoryName(p.groupName, i18n.language)}</div>}
-        <div className="mt-1 line-clamp-2 min-h-[2rem] text-[11px] font-bold leading-[1.15] text-stone-800 sm:text-xs" style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif" }}>{p.name}</div>
-        <div className="mt-1.5 flex flex-col items-center gap-0.5">
+        <div className="min-h-[12px] text-[8px] font-semibold uppercase tracking-[0.12em] text-stone-400 sm:min-h-[14px] sm:text-[9px]">
+          {p.groupName ? translateCategoryName(p.groupName, i18n.language) : "\u00a0"}
+        </div>
+        <div className="mt-1 line-clamp-2 min-h-[2.2rem] text-[11px] font-bold leading-[1.15] text-stone-800 sm:min-h-[2.35rem] sm:text-xs" style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif" }}>{p.name}</div>
+        <div className="mt-1.5 flex min-h-[2.2rem] flex-col items-center justify-start gap-0.5 sm:min-h-[2.5rem]">
           <div className="flex items-center gap-1 text-sm font-black text-[var(--store-accent,#C99C5A)] sm:text-base">
             {p.hasVariants && <span className="text-xs font-semibold text-stone-500">{t("product.aPartirDe")}</span>}
-            <CodeFlag code={currency} className="h-3 w-[18px] shrink-0 rounded-[1px]" />
+            {!hidePrimaryFlag && <CodeFlag code={currency} className="h-3 w-[18px] shrink-0 rounded-[1px]" />}
             {formatPrice(p.price, currency, rates)}
           </div>
           {secondaryCurrency && (
@@ -133,15 +208,24 @@ export const ShopProductCard: React.FC<{ p: any }> = ({ p }) => {
             </div>
           )}
         </div>
-        {!p.hasVariants && inCart && <span className="mt-1 text-[10px] font-bold text-[var(--store-accent,#C99C5A)]">{t("product.naSacola")} ({inCart.quantity})</span>}
-        <div className="mt-3 flex w-full flex-col items-center gap-1.5">
-          {p.sku && (
-            <button onClick={copySku} title={t("product.copiarCodigo", "Copiar código")} className="flex max-w-full items-center justify-center gap-0.5 truncate text-[6px] leading-none tracking-[0.02em] text-stone-300 transition hover:text-stone-500 sm:text-[7px]">
-              {p.sku} {copied ? <Check className="h-2 w-2 text-emerald-600 sm:h-2.5 sm:w-2.5" /> : <Copy className="h-2 w-2 sm:h-2.5 sm:w-2.5" />}
+        <div className="mt-0.5 min-h-[14px] text-[10px] font-bold text-[var(--store-accent,#C99C5A)]">
+          {!p.hasVariants && inCart ? <>{t("product.naSacola")} ({inCart.quantity})</> : <span aria-hidden="true">\u00a0</span>}
+        </div>
+        <div className="mt-1 flex min-h-[12px] w-full items-center justify-center">
+          {p.sku ? (
+            <button
+              onClick={copySku}
+              title={t("product.copiarCodigo", "Copiar código")}
+              style={{ WebkitTextSizeAdjust: "none" }}
+              className="flex max-w-full items-center justify-center gap-0.5 truncate text-[5px] leading-none tracking-[0.02em] text-stone-300 transition hover:text-stone-500 sm:text-[7px]"
+            >
+              {p.sku} {copied ? <Check className="h-1.5 w-1.5 text-emerald-600 sm:h-2.5 sm:w-2.5" /> : <Copy className="h-1.5 w-1.5 sm:h-2.5 sm:w-2.5" />}
             </button>
-          )}
-          {/* Botão de sacola: CTA premium compartilhado (preenchido + shimmer),
-              coerente com o resto da loja. */}
+          ) : <span aria-hidden="true">\u00a0</span>}
+        </div>
+        {/* Botão de sacola: CTA premium compartilhado (preenchido + shimmer),
+            coerente com o resto da loja. */}
+        <div className="mt-auto w-full pt-1.5">
           <PremiumCta
             size="sm"
             className="!gap-1 !px-1.5 !text-[9px] whitespace-nowrap sm:!gap-1.5 sm:!px-3 sm:!text-[11px]"
