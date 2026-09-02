@@ -56,6 +56,27 @@ export function DataTable<TData, TValue>({
   const rows = table.getRowModel().rows;
   const total = table.getFilteredRowModel().rows.length;
 
+  // A tela Produtos tem uma combinação de colunas única. Antes o nome completo
+  // do produto determinava a largura natural da tabela e empurrava "Ações"
+  // para fora da viewport, criando rolagem horizontal mesmo em monitor largo.
+  // Só nessa tabela usamos layout fixo e percentuais previsíveis; as outras
+  // DataTables continuam exatamente com o comportamento anterior.
+  const productTableIds = ["sku", "name", "grupo", "prateleira", "estoque", "salePriceA", "acoes"];
+  const isProductsCatalogTable = productTableIds.every((id) => !!table.getColumn(id));
+  const productColumnClass = (id: string) => {
+    if (!isProductsCatalogTable) return "";
+    switch (id) {
+      case "sku": return "w-[5%]";
+      case "name": return "w-[45%] max-w-0";
+      case "grupo": return "w-[12%]";
+      case "prateleira": return "w-[7%]";
+      case "estoque": return "w-[8%]";
+      case "salePriceA": return "w-[9%]";
+      case "acoes": return "w-[14%]";
+      default: return "";
+    }
+  };
+
   return (
     <div className={cn("space-y-3", className)}>
       {/* Barra de ferramentas + tabela juntas num box só */}
@@ -100,7 +121,7 @@ export function DataTable<TData, TValue>({
       </div>
 
       <div>
-        <Table>
+        <Table className={cn(isProductsCatalogTable && "table-fixed")}>
           <TableHeader className="bg-[#171717]">
             {table.getHeaderGroups().map((hg) => (
               <TableRow key={hg.id} className="border-gray-800 hover:bg-transparent">
@@ -108,16 +129,16 @@ export function DataTable<TData, TValue>({
                   const canSort = header.column.getCanSort();
                   const dir = header.column.getIsSorted();
                   return (
-                    <TableHead key={header.id} className="h-10 text-xs font-medium text-gray-400">
+                    <TableHead key={header.id} className={cn("h-10 text-xs font-medium text-gray-400", productColumnClass(header.column.id))}>
                       {header.isPlaceholder ? null : canSort ? (
                         <button
                           onClick={header.column.getToggleSortingHandler()}
-                          className="flex items-center gap-1.5 transition hover:text-gray-200"
+                          className="flex max-w-full items-center gap-1.5 transition hover:text-gray-200"
                         >
-                          {flexRender(header.column.columnDef.header, header.getContext())}
-                          {dir === "asc" ? <ArrowUp className="h-3 w-3 text-brand-gold" />
-                            : dir === "desc" ? <ArrowDown className="h-3 w-3 text-brand-gold" />
-                            : <ArrowUpDown className="h-3 w-3 opacity-40" />}
+                          <span className="truncate">{flexRender(header.column.columnDef.header, header.getContext())}</span>
+                          {dir === "asc" ? <ArrowUp className="h-3 w-3 shrink-0 text-brand-gold" />
+                            : dir === "desc" ? <ArrowDown className="h-3 w-3 shrink-0 text-brand-gold" />
+                            : <ArrowUpDown className="h-3 w-3 shrink-0 opacity-40" />}
                         </button>
                       ) : flexRender(header.column.columnDef.header, header.getContext())}
                     </TableHead>
@@ -144,7 +165,16 @@ export function DataTable<TData, TValue>({
                 className={cn("border-gray-800/70 transition hover:bg-brand-navy/60", onRowClick && "cursor-pointer")}
               >
                 {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id} className="py-2.5 text-sm">
+                  <TableCell
+                    key={cell.id}
+                    className={cn(
+                      "py-2.5 text-sm",
+                      productColumnClass(cell.column.id),
+                      isProductsCatalogTable && cell.column.id === "name" && "overflow-hidden [&>div]:min-w-0 [&>div>span]:block [&>div>span]:truncate",
+                      isProductsCatalogTable && cell.column.id === "grupo" && "overflow-hidden [&>div]:min-w-0",
+                      isProductsCatalogTable && cell.column.id === "acoes" && "overflow-hidden",
+                    )}
+                  >
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </TableCell>
                 ))}
