@@ -3,7 +3,11 @@
   "buildCommand": "npm run build:vercel",
   "outputDirectory": "dist",
   "functions": {
-    "api/handler.ts": { "maxDuration": 60 },
+    "api/core.ts": { "maxDuration": 60 },
+    "api/operations.ts": { "maxDuration": 60 },
+    "api/admin.ts": { "maxDuration": 60 },
+    "api/commerce.ts": { "maxDuration": 60 },
+    "api/ping.ts": { "maxDuration": 15 },
     "api/check-a.ts": { "maxDuration": 15 },
     "api/check-b.ts": { "maxDuration": 15 },
     "api/check-c.ts": { "maxDuration": 15 },
@@ -14,13 +18,49 @@
     { "source": "/__diag/b", "destination": "/api/check-b" },
     { "source": "/__diag/c", "destination": "/api/check-c" },
     { "source": "/__diag/d", "destination": "/api/check-d" },
-    {
-      "source": "/api/:path*",
-      "destination": "/api/handler?__path=:path*"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
+
+    { "source": "/api/ping", "destination": "/api/ping" },
+
+    { "source": "/api/auth/:path*", "destination": "/api/core?__path=auth/:path*" },
+    { "source": "/api/users/:path*", "destination": "/api/core?__path=users/:path*" },
+    { "source": "/api/products/:path*", "destination": "/api/core?__path=products/:path*" },
+    { "source": "/api/customers/:path*", "destination": "/api/core?__path=customers/:path*" },
+    { "source": "/api/groups/:path*", "destination": "/api/core?__path=groups/:path*" },
+    { "source": "/api/shelves/:path*", "destination": "/api/core?__path=shelves/:path*" },
+    { "source": "/api/audit/:path*", "destination": "/api/core?__path=audit/:path*" },
+    { "source": "/api/sales/:path*", "destination": "/api/core?__path=sales/:path*" },
+    { "source": "/api/reports/:path*", "destination": "/api/core?__path=reports/:path*" },
+
+    { "source": "/api/health/:path*", "destination": "/api/operations?__path=health/:path*" },
+    { "source": "/api/archived/:path*", "destination": "/api/operations?__path=archived/:path*" },
+    { "source": "/api/cash/:path*", "destination": "/api/operations?__path=cash/:path*" },
+    { "source": "/api/separation/:path*", "destination": "/api/operations?__path=separation/:path*" },
+    { "source": "/api/delivery/:path*", "destination": "/api/operations?__path=delivery/:path*" },
+    { "source": "/api/serials/:path*", "destination": "/api/operations?__path=serials/:path*" },
+    { "source": "/api/settings/:path*", "destination": "/api/operations?__path=settings/:path*" },
+    { "source": "/api/suppliers/:path*", "destination": "/api/operations?__path=suppliers/:path*" },
+    { "source": "/api/purchases/:path*", "destination": "/api/operations?__path=purchases/:path*" },
+    { "source": "/api/expenses/:path*", "destination": "/api/operations?__path=expenses/:path*" },
+
+    { "source": "/api/dashboard/:path*", "destination": "/api/admin?__path=dashboard/:path*" },
+    { "source": "/api/notifications/:path*", "destination": "/api/admin?__path=notifications/:path*" },
+    { "source": "/api/analytics/:path*", "destination": "/api/admin?__path=analytics/:path*" },
+    { "source": "/api/transfers/:path*", "destination": "/api/admin?__path=transfers/:path*" },
+    { "source": "/api/ai-reports/:path*", "destination": "/api/admin?__path=ai-reports/:path*" },
+    { "source": "/api/master/:path*", "destination": "/api/admin?__path=master/:path*" },
+    { "source": "/api/lots/:path*", "destination": "/api/admin?__path=lots/:path*" },
+    { "source": "/api/receivables/:path*", "destination": "/api/admin?__path=receivables/:path*" },
+    { "source": "/api/payables/:path*", "destination": "/api/admin?__path=payables/:path*" },
+
+    { "source": "/api/finance/:path*", "destination": "/api/commerce?__path=finance/:path*" },
+    { "source": "/api/fx/:path*", "destination": "/api/commerce?__path=fx/:path*" },
+    { "source": "/api/cost/:path*", "destination": "/api/commerce?__path=cost/:path*" },
+    { "source": "/api/personal/:path*", "destination": "/api/commerce?__path=personal/:path*" },
+    { "source": "/api/store/:path*", "destination": "/api/commerce?__path=store/:path*" },
+    { "source": "/api/intel/:path*", "destination": "/api/commerce?__path=intel/:path*" },
+    { "source": "/api/statements/:path*", "destination": "/api/commerce?__path=statements/:path*" },
+    { "source": "/api/maintenance/:path*", "destination": "/api/commerce?__path=maintenance/:path*" },
+
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
