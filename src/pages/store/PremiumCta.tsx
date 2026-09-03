@@ -1,5 +1,6 @@
 import React from "react";
 import { ShimmerButton } from "../../components/ui/shimmer-button";
+import "./storefront-polish.css";
 
 // Wrapper único pros 5 CTAs "premium" da loja (hero, card de produto, página
 // de produto, "Selecionado pra você", checkout) — muda a cor/tamanho aqui e
