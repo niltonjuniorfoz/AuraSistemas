@@ -27,7 +27,7 @@ export const STORE_COLOR_TOKENS: { key: string; label: string; cssVar: string }[
   { key: "surface", label: "Fundo de cards/produtos", cssVar: "--store-surface" },
   { key: "headerBg", label: "Fundo do cabeçalho", cssVar: "--store-header-bg" },
   { key: "headerText", label: "Texto do cabeçalho", cssVar: "--store-header-text" },
-  { key: "accent", label: "Destaque (botões, preços)", cssVar: "--store-accent" },
+  { key: "accent", label: "Destaque (botões, preços e barra de rolagem)", cssVar: "--store-accent" },
   { key: "accentText", label: "Texto em cima do destaque", cssVar: "--store-accent-text" },
   { key: "text", label: "Texto principal", cssVar: "--store-text" },
   { key: "textMuted", label: "Texto secundário", cssVar: "--store-text-muted" },

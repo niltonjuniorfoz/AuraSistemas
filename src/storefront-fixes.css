@@ -1,4 +1,54 @@
-/* Ajustes públicos da vitrine que precisam ficar isolados do tema escuro do ERP. */
+/* Ajustes de vitrine e compatibilidade visual compartilhada com o painel. */
+
+/*
+ * Scrollbars seguem o tema do contexto em que aparecem:
+ * - loja: --store-accent (Editor Visual > Cores > Destaque)
+ * - painel: --primary (Personalizar > Cor)
+ * O fallback laranja evita voltar ao azul antigo antes de o tema hidratar.
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--store-accent, var(--primary, #f97316)) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--store-accent, var(--primary, #f97316));
+  border-radius: 9999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--store-accent, var(--primary, #f97316)) 78%, white);
+}
+
+/*
+ * OrderStatus fica fora do ShopLayout. Ele passa a rolar no próprio frame,
+ * igual à vitrine, em vez de depender da rolagem do document/body. Isso faz
+ * roda do mouse, trackpad e toque apontarem para o mesmo scroller visível.
+ */
+body.store-order-route #root > .min-h-screen.bg-stone-50.text-stone-900 {
+  height: 100dvh;
+  min-height: 0 !important;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+}
+
+/*
+ * No pagamento mostramos somente o PIX copia e cola/QR. A chave PIX simples
+ * continua existindo no backend para montar o payload EMV, mas não é exibida
+ * ao cliente como uma segunda forma de copiar e causar confusão.
+ */
+body.store-order-route #root > .min-h-screen.bg-stone-50.text-stone-900 main
+  div.rounded-xl:has(> div.mb-1 > svg.lucide-key-round),
+body.store-order-route #root > .min-h-screen.bg-stone-50.text-stone-900 main
+  div.mb-4.flex.flex-wrap:has(> svg.lucide-key-round) {
+  display: none;
+}
 
 /*
  * O editor recomenda 1600×600 para o banner principal (8:3), mas o frame

@@ -50,16 +50,20 @@ export function ScrollToTop() {
     return () => window.cancelAnimationFrame(frame);
   }, [location.pathname, location.search]);
 
-  // A página pública do pedido fica fora do ShopLayout. Em alguns navegadores
-  // ela herdava o documento travado pela navegação anterior do ERP/loja e o
-  // conteúdo abaixo da dobra ficava inacessível. Enquanto estiver nessa rota,
-  // o documento volta explicitamente a usar rolagem vertical normal.
+  // OrderStatus fica fora do ShopLayout. Mantemos o documento destravado e,
+  // além disso, marcamos a rota para ela usar um scroller próprio de 100dvh —
+  // o mesmo modelo da vitrine normal. Isso evita o caso em que a barra do
+  // documento aparece, mas a roda do mouse não move o conteúdo do pedido.
+  // A cor de destaque publicada da loja é carregada aqui porque esta rota não
+  // herda as CSS vars do ShopLayout; assim a scrollbar também acompanha o
+  // Editor Visual mesmo quando o cliente abre o link do pedido diretamente.
   useEffect(() => {
     if (!location.pathname.startsWith("/loja/pedido/")) return;
 
     const html = document.documentElement;
     const body = document.body;
     const root = document.getElementById("root");
+    const previousStoreAccent = html.style.getPropertyValue("--store-accent");
     const previous = {
       htmlOverflowY: html.style.overflowY,
       bodyOverflowY: body.style.overflowY,
@@ -69,7 +73,10 @@ export function ScrollToTop() {
       rootMinHeight: root?.style.minHeight || "",
       rootOverflow: root?.style.overflow || "",
     };
+    let active = true;
 
+    body.classList.add("store-order-route");
+    html.style.setProperty("--store-accent", "#d46a86");
     html.style.overflowY = "auto";
     body.style.overflowY = "auto";
     body.style.height = "auto";
@@ -80,7 +87,20 @@ export function ScrollToTop() {
       root.style.overflow = "visible";
     }
 
+    fetch("/api/store/config")
+      .then((r) => r.ok ? r.json() : null)
+      .then((config) => {
+        if (!active) return;
+        const accent = String(config?.theme?.colors?.accent || "");
+        if (/^#[0-9a-fA-F]{6}$/.test(accent)) html.style.setProperty("--store-accent", accent);
+      })
+      .catch(() => {});
+
     return () => {
+      active = false;
+      body.classList.remove("store-order-route");
+      if (previousStoreAccent) html.style.setProperty("--store-accent", previousStoreAccent);
+      else html.style.removeProperty("--store-accent");
       html.style.overflowY = previous.htmlOverflowY;
       body.style.overflowY = previous.bodyOverflowY;
       body.style.height = previous.bodyHeight;
