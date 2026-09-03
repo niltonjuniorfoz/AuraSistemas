@@ -1,0 +1,110 @@
+/* Ajustes visuais compartilhados da vitrine pública. */
+
+/* Categorias dos cards: usa o mesmo rosa delicado da seção
+   "Você também pode gostar", sem competir com o nome do produto. */
+a[href^="/loja/produto/"] > div:last-child > div:first-child {
+  color: color-mix(in srgb, var(--store-accent, #d46a86) 78%, white) !important;
+}
+
+/* Estado vazio do catálogo: substitui a mensagem técnica por uma comunicação
+   mais humana. O ícone existente continua visível; só o texto direto do nó é
+   ocultado e refeito pelo pseudo-elemento. */
+main .py-24.text-center.text-stone-400 {
+  font-size: 0;
+}
+
+main .py-24.text-center.text-stone-400::after {
+  content: "Desculpe, não temos produtos disponíveis por aqui no momento. Nosso estoque pode ter esgotado — estamos preparando novidades para você. Explore outras categorias ou volte em breve. ✨";
+  display: block;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 0 16px;
+  color: #8b6f76;
+  font-family: var(--store-font-body, 'Inter'), system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.65;
+}
+
+/* Rodapé: somente Mastercard, Visa e Pix. Mantemos os elementos já renderizados
+   pelo ShopLayout para não adicionar dependência externa; a identidade visual
+   é refeita aqui com as cores oficiais das marcas. */
+#atendimento > div.relative > div.hidden > div:nth-child(3) > div.flex {
+  align-items: center;
+  gap: 14px;
+}
+
+#atendimento > div.relative > div.hidden > div:nth-child(3) > div.flex > span {
+  display: inline-flex;
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0 !important;
+  background: transparent !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  font-size: 0 !important;
+}
+
+/* Mastercard (o segundo item do markup atual) */
+#atendimento > div.relative > div.hidden > div:nth-child(3) > div.flex > span:nth-child(2) {
+  order: 1;
+  min-width: 84px;
+}
+#atendimento > div.relative > div.hidden > div:nth-child(3) > div.flex > span:nth-child(2)::before {
+  content: "";
+  width: 40px;
+  height: 25px;
+  flex: 0 0 auto;
+  background:
+    radial-gradient(circle at 38% 50%, #eb001b 0 31%, transparent 32%),
+    radial-gradient(circle at 62% 50%, #f79e1b 0 31%, transparent 32%);
+}
+#atendimento > div.relative > div.hidden > div:nth-child(3) > div.flex > span:nth-child(2)::after {
+  content: "mastercard";
+  color: #252525;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* Visa */
+#atendimento > div.relative > div.hidden > div:nth-child(3) > div.flex > span:nth-child(1) {
+  order: 2;
+  min-width: 58px;
+}
+#atendimento > div.relative > div.hidden > div:nth-child(3) > div.flex > span:nth-child(1)::after {
+  content: "VISA";
+  color: #1434cb;
+  font-size: 20px;
+  font-style: italic;
+  font-weight: 900;
+  letter-spacing: -0.08em;
+}
+
+/* Pix */
+#atendimento > div.relative > div.hidden > div:nth-child(3) > div.flex > span:nth-child(3) {
+  order: 3;
+  min-width: 52px;
+}
+#atendimento > div.relative > div.hidden > div:nth-child(3) > div.flex > span:nth-child(3)::before {
+  content: "";
+  width: 14px;
+  height: 14px;
+  border: 2px solid #32bcad;
+  border-radius: 3px;
+  transform: rotate(45deg);
+}
+#atendimento > div.relative > div.hidden > div:nth-child(3) > div.flex > span:nth-child(3)::after {
+  content: "pix";
+  color: #32bcad;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+}
+
+/* AMEX não faz parte dos meios exibidos no rodapé. */
+#atendimento > div.relative > div.hidden > div:nth-child(3) > div.flex > span:nth-child(4) {
+  display: none !important;
+}
