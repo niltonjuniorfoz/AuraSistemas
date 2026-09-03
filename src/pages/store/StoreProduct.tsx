@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { ChevronLeft, ChevronRight, Loader2, Minus, Package, Plus, ShieldCheck, ShoppingBag, Truck } from "lucide-react";
@@ -15,6 +15,16 @@ function shuffleProducts(items: any[]) {
     [result[i], result[j]] = [result[j], result[i]];
   }
   return result;
+}
+
+function findStoreScrollRoot(element: HTMLElement | null): HTMLElement | null {
+  let node = element?.parentElement || null;
+  while (node) {
+    const overflowY = getComputedStyle(node).overflowY;
+    if (overflowY === "auto" || overflowY === "scroll") return node;
+    node = node.parentElement;
+  }
+  return null;
 }
 
 // Recomendações da página de produto: primeiro tenta mostrar categorias
@@ -65,8 +75,31 @@ export function StoreProduct() {
   const [imgIdx, setImgIdx] = useState(0);
   const [qty, setQty] = useState(1);
   const [selectedVariant, setSelectedVariant] = useState<any>(null);
+  const [showStickyBuy, setShowStickyBuy] = useState(false);
+  const [stickyTop, setStickyTop] = useState(0);
   const pageRef = useRef<HTMLElement>(null);
   const relatedRef = useRef<HTMLDivElement>(null);
+  const purchaseRef = useRef<HTMLDivElement>(null);
+
+  // A loja usa um container próprio com overflow-y-auto; window.scrollTo
+  // sozinho não mexe nessa rolagem. Ao trocar/abrir produto, zera o ancestral
+  // rolável antes da pintura e repete no frame seguinte para Safari/iOS.
+  useLayoutEffect(() => {
+    const resetScroll = () => {
+      const scrollRoot = findStoreScrollRoot(pageRef.current);
+      if (scrollRoot) scrollRoot.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    };
+    resetScroll();
+    const raf = requestAnimationFrame(resetScroll);
+    const timer = window.setTimeout(resetScroll, 60);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(timer);
+    };
+  }, [id]);
 
   // O ERP global usa body escuro. No iOS/Safari o rubber-band/viewport dinâmico
   // pode expor esse body por trás da rota pública e transformar a página em uma
@@ -97,6 +130,7 @@ export function StoreProduct() {
   useEffect(() => {
     let alive = true;
     setLoading(true); setNotFound(false); setImgIdx(0); setQty(1); setSelectedVariant(null);
+    setShowStickyBuy(false);
 
     const detailRequest = fetch(`/api/store/product/${id}`)
       .then(async (r) => { if (!r.ok) throw new Error(); return r.json(); });
@@ -123,9 +157,45 @@ export function StoreProduct() {
       })
       .catch(() => { if (alive) setNotFound(true); })
       .finally(() => { if (alive) setLoading(false); });
-    window.scrollTo({ top: 0 });
     return () => { alive = false; };
   }, [id]);
+
+  // Barra de compra estilo DroidStore: aparece somente depois que o CTA
+  // original passa para cima do cabeçalho sticky. Ao voltar, some assim que o
+  // botão original reaparece. O topo acompanha a altura real do header.
+  useEffect(() => {
+    if (!p || !purchaseRef.current) return;
+    const scrollRoot = findStoreScrollRoot(pageRef.current);
+    if (!scrollRoot) return;
+    const header = scrollRoot.querySelector("header") as HTMLElement | null;
+    let frame = 0;
+
+    const update = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const purchase = purchaseRef.current;
+        if (!purchase) return;
+        const rootTop = scrollRoot.getBoundingClientRect().top;
+        const headerBottom = header?.getBoundingClientRect().bottom ?? rootTop;
+        const purchaseBottom = purchase.getBoundingClientRect().bottom;
+        setStickyTop(Math.max(0, Math.round(headerBottom)));
+        setShowStickyBuy(purchaseBottom <= headerBottom + 6);
+      });
+    };
+
+    update();
+    scrollRoot.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    const resizeObserver = typeof ResizeObserver !== "undefined" && header ? new ResizeObserver(update) : null;
+    if (resizeObserver && header) resizeObserver.observe(header);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      scrollRoot.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+      resizeObserver?.disconnect();
+    };
+  }, [p?.id]);
 
   if (loading) return <main ref={pageRef} className="flex min-h-[70dvh] items-center justify-center bg-[var(--store-bg,#fff5f7)] text-stone-400" style={{ colorScheme: "light" }}><Loader2 className="mr-2 h-5 w-5 animate-spin" /> {t("product.carregando")}</main>;
   if (notFound || !p) return (
@@ -154,6 +224,39 @@ export function StoreProduct() {
 
   return (
     <main ref={pageRef} className="mx-auto min-h-[100dvh] w-[95%] max-w-[1600px] bg-[var(--store-bg,#fff5f7)] px-3 pt-5 pb-36 text-[var(--store-text,#6b5b5a)] sm:px-4 md:py-8" style={{ colorScheme: "light" }}>
+      {/* Barra de compra desktop: fica logo abaixo do header sticky. */}
+      <div
+        className={`fixed inset-x-0 z-[29] hidden border-y border-rose-100 bg-white/96 shadow-[0_8px_24px_rgba(80,50,60,0.10)] backdrop-blur-md transition-all duration-300 ease-out md:block ${showStickyBuy ? "translate-y-0 opacity-100" : "pointer-events-none -translate-y-3 opacity-0"}`}
+        style={{ top: stickyTop }}
+        aria-hidden={!showStickyBuy}
+      >
+        <div className="mx-auto flex min-h-[70px] w-[95%] max-w-[1600px] items-center gap-4 px-3 py-2">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-rose-100 bg-white p-1">
+              {(p.imageUrl || p.images?.[0]) ? <img src={p.imageUrl || p.images[0]} alt="" className="h-full w-full object-contain" /> : <Package className="h-full w-full p-2 text-stone-300" />}
+            </div>
+            <div className="min-w-0">
+              <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--store-accent,#d46a86)]">Você está vendo</div>
+              <div className="truncate text-sm font-bold text-stone-800">{p.name}</div>
+              {(p.brand || p.model) && <div className="truncate text-[10px] text-stone-400">{[p.brand, p.model].filter(Boolean).join(" · ")}</div>}
+            </div>
+          </div>
+          <div className="shrink-0 text-right">
+            <div className="text-xl font-black text-stone-900">{formatPrice(currentProduct.price, currency, rates)}</div>
+            <div className="text-[10px] text-stone-400">{t("product.semTaxa")}</div>
+          </div>
+          <PremiumCta
+            size="md"
+            className="!w-auto shrink-0"
+            onClick={addCurrentToCart}
+            disabled={remaining <= 0 || (p.hasVariants && !selectedVariant)}
+          >
+            <ShoppingBag className="h-4 w-4" />
+            {remaining <= 0 ? t("product.esgotado") : t("product.adicionarSacola")}
+          </PremiumCta>
+        </div>
+      </div>
+
       {/* Migalha */}
       <nav className="mb-5 flex items-center gap-1 text-xs uppercase tracking-wide text-stone-400">
         <Link to="/loja" className="hover:text-stone-700">{t("product.inicio")}</Link>
@@ -184,7 +287,7 @@ export function StoreProduct() {
 
         {/* Info */}
         <div className="min-w-0 lg:sticky lg:top-24 lg:self-start">
-          {p.groupName && <div className="text-[11px] font-bold uppercase tracking-widest text-amber-700">{translateCategoryName(p.groupName, i18n.language)}</div>}
+          {p.groupName && <div className="text-[11px] font-bold uppercase tracking-widest text-[var(--store-accent,#d46a86)]">{translateCategoryName(p.groupName, i18n.language)}</div>}
           <h1 className="mt-1 text-2xl font-bold leading-[1.05] text-stone-900 sm:text-3xl" style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif" }}>{p.name}</h1>
           {(p.brand || p.model) && (
             <div className="mt-1 text-sm text-stone-500">{[p.brand, p.model].filter(Boolean).join(" · ")}</div>
@@ -221,7 +324,7 @@ export function StoreProduct() {
           )}
 
           {/* Quantidade + sacola */}
-          <div className="mt-6 flex flex-wrap items-center gap-3">
+          <div ref={purchaseRef} className="mt-6 flex flex-wrap items-center gap-3">
             <div className="flex items-center rounded-full border border-stone-300 bg-white">
               <button onClick={() => setQty(Math.max(1, qty - 1))} disabled={remaining <= 0} className="flex h-11 w-11 items-center justify-center rounded-l-full hover:bg-stone-100 disabled:opacity-40 disabled:hover:bg-transparent"><Minus className="h-4 w-4" /></button>
               <span className="w-10 text-center font-bold">{remaining <= 0 ? 0 : qty}</span>
