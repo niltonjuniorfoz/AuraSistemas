@@ -1,5 +1,12 @@
 /* Ajustes visuais compartilhados da vitrine pública. */
 
+/* Título grande do catálogo/categoria (MAQUIAGEM, PERFUMES, etc.).
+   A cor pode ser alterada pelo editor via --store-catalog-title-color;
+   sem personalização salva, usa o rosa padrão da identidade da loja. */
+main > div[class~="mb-0.5"] h1 {
+  color: var(--store-catalog-title-color, #D46A86) !important;
+}
+
 /* Categorias dos cards: usa o mesmo rosa delicado da seção
    "Você também pode gostar", sem competir com o nome do produto. */
 a[href^="/loja/produto/"] > div:last-child > div:first-child {
