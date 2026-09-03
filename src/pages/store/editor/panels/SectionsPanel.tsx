@@ -1,21 +1,15 @@
 // src/pages/store/editor/panels/SectionsPanel.tsx
 import React, { useState } from "react";
-import { ChevronDown, ChevronUp, Eye, EyeOff, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Eye, EyeOff, Loader2, RotateCcw } from "lucide-react";
 import { useLocation } from "react-router";
 import { useEditMode } from "../EditModeContext";
 import { PanelShell } from "./PanelShell";
 import { SECTION_LABELS, SecaoPagina, effectiveCatalogoSections, effectiveHomeSections } from "../elementCatalog";
 
-// Lista TODAS as seções da página atual, INCLUINDO as ocultas — é o caminho
-// de recuperação de seção escondida (spec: "reativável pelo painel de
-// seções"). Reordenar (↑↓) e alternar visibilidade também funcionam por aqui.
-//
-// Diferente dos painéis de rascunho local + Salvar, este é CRUD ao vivo (como
-// o CategoriesPanel): cada ↑↓/👁️ já persiste na hora via ctx.patchDraft, então
-// o PanelShell fica SEM `onSave` (sem rodapé). E não há estado local de lista
-// nenhum: a lista renderiza direto de ctx.draft via effective*Sections a cada
-// render — o draft atualizado re-renderiza sozinho, sem resync possível de
-// quebrar. Só um guard por linha (busyId) contra clique duplo.
+// O painel Seções é também o ponto de recuperação de conteúdo oculto.
+// As seções ocultas nunca somem desta lista: ficam em um bloco próprio com
+// ação explícita "Mostrar novamente", para não depender de um ícone pouco
+// óbvio. Cada mudança persiste imediatamente no rascunho.
 export function SectionsPanel() {
   const ctx = useEditMode();
   const location = useLocation();
@@ -28,18 +22,18 @@ export function SectionsPanel() {
   if (atProduto) {
     return (
       <PanelShell title="Seções" onClose={ctx.closePanel}>
-        <p className="py-4 text-center text-xs text-stone-400">O template da página de produto chega na Fase 2 — por enquanto as seções editáveis são as da Home e do Catálogo.</p>
+        <p className="py-4 text-center text-xs text-stone-400">As seções editáveis por enquanto são as da Home e do Catálogo.</p>
       </PanelShell>
     );
   }
 
   const sections = pagina === "catalogo" ? effectiveCatalogoSections(ctx.draft) : effectiveHomeSections(ctx.draft);
+  const hiddenSections = sections.filter((s) => s.visivel === false);
+  const visibleSections = sections.filter((s) => s.visivel !== false);
 
-  // Payload em FUNÇÃO: o patchDraft roda ela na fila, contra o draft fresco
-  // daquele momento (não o do clique) — mesma proteção de stale closure do
-  // patchCatalogoSections da StoreCatalog. O merge do servidor é POR PÁGINA e
-  // substitui a página inteira (Task 1): no catálogo, titulo + sections vão
-  // SEMPRE juntos. `mutate` devolve null = no-op (nada gravado, nada dirty).
+  // Preserva TODAS as demais propriedades da página ao atualizar sections.
+  // Antes o catálogo era reconstruído só com titulo + sections, o que podia
+  // apagar configurações adicionadas depois, como tituloCor.
   const patchSections = (mutate: (sections: SecaoPagina[]) => SecaoPagina[] | null) =>
     ctx.patchDraft((draft: any) => {
       const fresh = (pagina === "catalogo" ? effectiveCatalogoSections(draft) : effectiveHomeSections(draft)).map((s) => ({ ...s }));
@@ -47,12 +41,10 @@ export function SectionsPanel() {
       if (!next) return null;
       const withOrder = next.map((s, i) => ({ ...s, ordem: i }));
       return pagina === "catalogo"
-        ? { pages: { catalogo: { titulo: String(draft?.pages?.catalogo?.titulo || ""), sections: withOrder } } }
-        : { pages: { home: { sections: withOrder } } };
+        ? { pages: { catalogo: { ...(draft?.pages?.catalogo || {}), sections: withOrder } } }
+        : { pages: { home: { ...(draft?.pages?.home || {}), sections: withOrder } } };
     });
 
-  // Aqui as ocultas aparecem na lista, então trocar com o vizinho DIRETO é o
-  // certo (na página, os helpers pulam ocultas porque lá elas não renderizam).
   const move = async (id: string, dir: -1 | 1) => {
     if (busyId) return;
     setBusyId(id);
@@ -66,37 +58,120 @@ export function SectionsPanel() {
       });
     } finally { setBusyId(null); }
   };
-  const toggle = async (id: string) => {
+
+  const setVisibility = async (id: string, visible: boolean) => {
     if (busyId) return;
     setBusyId(id);
     try {
       await patchSections((prev) => {
         const s = prev.find((x) => x.id === id);
-        if (!s) return null;
-        s.visivel = s.visivel === false; // cópia rasa feita no patchSections — mutar aqui é seguro
+        if (!s || s.visivel === visible) return null;
+        s.visivel = visible;
         return prev;
       });
     } finally { setBusyId(null); }
   };
 
+  const restoreAll = async () => {
+    if (busyId || hiddenSections.length === 0) return;
+    setBusyId("__restore_all__");
+    try {
+      await patchSections((prev) => {
+        let changed = false;
+        for (const s of prev) {
+          if (s.visivel === false) {
+            s.visivel = true;
+            changed = true;
+          }
+        }
+        return changed ? prev : null;
+      });
+    } finally { setBusyId(null); }
+  };
+
+  const originalIndex = (id: string) => sections.findIndex((s) => s.id === id);
+
   return (
     <PanelShell title={`Seções — ${pagina === "catalogo" ? "Catálogo" : "Home"}`} onClose={ctx.closePanel}>
-      <p className="mb-3 text-[11px] text-stone-500">Use ↑↓ pra reordenar e o olho pra ocultar/mostrar — cada mudança já vale no rascunho na hora. Seção oculta some da loja (desktop e mobile) mas fica listada aqui pra reativar quando quiser.</p>
-      <div className="space-y-1.5">
-        {sections.map((s, i) => (
-          <div key={s.id} className={`flex items-center gap-2 rounded-lg border p-2 ${s.visivel === false ? "border-stone-200 bg-stone-50 opacity-60" : "border-stone-200"}`}>
-            <div className="flex flex-col">
-              <button onClick={() => move(s.id, -1)} disabled={i === 0 || !!busyId} className="p-0.5 text-stone-400 hover:text-stone-700 disabled:opacity-30"><ChevronUp className="h-3.5 w-3.5" /></button>
-              <button onClick={() => move(s.id, 1)} disabled={i === sections.length - 1 || !!busyId} className="p-0.5 text-stone-400 hover:text-stone-700 disabled:opacity-30"><ChevronDown className="h-3.5 w-3.5" /></button>
+      <p className="mb-4 text-[11px] leading-relaxed text-stone-500">
+        O que você ocultar continua salvo no rascunho. Use <strong>Mostrar novamente</strong> abaixo para recuperar a qualquer momento.
+      </p>
+
+      {hiddenSections.length > 0 && (
+        <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50/70 p-3">
+          <div className="mb-2.5 flex items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-1.5 text-xs font-bold text-stone-800">
+                <EyeOff className="h-4 w-4 text-amber-600" /> Itens ocultos
+              </div>
+              <div className="mt-0.5 text-[10px] text-stone-500">{hiddenSections.length} {hiddenSections.length === 1 ? "seção oculta" : "seções ocultas"}</div>
             </div>
-            <span className="min-w-0 flex-1 truncate text-sm text-stone-700">{SECTION_LABELS[s.id] || s.id}</span>
-            {s.visivel === false && <span className="shrink-0 rounded bg-stone-200 px-1.5 py-0.5 text-[10px] font-bold text-stone-500">oculta</span>}
-            <button onClick={() => toggle(s.id)} disabled={!!busyId} title={s.visivel === false ? "Mostrar seção" : "Ocultar seção"} className="shrink-0 text-stone-500 hover:text-stone-800 disabled:opacity-50">
-              {busyId === s.id ? <Loader2 className="h-4 w-4 animate-spin" /> : s.visivel === false ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
+            {hiddenSections.length > 1 && (
+              <button
+                type="button"
+                onClick={restoreAll}
+                disabled={!!busyId}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-2.5 py-1.5 text-[10px] font-bold text-amber-700 transition hover:bg-amber-100 disabled:opacity-50"
+              >
+                {busyId === "__restore_all__" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                Mostrar todos
+              </button>
+            )}
           </div>
-        ))}
+
+          <div className="space-y-2">
+            {hiddenSections.map((s) => (
+              <div key={s.id} className="flex items-center gap-2 rounded-lg border border-amber-200 bg-white p-2.5">
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-stone-700">{SECTION_LABELS[s.id] || s.id}</span>
+                <button
+                  type="button"
+                  onClick={() => setVisibility(s.id, true)}
+                  disabled={!!busyId}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-stone-900 px-3 py-1.5 text-[10px] font-bold text-white transition hover:bg-stone-700 disabled:opacity-50"
+                >
+                  {busyId === s.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
+                  Mostrar novamente
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mb-2 flex items-center justify-between">
+        <div className="text-xs font-bold text-stone-700">Seções visíveis</div>
+        <div className="text-[10px] text-stone-400">↑↓ altera a ordem</div>
       </div>
+
+      <div className="space-y-1.5">
+        {visibleSections.map((s) => {
+          const i = originalIndex(s.id);
+          return (
+            <div key={s.id} className="flex items-center gap-2 rounded-lg border border-stone-200 bg-white p-2.5">
+              <div className="flex flex-col">
+                <button onClick={() => move(s.id, -1)} disabled={i === 0 || !!busyId} className="p-0.5 text-stone-400 hover:text-stone-700 disabled:opacity-30"><ChevronUp className="h-3.5 w-3.5" /></button>
+                <button onClick={() => move(s.id, 1)} disabled={i === sections.length - 1 || !!busyId} className="p-0.5 text-stone-400 hover:text-stone-700 disabled:opacity-30"><ChevronDown className="h-3.5 w-3.5" /></button>
+              </div>
+              <span className="min-w-0 flex-1 truncate text-sm text-stone-700">{SECTION_LABELS[s.id] || s.id}</span>
+              <button
+                type="button"
+                onClick={() => setVisibility(s.id, false)}
+                disabled={!!busyId}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-stone-200 px-2.5 py-1.5 text-[10px] font-semibold text-stone-500 transition hover:border-stone-300 hover:bg-stone-50 hover:text-stone-700 disabled:opacity-50"
+              >
+                {busyId === s.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <EyeOff className="h-3.5 w-3.5" />}
+                Ocultar
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      {hiddenSections.length === 0 && (
+        <div className="mt-4 rounded-lg border border-dashed border-stone-200 px-3 py-2.5 text-center text-[10px] text-stone-400">
+          Nenhuma seção está oculta nesta página.
+        </div>
+      )}
     </PanelShell>
   );
 }
