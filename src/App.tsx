@@ -8,10 +8,6 @@ import { setBrlExchangeRate, setSystemCurrency } from './lib/i18n';
 import { ToastHost } from './components/Toast';
 import { ScrollToTop } from './components/ScrollToTop';
 
-// Cada página vira o próprio pedaço de JS, baixado só quando a rota é visitada — antes o bundle
-// inteiro (3,37 MB) carregava de uma vez até pra abrir só a tela de login. `lazyNamed` existe porque
-// quase toda página usa export nomeado (`export function X`), não default — React.lazy só entende
-// módulo com `default`, então isso adapta o named export pro formato que ele espera.
 function lazyNamed<T extends React.ComponentType<any>>(loader: () => Promise<Record<string, T>>, name: string) {
   return React.lazy(() => loader().then((m) => ({ default: m[name] })));
 }
@@ -54,6 +50,7 @@ const ResetPassword = lazyNamed(() => import('./pages/store/account/ResetPasswor
 const StoreOrders = lazyNamed(() => import('./pages/StoreOrders'), 'StoreOrders');
 const AbandonedCarts = lazyNamed(() => import('./pages/AbandonedCarts'), 'AbandonedCarts');
 const StoreSettings = lazyNamed(() => import('./pages/StoreSettings'), 'StoreSettings');
+const StoreCoupons = lazyNamed(() => import('./pages/StoreCoupons'), 'StoreCoupons');
 const StoreEditor = lazyNamed(() => import('./pages/store/editor/StoreEditor'), 'StoreEditor');
 const Intelligence = lazyNamed(() => import('./pages/Intelligence'), 'Intelligence');
 const Notifications = lazyNamed(() => import('./pages/Notifications'), 'Notifications');
@@ -80,14 +77,12 @@ const SystemSettings = lazyNamed(() => import('./pages/settings/System'), 'Syste
 const Shortcuts = lazyNamed(() => import('./pages/settings/Shortcuts'), 'Shortcuts');
 const MasterPanel = lazyNamed(() => import('./pages/MasterPanel'), 'MasterPanel');
 
-// Fallback de rota — some, então evita salto de layout: fica no fundo já padrão da tela.
 function RouteFallback() {
   return <div className="min-h-screen w-full bg-[#0a0a0a]" />;
 }
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token);
-  const logout = useAuthStore((s) => s.logout);
   const [isValidating, setIsValidating] = useState(true);
 
   useEffect(() => {
@@ -96,14 +91,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Validate the token on mount
     apiFetch("/api/auth/me")
       .then(res => res.json())
       .then(() => setIsValidating(false))
-      .catch(() => {
-         // apiFetch handles the logout and redirect logic on 401
-         setIsValidating(false);
-      });
+      .catch(() => setIsValidating(false));
   }, [token]);
 
   if (!token) return <Navigate to="/login" replace />;
@@ -113,7 +104,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function Home() {
-   return <Navigate to="/pos" replace />;
+  return <Navigate to="/pos" replace />;
 }
 
 export default function App() {
@@ -149,84 +140,83 @@ export default function App() {
       <ToastHost />
       <ScrollToTop />
       <Suspense fallback={<RouteFallback />}>
-      <Routes>
-        <Route path="/login" element={<Login />} />
+        <Routes>
+          <Route path="/login" element={<Login />} />
 
-        {/* Loja online — páginas públicas (sem login, fora do Layout do ERP) */}
-        <Route path="/loja" element={<ShopLayout />}>
-          <Route index element={<StoreHome />} />
-          <Route path="catalogo" element={<StoreCatalog />} />
-          <Route path="produto/:id" element={<StoreProduct />} />
-          <Route path="conta" element={<AccountLayout />}>
-            <Route path="pedidos" element={<MyOrders />} />
-            <Route path="dados" element={<MyProfile />} />
-            <Route path="enderecos" element={<MyAddresses />} />
-            <Route path="favoritos" element={<MyWishlist />} />
+          <Route path="/loja" element={<ShopLayout />}>
+            <Route index element={<StoreHome />} />
+            <Route path="catalogo" element={<StoreCatalog />} />
+            <Route path="produto/:id" element={<StoreProduct />} />
+            <Route path="conta" element={<AccountLayout />}>
+              <Route path="pedidos" element={<MyOrders />} />
+              <Route path="dados" element={<MyProfile />} />
+              <Route path="enderecos" element={<MyAddresses />} />
+              <Route path="favoritos" element={<MyWishlist />} />
+            </Route>
           </Route>
-        </Route>
-        <Route path="/loja/pedido/:code" element={<OrderStatus />} />
-        <Route path="/loja/conta/redefinir-senha" element={<ResetPassword />} />
-        
-        <Route path="/" element={<ProtectedRoute><ErrorBoundary><Layout /></ErrorBoundary></ProtectedRoute>}>
-           <Route index element={<Home />} />
-           <Route path="painel" element={<Dashboard />} />
-           <Route path="products" element={<Products />} />
-           <Route path="products/:id" element={<ProductDetails />} />
-           <Route path="users" element={<Users />} />
-           <Route path="customers" element={<Customers />} />
-           <Route path="groups" element={<Groups />} />
-           <Route path="pos" element={<Pos />} />
-           <Route path="sales" element={<Sales />} />
-           <Route path="sales/:id" element={<Sales />} />
-           <Route path="cash" element={<Cash />} />
-           <Route path="receivables" element={<Receivables />} />
-           <Route path="payables" element={<Payables />} />
-           <Route path="finance" element={<Finance />} />
-           <Route path="personal" element={<Personal />} />
-           <Route path="store-orders" element={<StoreOrders />} />
-           <Route path="abandoned-carts" element={<AbandonedCarts />} />
-           <Route path="store-settings" element={<StoreSettings />} />
-           <Route path="store-settings/editor/*" element={<StoreEditor />} />
-           <Route path="intelligence" element={<Intelligence />} />
-           <Route path="notifications" element={<Notifications />} />
-           <Route path="analytics" element={<Analytics />} />
-           <Route path="separation" element={<Separation />} />
-           <Route path="delivery" element={<SimpleDeliveries />} />
-           <Route path="suppliers" element={<Suppliers />} />
-           <Route path="purchases" element={<Purchases />} />
-           <Route path="purchases/new" element={<PurchaseForm />} />
-           <Route path="purchases/import" element={<PurchaseImport />} />
-           <Route path="purchases/ocr" element={<PurchaseOcr />} />
-           <Route path="purchases/:id" element={<PurchaseForm />} />
-           <Route path="transfers" element={<StockTransfers />} />
-           <Route path="reports" element={<Reports />} />
-           <Route path="reports/products-catalog" element={<ProductsCatalogReport />} />
-           <Route path="reports/profit" element={<ProfitReport />} />
-           <Route path="reports/products-financial" element={<ProductsFinancialReport />} />
-           <Route path="reports/stock-movements" element={<StockMovementReport />} />
-           <Route path="reports/abc" element={<AbcReport />} />
-           <Route path="reports/real-margin" element={<RealMarginReport />} />
-           <Route path="reports/statements" element={<FinancialStatements />} />
-           <Route path="reports/commissions" element={<CommissionsReport />} />
-           
-           {/* Settings module */}
-           <Route path="settings" element={<SettingsDashboard />} />
-           <Route path="settings/company" element={<CompanySettings />} />
-           <Route path="settings/archived" element={<Archived />} />
-           <Route path="settings/currencies" element={<Currencies />} />
-           <Route path="settings/brands" element={<Brands />} />
-           <Route path="settings/fiscal" element={<Fiscal />} />
-           <Route path="settings/printers" element={<Printers />} />
-           <Route path="settings/email" element={<Email />} />
-           <Route path="settings/backup" element={<Backup />} />
-           <Route path="settings/audit" element={<AuditLogs />} />
-           <Route path="settings/system" element={<SystemSettings />} />
-           <Route path="settings/shortcuts" element={<Shortcuts />} />
-           <Route path="master" element={<MasterPanel />} />
-           
-           <Route path="archived" element={<Navigate to="/settings/archived" replace />} />
-        </Route>
-      </Routes>
+          <Route path="/loja/pedido/:code" element={<OrderStatus />} />
+          <Route path="/loja/conta/redefinir-senha" element={<ResetPassword />} />
+
+          <Route path="/" element={<ProtectedRoute><ErrorBoundary><Layout /></ErrorBoundary></ProtectedRoute>}>
+            <Route index element={<Home />} />
+            <Route path="painel" element={<Dashboard />} />
+            <Route path="products" element={<Products />} />
+            <Route path="products/:id" element={<ProductDetails />} />
+            <Route path="users" element={<Users />} />
+            <Route path="customers" element={<Customers />} />
+            <Route path="groups" element={<Groups />} />
+            <Route path="pos" element={<Pos />} />
+            <Route path="sales" element={<Sales />} />
+            <Route path="sales/:id" element={<Sales />} />
+            <Route path="cash" element={<Cash />} />
+            <Route path="receivables" element={<Receivables />} />
+            <Route path="payables" element={<Payables />} />
+            <Route path="finance" element={<Finance />} />
+            <Route path="personal" element={<Personal />} />
+            <Route path="store-orders" element={<StoreOrders />} />
+            <Route path="abandoned-carts" element={<AbandonedCarts />} />
+            <Route path="store-coupons" element={<StoreCoupons />} />
+            <Route path="store-settings" element={<StoreSettings />} />
+            <Route path="store-settings/editor/*" element={<StoreEditor />} />
+            <Route path="intelligence" element={<Intelligence />} />
+            <Route path="notifications" element={<Notifications />} />
+            <Route path="analytics" element={<Analytics />} />
+            <Route path="separation" element={<Separation />} />
+            <Route path="delivery" element={<SimpleDeliveries />} />
+            <Route path="suppliers" element={<Suppliers />} />
+            <Route path="purchases" element={<Purchases />} />
+            <Route path="purchases/new" element={<PurchaseForm />} />
+            <Route path="purchases/import" element={<PurchaseImport />} />
+            <Route path="purchases/ocr" element={<PurchaseOcr />} />
+            <Route path="purchases/:id" element={<PurchaseForm />} />
+            <Route path="transfers" element={<StockTransfers />} />
+            <Route path="reports" element={<Reports />} />
+            <Route path="reports/products-catalog" element={<ProductsCatalogReport />} />
+            <Route path="reports/profit" element={<ProfitReport />} />
+            <Route path="reports/products-financial" element={<ProductsFinancialReport />} />
+            <Route path="reports/stock-movements" element={<StockMovementReport />} />
+            <Route path="reports/abc" element={<AbcReport />} />
+            <Route path="reports/real-margin" element={<RealMarginReport />} />
+            <Route path="reports/statements" element={<FinancialStatements />} />
+            <Route path="reports/commissions" element={<CommissionsReport />} />
+
+            <Route path="settings" element={<SettingsDashboard />} />
+            <Route path="settings/company" element={<CompanySettings />} />
+            <Route path="settings/archived" element={<Archived />} />
+            <Route path="settings/currencies" element={<Currencies />} />
+            <Route path="settings/brands" element={<Brands />} />
+            <Route path="settings/fiscal" element={<Fiscal />} />
+            <Route path="settings/printers" element={<Printers />} />
+            <Route path="settings/email" element={<Email />} />
+            <Route path="settings/backup" element={<Backup />} />
+            <Route path="settings/audit" element={<AuditLogs />} />
+            <Route path="settings/system" element={<SystemSettings />} />
+            <Route path="settings/shortcuts" element={<Shortcuts />} />
+            <Route path="master" element={<MasterPanel />} />
+
+            <Route path="archived" element={<Navigate to="/settings/archived" replace />} />
+          </Route>
+        </Routes>
       </Suspense>
     </BrowserRouter>
   );
