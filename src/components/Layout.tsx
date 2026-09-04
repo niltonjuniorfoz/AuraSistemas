@@ -3,7 +3,7 @@ import { Outlet, Link, useNavigate, useLocation } from 'react-router';
 import { useAuthStore } from '../stores/authStore';
 import { useAdminTranslation } from '../lib/i18n';
 import { apiFetch } from '../lib/api';
-import { Users, Package, FileText, Settings, LogOut, Tags, Menu, X, ChevronLeft, ChevronRight, ShoppingCart, Wallet, PackageSearch, Truck, Shield, LayoutGrid, List, ArrowRightLeft, LayoutDashboard, HandCoins, Receipt, Keyboard as KeyboardIcon, PiggyBank, UserRound, Store, Brain, ShoppingBag, PackageCheck, Bell, LineChart } from 'lucide-react';
+import { Users, Package, FileText, Settings, LogOut, Tags, Menu, X, ChevronLeft, ChevronRight, ShoppingCart, Wallet, PackageSearch, Truck, Shield, LayoutGrid, List, ArrowRightLeft, LayoutDashboard, HandCoins, Receipt, Keyboard as KeyboardIcon, PiggyBank, UserRound, Store, Brain, ShoppingBag, PackageCheck, Bell, LineChart, TicketPercent } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { GlobalCalculator } from './GlobalCalculator';
@@ -44,8 +44,6 @@ export function Layout() {
   const isMini = layout === 'mini';
   const collapsed = isMini || sidebarCollapsed;
 
-  // "system" segue o SO em tempo real (troca de tema do Windows/macOS
-  // durante o uso já reflete aqui, sem precisar recarregar a página).
   const [systemPrefersDark, setSystemPrefersDark] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches
   );
@@ -66,7 +64,6 @@ export function Layout() {
   useEffect(() => {
     const isDesktop = window.matchMedia('(min-width: 768px) and (pointer: fine)').matches;
     if (!isDesktop) return;
-
     setShowFullscreenHint(true);
     const timer = window.setTimeout(() => setShowFullscreenHint(false), 6000);
     return () => window.clearTimeout(timer);
@@ -89,9 +86,7 @@ export function Layout() {
         const label = new Date(backup.lastRunAt).toLocaleString('pt-BR');
         setBackupNotice({
           status: backup.lastRunStatus,
-          text: backup.lastRunStatus === 'SUCCESS'
-            ? `Backup feito em ${label}.`
-            : `Backup falhou em ${label}.`,
+          text: backup.lastRunStatus === 'SUCCESS' ? `Backup feito em ${label}.` : `Backup falhou em ${label}.`,
         });
       } catch {
         return;
@@ -107,11 +102,6 @@ export function Layout() {
     return () => window.clearTimeout(timer);
   }, [backupNotice]);
 
-
-
-  // Abrir menu lateral no celular com gesto da esquerda para a direita.
-  // Observação: em navegador comum, o gesto extremo da borda ainda pode ser interceptado pelo Safari/Chrome.
-  // Dentro do app instalado na tela inicial funciona de forma mais natural.
   useEffect(() => {
     const isTouch = window.matchMedia('(max-width: 1024px), (pointer: coarse)').matches;
     if (!isTouch) return;
@@ -120,10 +110,7 @@ export function Layout() {
       if (isMobileMenuOpen) return;
       const touch = event.touches[0];
       if (!touch) return;
-      // Começa um pouco mais para dentro para evitar o gesto nativo do navegador de voltar página.
-      if (touch.clientX >= 44 && touch.clientX <= 180) {
-        swipeStartRef.current = { x: touch.clientX, y: touch.clientY };
-      }
+      if (touch.clientX >= 44 && touch.clientX <= 180) swipeStartRef.current = { x: touch.clientX, y: touch.clientY };
     };
 
     const handleTouchMove = (event: TouchEvent) => {
@@ -133,9 +120,7 @@ export function Layout() {
       if (!touch) return;
       const dx = touch.clientX - start.x;
       const dy = touch.clientY - start.y;
-      if (dx > 14 && Math.abs(dx) > Math.abs(dy) * 1.2) {
-        event.preventDefault();
-      }
+      if (dx > 14 && Math.abs(dx) > Math.abs(dy) * 1.2) event.preventDefault();
     };
 
     const handleTouchEnd = (event: TouchEvent) => {
@@ -146,15 +131,12 @@ export function Layout() {
       if (!touch) return;
       const dx = touch.clientX - start.x;
       const dy = Math.abs(touch.clientY - start.y);
-      if (dx > 58 && dx > dy * 1.25) {
-        setIsMobileMenuOpen(true);
-      }
+      if (dx > 58 && dx > dy * 1.25) setIsMobileMenuOpen(true);
     };
 
     window.addEventListener('touchstart', handleTouchStart, { passive: false });
     window.addEventListener('touchmove', handleTouchMove, { passive: false });
     window.addEventListener('touchend', handleTouchEnd, { passive: true });
-
     return () => {
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('touchmove', handleTouchMove);
@@ -162,23 +144,16 @@ export function Layout() {
     };
   }, [isMobileMenuOpen]);
 
-  // Close mobile menu on desktop/resize
   useEffect(() => {
     const handleResize = () => {
-      if (window.innerWidth >= 768) {
-        setIsMobileMenuOpen(false);
-      }
+      if (window.innerWidth >= 768) setIsMobileMenuOpen(false);
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Close mobile menu on route change
-  useEffect(() => {
-    setIsMobileMenuOpen(false);
-  }, [location.pathname]);
+  useEffect(() => { setIsMobileMenuOpen(false); }, [location.pathname]);
 
-  // Permite que componentes fixos/absolutos do conteúdo reajam ao menu mobile aberto.
   useEffect(() => {
     document.body.classList.toggle('origin-mobile-sidebar-open', isMobileMenuOpen);
     return () => document.body.classList.remove('origin-mobile-sidebar-open');
@@ -234,6 +209,7 @@ export function Layout() {
         { name: 'Análises', path: '/analytics', icon: LineChart },
         { name: 'Pedidos da Loja', path: '/store-orders', icon: ShoppingBag },
         { name: 'Carrinhos Abandonados', path: '/abandoned-carts', icon: ShoppingCart },
+        { name: 'Cupons', path: '/store-coupons', icon: TicketPercent },
         { name: 'Config. da Loja', path: '/store-settings', icon: Store },
       ]
     },
@@ -255,7 +231,6 @@ export function Layout() {
     }
   ];
 
-  // Helper to find the current active item name
   const allItems = navGroups.flatMap(g => g.items);
   const currentRouteName = allItems.find(i => location.pathname === i.path || (i.path !== '/' && location.pathname.startsWith(i.path)))?.name || SYSTEM_BRAND.name;
 
@@ -285,23 +260,18 @@ export function Layout() {
         )}>
           <span className={cn("mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full", backupNotice.status === 'SUCCESS' ? "bg-green-400" : "bg-red-400")} />
           <div>
-            <div className={cn("font-semibold", backupNotice.status === 'SUCCESS' ? "text-green-300" : "text-red-300")}>
+            <div className={cn("font-semibold", backupNotice.status === 'SUCCESS' ? 'text-green-300' : 'text-red-300')}>
               {backupNotice.status === 'SUCCESS' ? 'Backup concluido' : 'Backup nao realizado'}
             </div>
             <div className="text-gray-300">{backupNotice.text}</div>
           </div>
         </div>
       )}
-      
-      {/* Mobile Header Overlay & Drawer Background */}
+
       {isMobileMenuOpen && (
-        <div 
-          className="fixed inset-0 bg-brand-navydark/80 z-40 md:hidden backdrop-blur-sm transition-opacity"
-          onClick={() => setIsMobileMenuOpen(false)}
-        />
+        <div className="fixed inset-0 bg-brand-navydark/80 z-40 md:hidden backdrop-blur-sm transition-opacity" onClick={() => setIsMobileMenuOpen(false)} />
       )}
 
-      {/* Sidebar */}
       <aside
         className={cn(
           "bg-background border-r border-sidebar-border flex flex-col shrink-0 z-50 transition-all duration-300",
@@ -323,23 +293,16 @@ export function Layout() {
               <img src={SYSTEM_BRAND.logoMarkUrl} alt={SYSTEM_BRAND.name} className="h-9 w-9 object-contain" />
             </div>
           )}
-          
-          <button 
-            className="mobile-menu-button md:hidden text-gray-400 hover:text-white"
-            onClick={() => setIsMobileMenuOpen(false)}
-          >
+          <button className="mobile-menu-button md:hidden text-gray-400 hover:text-white" onClick={() => setIsMobileMenuOpen(false)}>
             <X className="w-6 h-6" />
           </button>
         </div>
-        
-        {/* overflow-y-auto: a lista cresceu (Pessoal, Pedidos da Loja) e não pode cortar itens */}
+
         <nav className="min-h-0 flex-1 py-3 flex flex-col gap-3 px-2 overflow-y-auto overflow-x-hidden">
           {navGroups.map((group, idx) => (
             <div key={idx} className="flex flex-col gap-0.5">
               {!collapsed && (
-                <div className="px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
-                  {group.label}
-                </div>
+                <div className="px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">{group.label}</div>
               )}
               {collapsed && (
                 <div className={cn("mx-auto w-8 border-t border-sidebar-border mb-1 mt-2 first:mt-0 first:border-0", isMini && "md:group-hover/sidebar:hidden")} />
@@ -354,20 +317,15 @@ export function Layout() {
                     title={collapsed ? item.name : undefined}
                     className={cn(
                       "group relative flex items-center gap-2.5 rounded-lg px-2.5 py-[var(--density-nav-py)] text-sm transition-all",
-                      isActive
-                        ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
-                        : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-white",
+                      isActive ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-white",
                       collapsed ? (isMini ? "md:justify-center md:group-hover/sidebar:justify-start" : "md:justify-center") : ""
                     )}
                   >
-                    {/* indicador lateral do item ativo (padrão Apex) */}
                     {isActive && <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary" />}
                     <Icon className={cn("shrink-0 transition-colors", collapsed ? "w-5 h-5" : "w-4 h-4", isActive ? "text-primary" : "text-muted-foreground group-hover:text-gray-200")} />
-                    <span className={cn("truncate", collapsed ? (isMini ? "md:hidden md:group-hover/sidebar:inline" : "md:hidden") : "")}>
-                      {item.name}
-                    </span>
+                    <span className={cn("truncate", collapsed ? (isMini ? "md:hidden md:group-hover/sidebar:inline" : "md:hidden") : "")}>{item.name}</span>
                   </Link>
-                )
+                );
               })}
             </div>
           ))}
@@ -396,25 +354,17 @@ export function Layout() {
             <span className={cn(collapsed ? (isMini ? "md:hidden md:group-hover/sidebar:inline" : "md:hidden") : "")}>{t('menu.logout') || 'Sair do sistema'}</span>
           </button>
 
-          <div className={cn("text-gray-500 text-[10px] mt-2 px-2", collapsed ? (isMini ? "md:hidden md:group-hover/sidebar:block" : "md:hidden") : "")}>
-            V. {APP_VERSION}
-          </div>
+          <div className={cn("text-gray-500 text-[10px] mt-2 px-2", collapsed ? (isMini ? "md:hidden md:group-hover/sidebar:block" : "md:hidden") : "")}>V. {APP_VERSION}</div>
         </div>
       </aside>
 
-      {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 h-dvh overflow-hidden">
         <header className="app-header h-[var(--density-header-h)] border-b border-border bg-card/60 backdrop-blur-md flex items-center justify-between px-4 md:px-6 shrink-0 z-10 w-full">
           <div className="flex items-center gap-4">
-            <button 
-              className="mobile-menu-button md:hidden text-gray-400 hover:text-white"
-              onClick={() => setIsMobileMenuOpen(true)}
-            >
+            <button className="mobile-menu-button md:hidden text-gray-400 hover:text-white" onClick={() => setIsMobileMenuOpen(true)}>
               <Menu className="w-6 h-6" />
             </button>
-            <h1 className="text-lg font-medium text-gray-200 truncate">
-              {currentRouteName}
-            </h1>
+            <h1 className="text-lg font-medium text-gray-200 truncate">{currentRouteName}</h1>
           </div>
 
           <HeaderClock />
@@ -442,9 +392,7 @@ export function Layout() {
                 title={posLayoutMode === 'catalog' ? 'Voltar para o PDV clássico' : 'Usar PDV em grade'}
                 className={cn(
                   "flex h-9 w-9 items-center justify-center rounded-lg border transition",
-                  posLayoutMode === 'catalog'
-                    ? "border-brand-gold bg-brand-gold/10 text-brand-gold"
-                    : "border-gray-700 bg-[#171717] text-gray-400 hover:border-brand-gold hover:text-brand-gold"
+                  posLayoutMode === 'catalog' ? "border-brand-gold bg-brand-gold/10 text-brand-gold" : "border-gray-700 bg-[#171717] text-gray-400 hover:border-brand-gold hover:text-brand-gold"
                 )}
               >
                 {posLayoutMode === 'catalog' ? <List className="h-4.5 w-4.5" /> : <LayoutGrid className="h-4.5 w-4.5" />}
@@ -470,7 +418,6 @@ export function Layout() {
         </div>
       </main>
 
-      {/* Paleta de comandos global (Ctrl+K / ⌘K) */}
       <CommandPalette />
     </div>
   );
