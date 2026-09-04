@@ -1,12 +1,18 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { useDisplayCurrency, DisplayCurrency } from "../stores/displayCurrency";
 
-// Pill R$/US$/G$ compartilhado entre Dashboard/Caixa/PDV — troca a moeda de
-// EXIBIÇÃO dos valores da tela (os valores continuam guardados do jeito que
-// já são; ver src/stores/displayCurrency.ts). Escolha persiste e vale nas
-// três telas juntas.
+// Moeda de EXIBIÇÃO do ERP. A cotação vem sempre de Configurações > Moedas;
+// trocar aqui nunca altera o valor salvo, somente a apresentação da tela.
 export function DisplayCurrencySelector({ className = "" }: { className?: string }) {
-  const { currency, setCurrency } = useDisplayCurrency();
+  const { currency, setCurrency, refreshRates } = useDisplayCurrency();
+
+  useEffect(() => {
+    refreshRates();
+    const refresh = () => refreshRates(true);
+    window.addEventListener("origin:currency-config-change", refresh);
+    return () => window.removeEventListener("origin:currency-config-change", refresh);
+  }, [refreshRates]);
+
   return (
     <div className={`flex items-center gap-0.5 rounded-lg border border-gray-700 bg-[#171717] p-0.5 ${className}`} role="group" aria-label="Moeda de exibição">
       {(["BRL", "USD", "PYG"] as DisplayCurrency[]).map((c) => (
