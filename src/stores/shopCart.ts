@@ -38,7 +38,15 @@ export const useShopCart = create<ShopCartState>((set) => ({
     let items: CartItem[];
     if (found) {
       items = s.items.map((i) => i.productId === p.id
-        ? { ...i, quantity: Math.min(i.quantity + qty, p.maxQty), maxQty: p.maxQty }
+        ? {
+            ...i,
+            quantity: Math.min(i.quantity + qty, p.maxQty),
+            maxQty: p.maxQty,
+            // Alguns produtos usam apenas a galeria nova e não possuem o
+            // imageUrl legado. Quando a tela consegue resolver uma imagem,
+            // atualiza também itens antigos já salvos no localStorage.
+            imageUrl: p.imageUrl || i.imageUrl,
+          }
         : i);
     } else {
       items = [...s.items, { productId: p.id, name: p.name, price: p.price, quantity: Math.min(qty, p.maxQty), maxQty: p.maxQty, imageUrl: p.imageUrl }];
