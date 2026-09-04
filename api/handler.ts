@@ -41,6 +41,7 @@ import intelligenceRouter from "../src/server/intelligence";
 import statementsRouter from "../src/server/statements";
 import { router as maintenanceRouter } from "../src/server/maintenance";
 import { apiPerformanceLogger, markResponseStart } from "../src/server/performance";
+import { operationsGuardRouter, publicStoreGuardRouter, storeCouponsAdminRouter } from "../src/server/commerceGuards";
 
 function buildCorsOptions(): CorsOptions {
   const allowedOrigins = (process.env.CORS_ORIGINS || "")
@@ -90,6 +91,10 @@ app.use("/api/customers", customersRouter);
 app.use("/api/groups", groupsRouter);
 app.use("/api/shelves", shelvesRouter);
 app.use("/api/audit", auditRouter);
+
+// Guardas precisam vir antes dos routers operacionais originais: quando a regra
+// permite, chamam next() e o fluxo legado continua exatamente como antes.
+app.use("/api", operationsGuardRouter);
 app.use("/api/sales", receiptsRouter);
 app.use("/api/sales", salesRouter);
 app.use("/api/reports", reportsRouter);
@@ -101,6 +106,7 @@ app.use("/api/delivery", deliveryRouter);
 app.use("/api/serials", serialsRouter);
 app.use("/api/settings", settingsRouter);
 app.use("/api/currency-config", currencyConfigRouter);
+app.use("/api/store-coupons", storeCouponsAdminRouter);
 app.use("/api/suppliers", suppliersRouter);
 app.use("/api/purchases", purchasesRouter);
 app.use("/api/expenses", expensesRouter);
@@ -115,6 +121,9 @@ app.use("/api/finance", financeRouter);
 app.use("/api/fx", fxRouter);
 app.use("/api/cost", costLayersRouter);
 app.use("/api/personal", personalRouter);
+
+// Dedupe de visita e política de cupom precisam rodar antes do router público.
+app.use("/api/store", publicStoreGuardRouter);
 app.use("/api/store", storeRouter);
 app.use("/api/store/account", customerAuthRouter);
 app.use("/api/intel", intelligenceRouter);
