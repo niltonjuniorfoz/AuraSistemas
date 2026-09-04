@@ -60,6 +60,71 @@ body.store-order-route #root > div {
   }
 }
 
+/* Drawers mobile (Categorias/Filtros): entrada suave e saída equivalente. A
+   saída é coordenada por ScrollToTop antes de o React desmontar o elemento. */
+@keyframes storeDrawerBackdropIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes storeDrawerBackdropOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes storeDrawerLeftIn {
+  from { opacity: .84; transform: translate3d(-28px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes storeDrawerLeftOut {
+  from { opacity: 1; transform: translate3d(0, 0, 0); }
+  to { opacity: .84; transform: translate3d(-28px, 0, 0); }
+}
+
+@keyframes storeDrawerRightIn {
+  from { opacity: .84; transform: translate3d(28px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes storeDrawerRightOut {
+  from { opacity: 1; transform: translate3d(0, 0, 0); }
+  to { opacity: .84; transform: translate3d(28px, 0, 0); }
+}
+
+#mobile-store-menu > button:first-child,
+[role="dialog"][aria-label="Filtros do catálogo"] > button:first-child {
+  animation: storeDrawerBackdropIn 220ms ease-out both;
+}
+
+#mobile-store-menu > aside {
+  animation: storeDrawerLeftIn 240ms cubic-bezier(.22,.7,.25,1) both;
+  will-change: transform, opacity;
+}
+
+[role="dialog"][aria-label="Filtros do catálogo"] > aside {
+  animation: storeDrawerRightIn 240ms cubic-bezier(.22,.7,.25,1) both;
+  will-change: transform, opacity;
+}
+
+#mobile-store-menu[data-smooth-closing="true"],
+[role="dialog"][aria-label="Filtros do catálogo"][data-smooth-closing="true"] {
+  pointer-events: none;
+}
+
+#mobile-store-menu[data-smooth-closing="true"] > button:first-child,
+[role="dialog"][aria-label="Filtros do catálogo"][data-smooth-closing="true"] > button:first-child {
+  animation: storeDrawerBackdropOut 190ms ease-in both;
+}
+
+#mobile-store-menu[data-smooth-closing="true"] > aside {
+  animation: storeDrawerLeftOut 190ms cubic-bezier(.4,0,1,1) both;
+}
+
+[role="dialog"][aria-label="Filtros do catálogo"][data-smooth-closing="true"] > aside {
+  animation: storeDrawerRightOut 190ms cubic-bezier(.4,0,1,1) both;
+}
+
 /* Tipografia do catálogo mobile: mesma escala compacta para título, controles,
    filtro e cards; evita a mistura de textos enormes com labels minúsculas. */
 @media (max-width: 767px) {
@@ -82,6 +147,83 @@ body.store-order-route #root > div {
   .store-catalog-filter-fields select {
     min-height: 38px;
     font-size: 12px !important;
+  }
+
+  /* O assistente/WhatsApp não invade a navegação inferior. Em páginas comuns
+     fica logo acima do menu; se o CTA de produto estiver ativo, sobe mais um
+     nível para nunca cobrir o botão de compra. */
+  body.storefront-route-active #root div.fixed.bottom-5.right-5.z-40 {
+    bottom: calc(4.85rem + env(safe-area-inset-bottom)) !important;
+    right: 1rem !important;
+    transition: bottom 260ms cubic-bezier(.22,.7,.25,1), transform 180ms ease, opacity 180ms ease;
+  }
+
+  body.storefront-route-active:has(main > div[class*="z-[29]"][class*="opacity-100"])
+    #root div.fixed.bottom-5.right-5.z-40 {
+    bottom: calc(7.65rem + env(safe-area-inset-bottom)) !important;
+  }
+
+  body.storefront-route-active #root div.fixed.bottom-5.right-5.z-40 > div[class*="70vh"] {
+    max-height: calc(100dvh - 9rem) !important;
+  }
+
+  /* CTA mobile da página de produto: fica invisível enquanto o botão original
+     ainda está no conteúdo. O StoreProduct já calcula showStickyBuy para a
+     barra desktop; reutilizamos esse estado via classe opacity-100 para manter
+     mobile e desktop sincronizados sem duplicar listeners. */
+  main > div[class*="bottom-[3.45rem]"][class*="md:hidden"] {
+    bottom: calc(3.7rem + env(safe-area-inset-bottom)) !important;
+    padding: .35rem .75rem !important;
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+    pointer-events: none;
+    transition: opacity 220ms ease, transform 260ms cubic-bezier(.22,.7,.25,1);
+  }
+
+  main:has(> div[class*="z-[29]"][class*="opacity-100"])
+    > div[class*="bottom-[3.45rem]"][class*="md:hidden"] {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+    pointer-events: auto;
+  }
+
+  main > div[class*="bottom-[3.45rem]"][class*="md:hidden"] > div {
+    gap: .6rem !important;
+  }
+
+  main > div[class*="bottom-[3.45rem]"][class*="md:hidden"] button {
+    min-height: 36px !important;
+    height: 36px !important;
+    gap: .35rem !important;
+    border-radius: 10px !important;
+    padding-left: .8rem !important;
+    padding-right: .8rem !important;
+    font-size: 12px !important;
+    font-weight: 650 !important;
+    box-shadow: none !important;
+  }
+
+  main > div[class*="bottom-[3.45rem]"][class*="md:hidden"] .text-lg {
+    font-size: 15px !important;
+    line-height: 1.1 !important;
+  }
+
+  main > div[class*="bottom-[3.45rem]"][class*="md:hidden"] .text-\[10px\] {
+    font-size: 9px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #mobile-store-menu > button:first-child,
+  #mobile-store-menu > aside,
+  [role="dialog"][aria-label="Filtros do catálogo"] > button:first-child,
+  [role="dialog"][aria-label="Filtros do catálogo"] > aside {
+    animation-duration: 1ms !important;
+  }
+
+  main > div[class*="bottom-[3.45rem]"][class*="md:hidden"],
+  body.storefront-route-active #root div.fixed.bottom-5.right-5.z-40 {
+    transition-duration: 1ms !important;
   }
 }
 
