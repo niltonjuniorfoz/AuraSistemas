@@ -14,31 +14,11 @@ import { PremiumCta } from "./PremiumCta";
 import { CodeFlag } from "./flagIcons";
 
 type PromotionType = "oferta" | "outlet";
-type StoreMode = "BRL" | "USD" | "DUAL";
 
 let promotionMapPromise: Promise<Map<string, PromotionType>> | null = null;
 let promotionMapCache: Map<string, PromotionType> | null = null;
 let promotionMapFetchedAt = 0;
 const PROMOTION_CACHE_MS = 15_000;
-
-let storeModePromise: Promise<StoreMode> | null = null;
-let storeModeCache: StoreMode | null = null;
-
-function loadStoreMode(): Promise<StoreMode> {
-  if (storeModeCache) return Promise.resolve(storeModeCache);
-  if (storeModePromise) return storeModePromise;
-  storeModePromise = fetch("/api/store/info", { cache: "no-store" })
-    .then((response) => response.ok ? response.json() : null)
-    .then((info) => {
-      const raw = String(info?.defaultCurrency || "BRL").toUpperCase();
-      const mode: StoreMode = raw === "DUAL" ? "DUAL" : raw === "USD" ? "USD" : "BRL";
-      storeModeCache = mode;
-      return mode;
-    })
-    .catch(() => "BRL" as StoreMode)
-    .finally(() => { storeModePromise = null; });
-  return storeModePromise;
-}
 
 function loadPromotionMap(): Promise<Map<string, PromotionType>> {
   const now = Date.now();
@@ -73,7 +53,7 @@ export const ShopProductCard: React.FC<{ p: any }> = ({ p }) => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const editCtx = useEditMode();
-  const { currency, rates } = useStorePrefs();
+  const { currency, rates, allowedCurrencies } = useStorePrefs();
   const { items, add, setOpen } = useShopCart();
   const inCart = items.find((item) => item.productId === p.id);
   const soldOutForMe = (inCart?.quantity || 0) >= p.maxQty;
@@ -81,24 +61,6 @@ export const ShopProductCard: React.FC<{ p: any }> = ({ p }) => {
   const customer = useCustomerAuthStore((state) => state.customer);
   const favorited = useWishlistStore((state) => state.ids.has(p.id));
   const { add: favAdd, remove: favRemove } = useWishlistStore();
-  const [storeMode, setStoreMode] = useState<StoreMode | null>(storeModeCache);
-
-  useEffect(() => {
-    let alive = true;
-    loadStoreMode().then((mode) => {
-      if (!alive) return;
-      setStoreMode(mode);
-      const prefs = useStorePrefs.getState();
-      if (mode === "DUAL") {
-        prefs.setAllowedCurrencies(["USD", "BRL"]);
-        prefs.setCurrency("USD");
-      } else {
-        prefs.setAllowedCurrencies([mode]);
-        prefs.setCurrency(mode);
-      }
-    });
-    return () => { alive = false; };
-  }, []);
 
   const toggleFavorite = (event: React.MouseEvent) => {
     event.preventDefault();
@@ -165,8 +127,17 @@ export const ShopProductCard: React.FC<{ p: any }> = ({ p }) => {
   const stockQty = Number(p.stockQty || 0);
   const isOutOfStock = p.stockStatus === "out" || Number(p.maxQty || 0) <= 0;
   const showLastUnits = !p.hasVariants && !isOutOfStock && promotionChecked && !promotionType && stockQty > 0 && stockQty <= 3;
-  const dualMode = storeMode === "DUAL";
-  const singleCurrency = storeMode === "USD" ? "USD" : storeMode === "BRL" ? "BRL" : currency;
+  const configuredCurrencies = (allowedCurrencies || []).filter((code) => ["BRL", "PYG", "USD"].includes(code));
+  const visibleCurrencies = configuredCurrencies.length ? configuredCurrencies : ["BRL"];
+  const primaryCurrency = visibleCurrencies.includes(currency) ? currency : visibleCurrencies[0];
+  const secondaryCurrency = visibleCurrencies.length > 1
+    ? (primaryCurrency !== "BRL" && visibleCurrencies.includes("BRL")
+      ? "BRL"
+      : primaryCurrency !== "USD" && visibleCurrencies.includes("USD")
+        ? "USD"
+        : visibleCurrencies.find((code) => code !== primaryCurrency) || null)
+    : null;
+  const multiCurrency = !!secondaryCurrency;
 
   return (
     <Link
@@ -228,22 +199,24 @@ export const ShopProductCard: React.FC<{ p: any }> = ({ p }) => {
         </div>
 
         <div className="mt-1.5 flex min-h-[2.45rem] flex-col items-center justify-start gap-0.5">
-          {dualMode ? (
+          {multiCurrency ? (
             <>
               <div className="flex items-center gap-1 text-[12px] font-bold leading-none text-[var(--store-accent,#D46A86)] sm:text-[13px]">
                 {p.hasVariants && <span className="text-[9px] font-medium text-stone-400">{t("product.aPartirDe")}</span>}
-                <CodeFlag code="USD" className="h-2.5 w-4 shrink-0 rounded-[1px]" />
-                {formatPrice(p.price, "USD", rates)}
+                <CodeFlag code={primaryCurrency} className="h-2.5 w-4 shrink-0 rounded-[1px]" />
+                {formatPrice(p.price, primaryCurrency, rates)}
               </div>
-              <div className="flex items-center gap-1 text-[10px] font-semibold leading-none text-stone-500 sm:text-[11px]">
-                <CodeFlag code="BRL" className="h-2.5 w-4 shrink-0 rounded-[1px]" />
-                {formatPrice(p.price, "BRL", rates)}
-              </div>
+              {secondaryCurrency && (
+                <div className="flex items-center gap-1 text-[10px] font-semibold leading-none text-stone-500 sm:text-[11px]">
+                  <CodeFlag code={secondaryCurrency} className="h-2.5 w-4 shrink-0 rounded-[1px]" />
+                  {formatPrice(p.price, secondaryCurrency, rates)}
+                </div>
+              )}
             </>
           ) : (
             <div className="flex items-center gap-1 text-[12px] font-bold leading-none text-[var(--store-accent,#D46A86)] sm:text-[13px]">
               {p.hasVariants && <span className="text-[9px] font-medium text-stone-400">{t("product.aPartirDe")}</span>}
-              {formatPrice(p.price, singleCurrency, rates)}
+              {formatPrice(p.price, primaryCurrency, rates)}
             </div>
           )}
         </div>
