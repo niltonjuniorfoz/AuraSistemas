@@ -43,10 +43,21 @@ async function getOrCreateShippingZones() {
   return rows;
 }
 
+const STOP_WORDS = new Set([
+  "tem", "ter", "vcs", "voce", "voces", "produto", "produtos", "para", "com", "uma", "uns", "das", "dos",
+  "algum", "alguma", "quero", "queria", "e", "de", "da", "do", "na", "no", "loja", "vende", "vender",
+]);
+const BROAD_PRODUCT_WORDS = new Set([
+  "perfume", "perfumes", "perfum", "fragr", "parfum", "toilette", "cabel", "cabelo", "cabelos", "hair",
+  "shampoo", "condicionador", "oleo", "oil", "body", "splash", "maqui", "makeup", "creme", "hidrat", "kit", "kits",
+]);
+
+function baseMessageTerms(message: string) {
+  return normalize(message).split(" ").filter((term) => term.length >= 3 && !STOP_WORDS.has(term));
+}
+
 function searchTerms(message: string) {
-  const base = normalize(message)
-    .split(" ")
-    .filter((term) => term.length >= 3 && !["tem", "ter", "vcs", "voce", "voces", "produto", "produtos", "para", "com", "uma", "uns", "das", "dos", "algum", "alguma", "quero", "queria"].includes(term));
+  const base = baseMessageTerms(message);
   const text = normalize(message);
   const extra: string[] = [];
 
@@ -58,6 +69,13 @@ function searchTerms(message: string) {
   if (/hidrat|creme/.test(text)) extra.push("hidrat", "creme");
 
   return [...new Set([...base, ...extra])].slice(0, 12);
+}
+
+function specificTerms(message: string) {
+  return baseMessageTerms(message)
+    .filter((term) => !BROAD_PRODUCT_WORDS.has(term))
+    .filter((term) => term.length >= 4)
+    .slice(0, 5);
 }
 
 function formatPrice(value: number, currency: string) {
@@ -72,9 +90,10 @@ function stockLabel(available: number, lang: string) {
   return available > 10 ? "disponível" : available > 0 ? `restam ${available} unidades` : "esgotado";
 }
 
-async function realCatalogMatches(message: string) {
+async function realCatalogMatches(message: string): Promise<Array<{ nome: string; preco: string; estoque: number }>> {
   const terms = searchTerms(message);
-  if (!terms.length) return [] as Array<{ nome: string; preco: string; estoque: string }>;
+  if (!terms.length) return [];
+  const requiredSpecific = specificTerms(message);
 
   const [company] = await db.select({ defaultCurrency: companySettings.defaultCurrency }).from(companySettings).limit(1);
   const currency = String(company?.defaultCurrency || "BRL").toUpperCase();
@@ -100,6 +119,9 @@ async function realCatalogMatches(message: string) {
     const name = normalize(row.name);
     const group = normalize(row.groupName);
     const haystack = normalize([row.name, row.sku, row.description, row.brand, row.model, row.groupName].filter(Boolean).join(" "));
+    if (requiredSpecific.length && !requiredSpecific.every((term) => haystack.includes(term))) {
+      return { row, score: 0 };
+    }
     let score = 0;
     for (const term of terms) {
       if (name.includes(term)) score += 8;
