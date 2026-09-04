@@ -10,14 +10,22 @@ export const CURRENCIES = [
 export const defaultRates = (): Record<string, number> =>
   Object.fromEntries(CURRENCIES.map((c) => [c.code, 1]));
 
+type StoreBaseCurrency = 'BRL' | 'USD';
+
 interface StorePrefsState {
   currency: string;
   setCurrency: (c: string) => void;
   rates: Record<string, number>;
   setRates: (rates: Record<string, number>) => void;
   allowedCurrencies: string[];
+  baseCurrency: StoreBaseCurrency;
   setAllowedCurrencies: (codes: string[]) => void;
 }
+
+const normalizeCodes = (codes: string[]) => {
+  const unique = [...new Set((codes || []).map((code) => String(code || '').toUpperCase()).filter(Boolean))];
+  return unique.length ? unique : ['BRL'];
+};
 
 export const useStorePrefs = create<StorePrefsState>()(
   persist(
@@ -27,25 +35,52 @@ export const useStorePrefs = create<StorePrefsState>()(
       rates: defaultRates(),
       setRates: (rates) => set({ rates }),
       allowedCurrencies: ['BRL'],
-      setAllowedCurrencies: (codes) => set({ allowedCurrencies: codes.length ? codes : ['BRL'] }),
+      baseCurrency: 'BRL',
+      setAllowedCurrencies: (codes) => set((state) => {
+        const allowedCurrencies = normalizeCodes(codes);
+        // O backend grava preço em R$ quando o sistema é BRL e em US$ quando
+        // existe USD na configuração (USD ou DUAL). Inferir aqui evita que a
+        // vitrine trate um preço-base em dólar como se já fosse Real.
+        const baseCurrency: StoreBaseCurrency = allowedCurrencies.includes('USD') ? 'USD' : 'BRL';
+        const currency = allowedCurrencies.includes(state.currency) ? state.currency : allowedCurrencies[0];
+        return { allowedCurrencies, baseCurrency, currency };
+      }),
     }),
     {
       name: 'store-prefs',
-      version: 2,
-      migrate: (persisted: any) => ({
-        ...persisted,
-        currency: persisted?.currency || 'BRL',
-        allowedCurrencies: Array.isArray(persisted?.allowedCurrencies) ? persisted.allowedCurrencies : ['BRL'],
-      }),
+      version: 3,
+      migrate: (persisted: any) => {
+        const allowedCurrencies = normalizeCodes(
+          Array.isArray(persisted?.allowedCurrencies) ? persisted.allowedCurrencies : ['BRL']
+        );
+        const baseCurrency: StoreBaseCurrency = allowedCurrencies.includes('USD') ? 'USD' : 'BRL';
+        const currency = allowedCurrencies.includes(persisted?.currency) ? persisted.currency : allowedCurrencies[0];
+        return { ...persisted, currency, allowedCurrencies, baseCurrency };
+      },
     }
   )
 );
 
-export function formatPrice(brlPrice: number | string, currency: string, rates: Record<string, number>) {
-  const val = Number(brlPrice) || 0;
-  const brlRate = rates.BRL || 1;
-  const targetRate = rates[currency] || brlRate;
-  const converted = (val / brlRate) * targetRate;
-  const c = CURRENCIES.find((c) => c.code === currency) || CURRENCIES[0];
+export function formatPrice(basePrice: number | string, currency: string, rates: Record<string, number>) {
+  const val = Number(basePrice) || 0;
+  const state = useStorePrefs.getState();
+  const brlRate = Number(rates.BRL) > 0 ? Number(rates.BRL) : 1;
+  const targetRate = Number(rates[currency]) > 0 ? Number(rates[currency]) : (currency === 'USD' ? 1 : brlRate);
+
+  // Normaliza primeiro para USD e só depois converte para a moeda solicitada.
+  const usdValue = state.baseCurrency === 'USD' ? val : val / brlRate;
+  const converted = currency === 'USD' ? usdValue : usdValue * targetRate;
+  const isDualUsdBrl = state.baseCurrency === 'USD'
+    && state.allowedCurrencies.includes('USD')
+    && state.allowedCurrencies.includes('BRL');
+
+  // No modo Dólar + Real o valor em Real é sempre inteiro e arredondado para
+  // cima. Ex.: US$ convertido em R$ 11,08 aparece/sugere R$ 12.
+  if (currency === 'BRL' && isDualUsdBrl) {
+    const roundedUp = Math.ceil(converted - 1e-9);
+    return `R$ ${roundedUp.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}`;
+  }
+
+  const c = CURRENCIES.find((item) => item.code === currency) || CURRENCIES[0];
   return c.format(converted);
 }

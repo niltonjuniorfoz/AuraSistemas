@@ -1,12 +1,91 @@
-/* Ajustes públicos da vitrine que precisam ficar isolados do tema escuro do ERP. */
+/* Ajustes públicos da vitrine e acabamento de rolagem compartilhado. */
 
-/*
- * O editor recomenda 1600×600 para o banner principal (8:3), mas o frame
- * legado usava alturas fixas muito baixas e a arte principal era object-contain.
- * Resultado: no desktop uma imagem 1600×600 encolhia para ~600 px de largura
- * dentro de um frame de quase 1600 px. Mantemos os quatro tamanhos do editor,
- * agora por proporção responsiva; M corresponde exatamente a 1600×600.
- */
+/* A barra do painel acompanha Personalizar > Cor (--primary). Nas rotas da
+   loja ScrollToTop injeta --store-accent no documento, então a mesma regra
+   passa a acompanhar Editor Visual > Cores > Destaque. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--store-accent, var(--primary, #f97316)) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--store-accent, var(--primary, #f97316));
+  border-radius: 9999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--store-accent, var(--primary, #f97316)) 78%, white);
+}
+
+/* Nunca deixa o fundo escuro do ERP vazar entre seções/cards da vitrine no
+   celular. O valor vem do tema publicado da loja e cai no rosa-claro padrão. */
+html.storefront-route-active,
+body.storefront-route-active,
+body.storefront-route-active #root {
+  background-color: var(--store-route-bg, #fff5f7) !important;
+  color-scheme: light;
+}
+
+body.storefront-route-active:not(.store-order-route) #root > div {
+  background-color: var(--store-route-bg, #fff5f7);
+}
+
+.store-catalog-page {
+  min-height: 100%;
+  background: var(--store-bg, var(--store-route-bg, #fff5f7));
+}
+
+/* OrderStatus está fora do ShopLayout: o próprio primeiro frame vira o scroller
+   visível, fazendo wheel/trackpad/toque funcionarem no mesmo eixo. */
+body.store-order-route #root > div {
+  height: 100dvh !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  background: #fafaf9 !important;
+}
+
+/* Na cobrança o cliente precisa apenas do QR e do PIX copia e cola. A chave
+   simples continua no backend para montar o payload EMV, mas não é exibida. */
+@supports selector(div:has(> svg)) {
+  body.store-order-route main div.rounded-xl:has(> div.mb-1 > svg.lucide-key-round),
+  body.store-order-route main div.mb-4.flex.flex-wrap:has(> svg.lucide-key-round) {
+    display: none !important;
+  }
+}
+
+/* Tipografia do catálogo mobile: mesma escala compacta para título, controles,
+   filtro e cards; evita a mistura de textos enormes com labels minúsculas. */
+@media (max-width: 767px) {
+  .store-catalog-page {
+    font-size: 12px;
+  }
+
+  .store-catalog-page input,
+  .store-catalog-page select,
+  .store-catalog-page button {
+    font-size: 12px;
+  }
+
+  .store-catalog-filter-fields label {
+    font-size: 10px !important;
+    letter-spacing: 0.04em;
+  }
+
+  .store-catalog-filter-fields input,
+  .store-catalog-filter-fields select {
+    min-height: 38px;
+    font-size: 12px !important;
+  }
+}
+
+/* Banner principal: tamanho M corresponde exatamente a 1600×600 (8:3). */
 @supports selector(section:has(img[alt^="Banner "])) {
   main section:has(img[alt^="Banner "]) > div.group.relative.h-\[100px\] {
     height: auto !important;
@@ -28,8 +107,6 @@
     aspect-ratio: 2 / 1;
   }
 
-  /* A arte ocupa o frame. Em 1600×600 + tamanho M não há corte; para uma
-     imagem de outra proporção, o excesso é recortado em vez de criar faixas. */
   main section:has(img[alt^="Banner "]) img[alt^="Banner "] {
     object-fit: cover !important;
   }

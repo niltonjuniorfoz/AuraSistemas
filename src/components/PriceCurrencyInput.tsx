@@ -22,6 +22,8 @@ const inputNumber = (value: number, decimals: number) => {
   return String(Number(value.toFixed(decimals)));
 };
 
+const ceilMoney = (value: number) => Math.ceil((Number(value) || 0) - 1e-9);
+
 export function PriceCurrencyInput({
   label,
   value,
@@ -36,27 +38,28 @@ export function PriceCurrencyInput({
   const [dualEntryCurrency, setDualEntryCurrency] = useState<BaseCurrency>('USD');
   const entryCurrency: BaseCurrency = systemCurrency === 'BRL' ? 'BRL' : dualEntryCurrency;
   const [isFocused, setIsFocused] = useState(false);
+  const dualBrlEntry = systemCurrency === 'DUAL' && entryCurrency === 'BRL';
 
   const entryAmount = useMemo(() => {
     const baseValue = Number(value) || 0;
-    return systemCurrency === 'DUAL' && entryCurrency === 'BRL'
-      ? baseValue * brlRate
-      : baseValue;
+    if (systemCurrency === 'DUAL' && entryCurrency === 'BRL') {
+      return ceilMoney(baseValue * brlRate);
+    }
+    return baseValue;
   }, [value, systemCurrency, entryCurrency, brlRate]);
 
-  const [draft, setDraft] = useState(() => inputNumber(entryAmount, entryCurrency === 'BRL' ? 2 : 4));
+  const entryDecimals = dualBrlEntry ? 0 : entryCurrency === 'BRL' ? 2 : 4;
+  const [draft, setDraft] = useState(() => inputNumber(entryAmount, entryDecimals));
 
   useEffect(() => {
-    if (!isFocused) {
-      setDraft(inputNumber(entryAmount, entryCurrency === 'BRL' ? 2 : 4));
-    }
-  }, [entryAmount, entryCurrency, isFocused]);
+    if (!isFocused) setDraft(inputNumber(entryAmount, entryDecimals));
+  }, [entryAmount, entryDecimals, isFocused]);
 
   const changeEntryCurrency = (nextCurrency: BaseCurrency) => {
     setDualEntryCurrency(nextCurrency);
     const baseValue = Number(value) || 0;
-    const converted = nextCurrency === 'BRL' ? baseValue * brlRate : baseValue;
-    setDraft(inputNumber(converted, nextCurrency === 'BRL' ? 2 : 4));
+    const converted = nextCurrency === 'BRL' ? ceilMoney(baseValue * brlRate) : baseValue;
+    setDraft(inputNumber(converted, nextCurrency === 'BRL' ? 0 : 4));
   };
 
   const handleChange = (raw: string) => {
@@ -69,16 +72,19 @@ export function PriceCurrencyInput({
     const parsed = parseMoneyInput(raw);
     if (!Number.isFinite(parsed)) return;
 
-    const baseValue = systemCurrency === 'DUAL' && entryCurrency === 'BRL'
-      ? parsed / brlRate
-      : parsed;
-    onChange(Number(baseValue.toFixed(4)));
+    if (systemCurrency === 'DUAL' && entryCurrency === 'BRL') {
+      const roundedBrl = ceilMoney(parsed);
+      onChange(Number((roundedBrl / brlRate).toFixed(6)));
+      return;
+    }
+
+    onChange(Number(parsed.toFixed(4)));
   };
 
   const conversionHint = systemCurrency === 'DUAL'
     ? entryCurrency === 'BRL'
-      ? `Salvo em dólar: ${formatCurrency(value, 'pt-BR', 'USD')}`
-      : `Conversão atual: ${formatCurrency((Number(value) || 0) * brlRate, 'pt-BR', 'BRL')}`
+      ? `Salvo como base em dólar: ${formatCurrency(value, 'pt-BR', 'USD')}. Você pode ajustar este valor em Real.`
+      : `Conversão automática: R$ ${ceilMoney((Number(value) || 0) * brlRate).toLocaleString('pt-BR')} (arredondado para cima). Troque para R$ se quiser ajustar.`
     : '';
 
   return (
@@ -117,12 +123,13 @@ export function PriceCurrencyInput({
         <input
           required={required}
           type="text"
-          inputMode="decimal"
+          inputMode={dualBrlEntry ? 'numeric' : 'decimal'}
           value={draft}
+          aria-valuemin={min}
           onFocus={() => setIsFocused(true)}
           onBlur={() => {
             setIsFocused(false);
-            setDraft(inputNumber(entryAmount, entryCurrency === 'BRL' ? 2 : 4));
+            setDraft(inputNumber(entryAmount, entryDecimals));
           }}
           onChange={(event) => handleChange(event.target.value)}
           className="product-price-input"

@@ -10,9 +10,6 @@ function relativeLuminance(hex: string): number {
   return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 }
 
-// Contraste WCAG entre duas cores hex (#rrggbb). Entradas inválidas retornam
-// 21 (contraste máximo possível) pra nunca disparar um aviso falso enquanto
-// o usuário ainda está digitando/limpando um campo de cor.
 export function contrastRatio(hexA: string, hexB: string): number {
   if (!/^#[0-9a-fA-F]{6}$/.test(hexA) || !/^#[0-9a-fA-F]{6}$/.test(hexB)) return 21;
   const l1 = relativeLuminance(hexA), l2 = relativeLuminance(hexB);
@@ -20,14 +17,12 @@ export function contrastRatio(hexA: string, hexB: string): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-// Mesmas 10 chaves de src/server/store.ts normalizeStoreThemeColors() —
-// qualquer chave nova precisa ser adicionada nos dois lugares.
 export const STORE_COLOR_TOKENS: { key: string; label: string; cssVar: string }[] = [
   { key: "bg", label: "Fundo da página", cssVar: "--store-bg" },
   { key: "surface", label: "Fundo de cards/produtos", cssVar: "--store-surface" },
   { key: "headerBg", label: "Fundo do cabeçalho", cssVar: "--store-header-bg" },
   { key: "headerText", label: "Texto do cabeçalho", cssVar: "--store-header-text" },
-  { key: "accent", label: "Destaque (botões, preços)", cssVar: "--store-accent" },
+  { key: "accent", label: "Destaque (botões, preços e barra de rolagem)", cssVar: "--store-accent" },
   { key: "accentText", label: "Texto em cima do destaque", cssVar: "--store-accent-text" },
   { key: "text", label: "Texto principal", cssVar: "--store-text" },
   { key: "textMuted", label: "Texto secundário", cssVar: "--store-text-muted" },
@@ -35,9 +30,6 @@ export const STORE_COLOR_TOKENS: { key: string; label: string; cssVar: string }[
   { key: "footerText", label: "Texto do rodapé", cssVar: "--store-footer-text" },
 ];
 
-// Paleta padrão da vitrine: clara, minimalista e adequada a uma loja de
-// cosméticos. Cada cliente continua podendo substituir qualquer token pelo
-// editor visual, sem alterar a identidade do sistema Aura Sistemas.
 export const DEFAULT_STORE_COLORS: Record<string, string> = {
   bg: "#fff5f7",
   surface: "#ffffff",
@@ -51,9 +43,6 @@ export const DEFAULT_STORE_COLORS: Record<string, string> = {
   footerText: "#fff5f7",
 };
 
-// Aplica (ou remove, se vazio) cada token como CSS custom property no elemento
-// raiz da loja. Removida (não setada como string vazia) quando não configurada,
-// pra deixar o fallback do CSS (var(--store-bg, #fafaf9) etc.) valer.
 export function applyStoreColors(root: HTMLElement, colors: Record<string, string>) {
   for (const { key, cssVar } of STORE_COLOR_TOKENS) {
     root.style.setProperty(cssVar, colors?.[key] || DEFAULT_STORE_COLORS[key]);
