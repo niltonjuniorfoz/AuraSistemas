@@ -60,69 +60,38 @@ body.store-order-route #root > div {
   }
 }
 
-/* Drawers mobile (Categorias/Filtros): entrada suave e saída equivalente. A
-   saída é coordenada por ScrollToTop antes de o React desmontar o elemento. */
+/* Drawers mobile (Categorias/Filtros): animação somente na abertura. Usa a
+   mesma linguagem do CTA flutuante (opacity + translate + curva suave), mas
+   um pouco mais longa para a gaveta percorrer a lateral sem parecer brusca.
+   Ao fechar o React desmonta imediatamente — sem atraso ou efeito fantasma. */
 @keyframes storeDrawerBackdropIn {
   from { opacity: 0; }
   to { opacity: 1; }
 }
 
-@keyframes storeDrawerBackdropOut {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
-
 @keyframes storeDrawerLeftIn {
-  from { opacity: .84; transform: translate3d(-28px, 0, 0); }
+  from { opacity: 0; transform: translate3d(-22px, 0, 0); }
   to { opacity: 1; transform: translate3d(0, 0, 0); }
-}
-
-@keyframes storeDrawerLeftOut {
-  from { opacity: 1; transform: translate3d(0, 0, 0); }
-  to { opacity: .84; transform: translate3d(-28px, 0, 0); }
 }
 
 @keyframes storeDrawerRightIn {
-  from { opacity: .84; transform: translate3d(28px, 0, 0); }
+  from { opacity: 0; transform: translate3d(22px, 0, 0); }
   to { opacity: 1; transform: translate3d(0, 0, 0); }
-}
-
-@keyframes storeDrawerRightOut {
-  from { opacity: 1; transform: translate3d(0, 0, 0); }
-  to { opacity: .84; transform: translate3d(28px, 0, 0); }
 }
 
 #mobile-store-menu > button:first-child,
 [role="dialog"][aria-label="Filtros do catálogo"] > button:first-child {
-  animation: storeDrawerBackdropIn 220ms ease-out both;
+  animation: storeDrawerBackdropIn 260ms ease both;
 }
 
 #mobile-store-menu > aside {
-  animation: storeDrawerLeftIn 240ms cubic-bezier(.22,.7,.25,1) both;
+  animation: storeDrawerLeftIn 330ms cubic-bezier(.22,.7,.25,1) both;
   will-change: transform, opacity;
 }
 
 [role="dialog"][aria-label="Filtros do catálogo"] > aside {
-  animation: storeDrawerRightIn 240ms cubic-bezier(.22,.7,.25,1) both;
+  animation: storeDrawerRightIn 330ms cubic-bezier(.22,.7,.25,1) both;
   will-change: transform, opacity;
-}
-
-#mobile-store-menu[data-smooth-closing="true"],
-[role="dialog"][aria-label="Filtros do catálogo"][data-smooth-closing="true"] {
-  pointer-events: none;
-}
-
-#mobile-store-menu[data-smooth-closing="true"] > button:first-child,
-[role="dialog"][aria-label="Filtros do catálogo"][data-smooth-closing="true"] > button:first-child {
-  animation: storeDrawerBackdropOut 190ms ease-in both;
-}
-
-#mobile-store-menu[data-smooth-closing="true"] > aside {
-  animation: storeDrawerLeftOut 190ms cubic-bezier(.4,0,1,1) both;
-}
-
-[role="dialog"][aria-label="Filtros do catálogo"][data-smooth-closing="true"] > aside {
-  animation: storeDrawerRightOut 190ms cubic-bezier(.4,0,1,1) both;
 }
 
 /* Tipografia do catálogo mobile: mesma escala compacta para título, controles,
