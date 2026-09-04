@@ -31,7 +31,9 @@ export const useDisplayCurrency = create<DisplayCurrencyState>()(
         if (ratesInFlight) return ratesInFlight;
         ratesInFlight = (async () => {
           try {
-            const res = await apiFetch('/api/currency-config');
+            // Endpoint público de leitura: qualquer perfil do ERP precisa conseguir
+            // converter os valores, mesmo sem permissão para editar Configurações.
+            const res = await apiFetch('/api/currency-config/public');
             if (!res.ok) return;
             const data = await res.json();
             const brl = Number(data?.rates?.BRL);
@@ -104,8 +106,6 @@ interface FxRatesState {
   refresh: () => Promise<void>;
 }
 
-// Mantido para componentes legados <Money>. Primeiro tenta a configuração
-// administrativa; se falhar, usa o endpoint histórico de câmbio.
 let fxRatesInFlight: Promise<void> | null = null;
 export const useFxRates = create<FxRatesState>()((set, get) => ({
   loaded: false,
@@ -114,7 +114,7 @@ export const useFxRates = create<FxRatesState>()((set, get) => ({
     if (fxRatesInFlight) return fxRatesInFlight;
     fxRatesInFlight = (async () => {
       try {
-        const configRes = await apiFetch('/api/currency-config');
+        const configRes = await apiFetch('/api/currency-config/public');
         if (configRes.ok) {
           const data = await configRes.json();
           const usdBrl = Number(data?.rates?.BRL);
