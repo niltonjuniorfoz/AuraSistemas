@@ -1,0 +1,52 @@
+name: Fix Sales React 300
+
+on:
+  push:
+    branches:
+      - fix-sales-view-react300-20260904
+
+permissions:
+  contents: write
+
+jobs:
+  patch-sales:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix-sales-view-react300-20260904
+
+      - name: Fix conditional hook order in Sales
+        shell: python
+        run: |
+          from pathlib import Path
+
+          sales = Path("src/pages/Sales.tsx")
+          text = sales.read_text(encoding="utf-8")
+
+          old_import = 'import React, { useEffect, useMemo, useState } from "react";'
+          old_open = '  const salesColumns = useMemo<ColumnDef<any>[]>(() => ['
+          old_close = '  ], [t, language, isAdmin]);'
+
+          for needle in (old_import, old_open, old_close):
+              if needle not in text:
+                  raise SystemExit(f"Trecho esperado não encontrado: {needle}")
+
+          text = text.replace(old_import, 'import React, { useEffect, useState } from "react";', 1)
+          text = text.replace(old_open, '  const salesColumns: ColumnDef<any>[] = [', 1)
+          text = text.replace(old_close, '  ];', 1)
+          sales.write_text(text, encoding="utf-8")
+
+          workflow = Path(".github/workflows/fix-sales-react300.yml")
+          if workflow.exists():
+              workflow.unlink()
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name "Aura Fix Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/pages/Sales.tsx .github/workflows/fix-sales-react300.yml
+          git diff --cached --check
+          git commit -m "Corrige erro React 300 ao visualizar venda"
+          git push origin HEAD:fix-sales-view-react300-20260904
