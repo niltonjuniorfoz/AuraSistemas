@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import i18nInstance from "./i18n";
 
 type Lang = "pt" | "es" | "en";
-
 type Copy = { pt: string; es: string; en: string };
 
 const EXTRA_COPY: Copy[] = [
@@ -16,6 +15,9 @@ const EXTRA_COPY: Copy[] = [
   { pt: "Início", es: "Inicio", en: "Home" },
   { pt: "Categorias", es: "Categorías", en: "Categories" },
   { pt: "Conta", es: "Cuenta", en: "Account" },
+  { pt: "Menu", es: "Menú", en: "Menu" },
+  { pt: "Fechar", es: "Cerrar", en: "Close" },
+  { pt: "Buscar", es: "Buscar", en: "Search" },
   { pt: "Pagamento seguro", es: "Pago seguro", en: "Secure payment" },
   { pt: "Ambiente protegido para suas compras.", es: "Ambiente protegido para tus compras.", en: "Protected checkout environment." },
   { pt: "Compra 100% segura", es: "Compra 100% segura", en: "100% secure purchase" },
@@ -28,12 +30,12 @@ const EXTRA_COPY: Copy[] = [
   { pt: "Antes e depois da compra", es: "Antes y después de la compra", en: "Before and after purchase" },
   { pt: "Você também pode gostar", es: "También te puede gustar", en: "You may also like" },
   { pt: "Ver mais", es: "Ver más", en: "See more" },
+  { pt: "Você está vendo", es: "Estás viendo", en: "You are viewing" },
   { pt: "Sobre o produto", es: "Sobre el producto", en: "About the product" },
   { pt: "Filtrar", es: "Filtrar", en: "Filters" },
   { pt: "Filtros", es: "Filtros", en: "Filters" },
   { pt: "Aplicar filtros", es: "Aplicar filtros", en: "Apply filters" },
   { pt: "Limpar filtros", es: "Limpiar filtros", en: "Clear filters" },
-  { pt: "Buscar", es: "Buscar", en: "Search" },
   { pt: "Marca", es: "Marca", en: "Brand" },
   { pt: "Categoria", es: "Categoría", en: "Category" },
   { pt: "Modelo", es: "Modelo", en: "Model" },
@@ -48,6 +50,8 @@ const EXTRA_COPY: Copy[] = [
   { pt: "Produtos", es: "Productos", en: "Products" },
   { pt: "Produto", es: "Producto", en: "Product" },
   { pt: "Carregando...", es: "Cargando...", en: "Loading..." },
+  { pt: "Carregando produtos...", es: "Cargando productos...", en: "Loading products..." },
+  { pt: "LOADING PRODUCTS...", es: "CARGANDO PRODUCTOS...", en: "LOADING PRODUCTS..." },
   { pt: "Nenhum produto encontrado", es: "Ningún producto encontrado", en: "No products found" },
   { pt: "Nome (A–Z)", es: "Nombre (A–Z)", en: "Name (A–Z)" },
   { pt: "Nome (A-Z)", es: "Nombre (A-Z)", en: "Name (A-Z)" },
@@ -64,6 +68,40 @@ const EXTRA_COPY: Copy[] = [
   { pt: "Cabelos", es: "Cabello", en: "Hair" },
   { pt: "Skincare", es: "Skincare", en: "Skincare" },
   { pt: "Maquiagem", es: "Maquillaje", en: "Makeup" },
+];
+
+const PRODUCT_GLOSSARY: Array<{ pt: string; es: string; en: string }> = [
+  { pt: "PRODUTO TESTE", es: "PRODUCTO DE PRUEBA", en: "TEST PRODUCT" },
+  { pt: "KIT DE CUIDADOS", es: "KIT DE CUIDADO", en: "CARE KIT" },
+  { pt: "CUIDADOS CORPORAIS", es: "CUIDADOS CORPORALES", en: "BODY CARE" },
+  { pt: "CORPO E BANHO", es: "CUERPO Y BAÑO", en: "BODY & BATH" },
+  { pt: "PARA CABELOS", es: "PARA EL CABELLO", en: "HAIR CARE" },
+  { pt: "KITS E PRESENTES", es: "KITS Y REGALOS", en: "KITS & GIFTS" },
+  { pt: "LANÇAMENTOS", es: "NOVEDADES", en: "NEW ARRIVALS" },
+  { pt: "MAQUIAGEM", es: "MAQUILLAJE", en: "MAKEUP" },
+  { pt: "HIDRATANTE", es: "HIDRATANTE", en: "MOISTURIZER" },
+  { pt: "HIDRATAÇÃO", es: "HIDRATACIÓN", en: "HYDRATION" },
+  { pt: "DESODORANTE", es: "DESODORANTE", en: "DEODORANT" },
+  { pt: "SABONETE", es: "JABÓN", en: "CLEANSER" },
+  { pt: "CONDICIONADOR", es: "ACONDICIONADOR", en: "CONDITIONER" },
+  { pt: "MÁSCARA", es: "MASCARILLA", en: "MASK" },
+  { pt: "OLEO", es: "ACEITE", en: "OIL" },
+  { pt: "ÓLEO", es: "ACEITE", en: "OIL" },
+  { pt: "CREME", es: "CREMA", en: "CREAM" },
+  { pt: "PERFUME", es: "PERFUME", en: "PERFUME" },
+  { pt: "FEMININO", es: "FEMENINO", en: "WOMEN'S" },
+  { pt: "MASCULINO", es: "MASCULINO", en: "MEN'S" },
+  { pt: "CORPORAL", es: "CORPORAL", en: "BODY" },
+  { pt: "CORPO", es: "CUERPO", en: "BODY" },
+  { pt: "ROSTO", es: "ROSTRO", en: "FACE" },
+  { pt: "MÃOS", es: "MANOS", en: "HANDS" },
+  { pt: "CABELOS", es: "CABELLO", en: "HAIR" },
+  { pt: "PÊSSEGO", es: "DURAZNO", en: "PEACH" },
+  { pt: "PRESENTES", es: "REGALOS", en: "GIFTS" },
+  { pt: "CONJUNTO", es: "CONJUNTO", en: "SET" },
+  { pt: "PEÇAS", es: "PIEZAS", en: "PIECES" },
+  { pt: "PRODUTO", es: "PRODUCTO", en: "PRODUCT" },
+  { pt: "TESTE", es: "PRUEBA", en: "TEST" },
 ];
 
 const originalText = new WeakMap<Text, string>();
@@ -85,28 +123,74 @@ function flattenResource(value: any, prefix = "", out = new Map<string, string>(
   return out;
 }
 
-const ptReverse = flattenResource(i18nInstance.getResourceBundle("pt", "translation") || {});
-const extraMap = new Map(EXTRA_COPY.map((item) => [item.pt, item]));
+const resourceReverse = new Map<string, string>();
+(["pt", "es", "en"] as const).forEach((language) => {
+  const bundle = flattenResource(i18nInstance.getResourceBundle(language, "translation") || {});
+  bundle.forEach((key, value) => resourceReverse.set(value, key));
+});
 
-function translateValue(original: string, language: Lang) {
-  if (language === "pt") return original;
-  const trimmed = original.trim();
-  if (!trimmed) return original;
+const extraLookup = new Map<string, Copy>();
+EXTRA_COPY.forEach((item) => {
+  extraLookup.set(item.pt, item);
+  extraLookup.set(item.es, item);
+  extraLookup.set(item.en, item);
+});
 
-  const extra = extraMap.get(trimmed);
-  let translated = extra?.[language];
-  if (!translated) {
-    const key = ptReverse.get(trimmed);
-    if (key) {
-      const value = i18nInstance.t(key, { lng: language, defaultValue: trimmed });
-      if (typeof value === "string" && value && value !== key) translated = value;
+function isDynamicValue(value: string) {
+  const text = value.trim();
+  if (!text) return true;
+  if (/^(?:R\$|US?\$|U\$|Gs\.?|₲)\s*[\d.,]+/i.test(text)) return true;
+  if (/^[A-Z]{2,5}-\d{3,}(?:\s|$)/i.test(text)) return true;
+  if (/^[\d\s.,%/+\-]+$/.test(text)) return true;
+  if (/^(?:https?:\/\/|www\.)/i.test(text)) return true;
+  return false;
+}
+
+function replaceInsensitive(value: string, from: string, to: string) {
+  const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return value.replace(new RegExp(escaped, "gi"), (match) => {
+    if (match === match.toUpperCase()) return to.toUpperCase();
+    if (match === match.toLowerCase()) return to.toLowerCase();
+    return to.charAt(0).toUpperCase() + to.slice(1).toLowerCase();
+  });
+}
+
+function translateProductCopy(source: string, language: Lang) {
+  if (language === "pt" || isDynamicValue(source)) return null;
+  let result = source;
+  for (const item of PRODUCT_GLOSSARY) {
+    result = replaceInsensitive(result, item.pt, language === "es" ? item.es : item.en);
+  }
+  return result !== source ? result : null;
+}
+
+function translateKnownValue(source: string, language: Lang) {
+  const trimmed = source.trim();
+  if (!trimmed || isDynamicValue(trimmed)) return null;
+
+  const extra = extraLookup.get(trimmed);
+  if (extra) {
+    const translated = extra[language];
+    if (translated !== trimmed || language === "pt") {
+      const leading = source.match(/^\s*/)?.[0] || "";
+      const trailing = source.match(/\s*$/)?.[0] || "";
+      return `${leading}${translated}${trailing}`;
     }
   }
-  if (!translated || translated === trimmed) return original;
 
-  const leading = original.match(/^\s*/)?.[0] || "";
-  const trailing = original.match(/\s*$/)?.[0] || "";
-  return `${leading}${translated}${trailing}`;
+  const key = resourceReverse.get(trimmed);
+  if (key) {
+    const translated = i18nInstance.t(key, { lng: language, defaultValue: trimmed });
+    if (typeof translated === "string" && translated && translated !== key) {
+      const leading = source.match(/^\s*/)?.[0] || "";
+      const trailing = source.match(/\s*$/)?.[0] || "";
+      return `${leading}${translated}${trailing}`;
+    }
+  }
+
+  const product = translateProductCopy(source, language);
+  if (product) return product;
+  return null;
 }
 
 function shouldSkip(element: Element | null) {
@@ -117,18 +201,31 @@ function shouldSkip(element: Element | null) {
   return tag === "SCRIPT" || tag === "STYLE" || tag === "NOSCRIPT" || tag === "CODE" || tag === "PRE";
 }
 
+function translateTextNode(text: Text, language: Lang) {
+  const parent = text.parentElement;
+  if (shouldSkip(parent)) return;
+
+  const current = text.nodeValue || "";
+  if (isDynamicValue(current)) return;
+
+  let source = originalText.get(text);
+  if (!source) {
+    const candidate = translateKnownValue(current, language);
+    if (!candidate) return;
+    source = current;
+    originalText.set(text, source);
+  }
+
+  const translated = language === "pt" ? source : translateKnownValue(source, language);
+  const next = translated || source;
+  if (text.nodeValue !== next) text.nodeValue = next;
+}
+
 function translateElement(root: Element, language: Lang) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   let node = walker.nextNode();
   while (node) {
-    const text = node as Text;
-    const parent = text.parentElement;
-    if (!shouldSkip(parent)) {
-      if (!originalText.has(text)) originalText.set(text, text.nodeValue || "");
-      const source = originalText.get(text) || "";
-      const next = translateValue(source, language);
-      if (text.nodeValue !== next) text.nodeValue = next;
-    }
+    translateTextNode(node as Text, language);
     node = walker.nextNode();
   }
 
@@ -140,11 +237,21 @@ function translateElement(root: Element, language: Lang) {
       saved = new Map<string, string>();
       originalAttrs.set(element, saved);
     }
+
     ATTRIBUTES.forEach((attribute) => {
       if (!element.hasAttribute(attribute)) return;
-      if (!saved!.has(attribute)) saved!.set(attribute, element.getAttribute(attribute) || "");
+      const current = element.getAttribute(attribute) || "";
+      if (isDynamicValue(current)) return;
+
+      if (!saved!.has(attribute)) {
+        const candidate = translateKnownValue(current, language);
+        if (!candidate) return;
+        saved!.set(attribute, current);
+      }
+
       const source = saved!.get(attribute) || "";
-      const next = translateValue(source, language);
+      const translated = language === "pt" ? source : translateKnownValue(source, language);
+      const next = translated || source;
       if (element.getAttribute(attribute) !== next) element.setAttribute(attribute, next);
     });
   });
@@ -157,17 +264,20 @@ export function StoreAutoTranslate() {
   useEffect(() => {
     if (!window.location.pathname.startsWith("/loja")) return;
     let queued = false;
+
     const run = () => {
       queued = false;
       translateElement(document.body, language);
     };
-    run();
 
-    const observer = new MutationObserver(() => {
+    const schedule = () => {
       if (queued) return;
       queued = true;
       requestAnimationFrame(run);
-    });
+    };
+
+    run();
+    const observer = new MutationObserver(schedule);
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });
     return () => observer.disconnect();
   }, [language]);
