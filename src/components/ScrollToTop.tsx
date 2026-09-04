@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useLocation } from "react-router";
+import { StoreHeaderEnhancements } from "../pages/store/StoreHeaderEnhancements";
 
 function saveActionLabel(target: EventTarget | null): string {
   if (!(target instanceof Element)) return "";
@@ -37,6 +38,7 @@ function resetStoreScroller() {
 // ERP usa `.app-content`, então zerar apenas window não é suficiente.
 export function ScrollToTop() {
   const location = useLocation();
+  const storefrontActive = isStorefrontPath(location.pathname);
 
   useEffect(() => {
     const previous = window.history.scrollRestoration;
@@ -167,5 +169,5 @@ export function ScrollToTop() {
     return () => document.removeEventListener("click", onClick, true);
   }, []);
 
-  return null;
+  return <StoreHeaderEnhancements active={storefrontActive} />;
 }
