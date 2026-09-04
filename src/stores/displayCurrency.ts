@@ -2,27 +2,70 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { apiFetch } from '../lib/api';
 
-// Moeda de EXIBIÇÃO no admin (R$/US$/G$) — separada do SystemCurrency
-// (Configurações > Moeda do Sistema), que mistura exibição com a moeda de
-// ENTRADA/gravação dos preços (PriceCurrencyInput) e não tem Guarani.
-// Aqui é só leitura: os valores continuam guardados do jeito que já são
-// (R$ ou US$ conforme o SystemCurrency), a conversão pra exibição usa a
-// cotação viva (fxToday) buscada em cada tela. Compartilhada entre
-// Dashboard/Caixa/PDV — escolhe uma vez, as três lembram juntas.
 export type DisplayCurrency = 'BRL' | 'USD' | 'PYG';
+
+type SystemDisplayRates = {
+  BRL: number; // quantos R$ = US$ 1
+  PYG: number; // quantos Gs = US$ 1
+};
 
 interface DisplayCurrencyState {
   currency: DisplayCurrency;
+  rates: SystemDisplayRates;
+  ratesLoaded: boolean;
   setCurrency: (c: DisplayCurrency) => void;
+  refreshRates: (force?: boolean) => Promise<void>;
 }
+
+let ratesInFlight: Promise<void> | null = null;
 
 export const useDisplayCurrency = create<DisplayCurrencyState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       currency: 'BRL',
-      setCurrency: (c) => set({ currency: c }),
+      rates: { BRL: 5.5, PYG: 7300 },
+      ratesLoaded: false,
+      setCurrency: (currency) => set({ currency }),
+      refreshRates: async (force = false) => {
+        if (!force && get().ratesLoaded) return;
+        if (ratesInFlight) return ratesInFlight;
+        ratesInFlight = (async () => {
+          try {
+            const res = await apiFetch('/api/currency-config');
+            if (!res.ok) return;
+            const data = await res.json();
+            const brl = Number(data?.rates?.BRL);
+            const pyg = Number(data?.rates?.PYG);
+            set((state) => ({
+              rates: {
+                BRL: Number.isFinite(brl) && brl > 0 ? brl : state.rates.BRL,
+                PYG: Number.isFinite(pyg) && pyg > 0 ? pyg : state.rates.PYG,
+              },
+              ratesLoaded: true,
+            }));
+          } catch {
+            // Mantém a última cotação conhecida/persistida. A exibição nunca trava.
+          } finally {
+            ratesInFlight = null;
+          }
+        })();
+        return ratesInFlight;
+      },
     }),
-    { name: 'dashboard-currency' }
+    {
+      name: 'dashboard-currency',
+      version: 2,
+      partialize: (state) => ({ currency: state.currency, rates: state.rates }),
+      migrate: (persisted: any) => ({
+        ...persisted,
+        currency: ['BRL', 'USD', 'PYG'].includes(persisted?.currency) ? persisted.currency : 'BRL',
+        rates: {
+          BRL: Number(persisted?.rates?.BRL) > 0 ? Number(persisted.rates.BRL) : 5.5,
+          PYG: Number(persisted?.rates?.PYG) > 0 ? Number(persisted.rates.PYG) : 7300,
+        },
+        ratesLoaded: false,
+      }),
+    }
   )
 );
 
@@ -31,16 +74,24 @@ export type FxToday = {
   BRLPYG?: { rate: number | string };
 };
 
-// Converte um valor guardado em R$ pra moeda de exibição escolhida, usando
-// a cotação viva do dia (fxToday, GET /api/fx/today). Sem cotação carregada
-// ainda pra US$/G$, cai pra R$ em vez de travar/mostrar NaN.
-export function formatDisplayBrl(brlValue: any, currency: DisplayCurrency, fxToday: FxToday): string {
+// Todos os indicadores do painel chegam em BRL. A fonte principal da conversão
+// é Configurações > Moedas; fxToday fica apenas como compatibilidade/fallback.
+export function formatDisplayBrl(brlValue: any, currency: DisplayCurrency, fxToday: FxToday = {}): string {
   const n = Number(brlValue) || 0;
-  if (currency === 'USD' && fxToday.USDBRL?.rate) {
-    return `US$ ${(n / Number(fxToday.USDBRL.rate)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const configured = useDisplayCurrency.getState().rates;
+  const usdBrl = Number(configured.BRL) > 0
+    ? Number(configured.BRL)
+    : Number(fxToday.USDBRL?.rate) > 0 ? Number(fxToday.USDBRL?.rate) : 5.5;
+  const brlPygFromConfig = Number(configured.PYG) > 0 && usdBrl > 0 ? Number(configured.PYG) / usdBrl : 0;
+  const brlPyg = brlPygFromConfig > 0
+    ? brlPygFromConfig
+    : Number(fxToday.BRLPYG?.rate) > 0 ? Number(fxToday.BRLPYG?.rate) : 7300 / 5.5;
+
+  if (currency === 'USD') {
+    return `US$ ${(n / usdBrl).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
-  if (currency === 'PYG' && fxToday.BRLPYG?.rate) {
-    return `₲ ${Math.round(n * Number(fxToday.BRLPYG.rate)).toLocaleString('pt-BR')}`;
+  if (currency === 'PYG') {
+    return `Gs. ${Math.round(n * brlPyg).toLocaleString('es-PY')}`;
   }
   return `R$ ${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
@@ -53,11 +104,8 @@ interface FxRatesState {
   refresh: () => Promise<void>;
 }
 
-// Cotação viva (GET /api/fx/today) pro <Money> converter pra Guarani em
-// qualquer lugar que já usa <Money> (Caixa, PDV, etc.) sem precisar mexer
-// em cada chamada. Guarda em store em vez de variável solta pra reagir e
-// reprocessar quando a cotação chega — <Money> é chamado dezenas de vezes
-// por tela, então o refresh() se protege de disparar N buscas iguais.
+// Mantido para componentes legados <Money>. Primeiro tenta a configuração
+// administrativa; se falhar, usa o endpoint histórico de câmbio.
 let fxRatesInFlight: Promise<void> | null = null;
 export const useFxRates = create<FxRatesState>()((set, get) => ({
   loaded: false,
@@ -66,6 +114,16 @@ export const useFxRates = create<FxRatesState>()((set, get) => ({
     if (fxRatesInFlight) return fxRatesInFlight;
     fxRatesInFlight = (async () => {
       try {
+        const configRes = await apiFetch('/api/currency-config');
+        if (configRes.ok) {
+          const data = await configRes.json();
+          const usdBrl = Number(data?.rates?.BRL);
+          const usdPyg = Number(data?.rates?.PYG);
+          if (usdBrl > 0 && usdPyg > 0) {
+            set({ USDBRL: usdBrl, USDPYG: usdPyg, BRLPYG: usdPyg / usdBrl, loaded: true });
+            return;
+          }
+        }
         const res = await apiFetch('/api/fx/today');
         if (res.ok) {
           const { rates } = await res.json();
@@ -77,7 +135,7 @@ export const useFxRates = create<FxRatesState>()((set, get) => ({
           });
         }
       } catch {
-        // sem cotação: <Money> cai pro comportamento normal (BRL/USD), sem travar.
+        // Sem cotação: os componentes continuam usando seus fallbacks.
       } finally {
         fxRatesInFlight = null;
       }
