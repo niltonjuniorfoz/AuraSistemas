@@ -7,10 +7,15 @@ export const CURRENCIES = [
   { code: 'USD', flag: '🇺🇸', format: (v: number) => `U$ ${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
 ] as const;
 
-export const defaultRates = (): Record<string, number> =>
-  Object.fromEntries(CURRENCIES.map((c) => [c.code, 1]));
+export const defaultRates = (): Record<string, number> => ({ USD: 1, BRL: 5.5, PYG: 7300 });
 
 type StoreBaseCurrency = 'BRL' | 'USD';
+
+type CurrencyConfig = {
+  codes: string[];
+  rates: Record<string, number>;
+  baseCurrency: StoreBaseCurrency;
+};
 
 interface StorePrefsState {
   currency: string;
@@ -19,43 +24,68 @@ interface StorePrefsState {
   setRates: (rates: Record<string, number>) => void;
   allowedCurrencies: string[];
   baseCurrency: StoreBaseCurrency;
+  authoritativeConfig: boolean;
   setAllowedCurrencies: (codes: string[]) => void;
+  setCurrencyConfig: (config: CurrencyConfig) => void;
 }
 
 const normalizeCodes = (codes: string[]) => {
-  const unique = [...new Set((codes || []).map((code) => String(code || '').toUpperCase()).filter(Boolean))];
-  return unique.length ? unique : ['BRL'];
+  const unique = [...new Set((codes || []).map((code) => String(code || '').toUpperCase()).filter((code) => ['BRL', 'PYG', 'USD'].includes(code)))];
+  return unique.length ? unique : ['BRL', 'PYG', 'USD'];
 };
 
 export const useStorePrefs = create<StorePrefsState>()(
   persist(
     (set) => ({
       currency: 'BRL',
-      setCurrency: (currency) => set({ currency }),
+      setCurrency: (currency) => set((state) => state.allowedCurrencies.includes(currency) ? { currency } : state),
       rates: defaultRates(),
-      setRates: (rates) => set({ rates }),
-      allowedCurrencies: ['BRL'],
+      setRates: (rates) => set((state) => state.authoritativeConfig ? state : { rates: { ...defaultRates(), ...rates } }),
+      allowedCurrencies: ['BRL', 'PYG', 'USD'],
       baseCurrency: 'BRL',
+      authoritativeConfig: false,
       setAllowedCurrencies: (codes) => set((state) => {
+        if (state.authoritativeConfig) return state;
         const allowedCurrencies = normalizeCodes(codes);
-        // O backend grava preço em R$ quando o sistema é BRL e em US$ quando
-        // existe USD na configuração (USD ou DUAL). Inferir aqui evita que a
-        // vitrine trate um preço-base em dólar como se já fosse Real.
         const baseCurrency: StoreBaseCurrency = allowedCurrencies.includes('USD') ? 'USD' : 'BRL';
         const currency = allowedCurrencies.includes(state.currency) ? state.currency : allowedCurrencies[0];
         return { allowedCurrencies, baseCurrency, currency };
       }),
+      setCurrencyConfig: ({ codes, rates, baseCurrency }) => set((state) => {
+        const allowedCurrencies = normalizeCodes(codes);
+        const currency = allowedCurrencies.includes(state.currency) ? state.currency : allowedCurrencies[0];
+        return {
+          allowedCurrencies,
+          rates: { ...defaultRates(), ...rates, USD: 1 },
+          baseCurrency,
+          currency,
+          authoritativeConfig: true,
+        };
+      }),
     }),
     {
       name: 'store-prefs',
-      version: 3,
+      version: 4,
+      partialize: (state) => ({
+        currency: state.currency,
+        rates: state.rates,
+        allowedCurrencies: state.allowedCurrencies,
+        baseCurrency: state.baseCurrency,
+      }),
       migrate: (persisted: any) => {
         const allowedCurrencies = normalizeCodes(
-          Array.isArray(persisted?.allowedCurrencies) ? persisted.allowedCurrencies : ['BRL']
+          Array.isArray(persisted?.allowedCurrencies) ? persisted.allowedCurrencies : ['BRL', 'PYG', 'USD']
         );
-        const baseCurrency: StoreBaseCurrency = allowedCurrencies.includes('USD') ? 'USD' : 'BRL';
+        const baseCurrency: StoreBaseCurrency = persisted?.baseCurrency === 'USD' ? 'USD' : 'BRL';
         const currency = allowedCurrencies.includes(persisted?.currency) ? persisted.currency : allowedCurrencies[0];
-        return { ...persisted, currency, allowedCurrencies, baseCurrency };
+        return {
+          ...persisted,
+          currency,
+          rates: { ...defaultRates(), ...(persisted?.rates || {}) },
+          allowedCurrencies,
+          baseCurrency,
+          authoritativeConfig: false,
+        };
       },
     }
   )
@@ -64,20 +94,15 @@ export const useStorePrefs = create<StorePrefsState>()(
 export function formatPrice(basePrice: number | string, currency: string, rates: Record<string, number>) {
   const val = Number(basePrice) || 0;
   const state = useStorePrefs.getState();
-  const brlRate = Number(rates.BRL) > 0 ? Number(rates.BRL) : 1;
-  const targetRate = Number(rates[currency]) > 0 ? Number(rates[currency]) : (currency === 'USD' ? 1 : brlRate);
+  const brlRate = Number(rates.BRL) > 0 ? Number(rates.BRL) : 5.5;
+  const targetRate = Number(rates[currency]) > 0 ? Number(rates[currency]) : (currency === 'PYG' ? 7300 : currency === 'USD' ? 1 : brlRate);
 
-  // Normaliza primeiro para USD e só depois converte para a moeda solicitada.
   const usdValue = state.baseCurrency === 'USD' ? val : val / brlRate;
   const converted = currency === 'USD' ? usdValue : usdValue * targetRate;
-  const isDualUsdBrl = state.baseCurrency === 'USD'
-    && state.allowedCurrencies.includes('USD')
-    && state.allowedCurrencies.includes('BRL');
+  const convertedFromUsdToBrl = currency === 'BRL' && state.baseCurrency === 'USD';
 
-  // No modo Dólar + Real o valor em Real é sempre inteiro e arredondado para
-  // cima. Ex.: US$ convertido em R$ 11,08 aparece/sugere R$ 12.
-  if (currency === 'BRL' && isDualUsdBrl) {
-    const roundedUp = Math.ceil(converted - 1e-9);
+  if (convertedFromUsdToBrl) {
+    const roundedUp = Math.ceil(converted - 1e-6);
     return `R$ ${roundedUp.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}`;
   }
 

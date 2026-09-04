@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router';
-import { Building2, Archive, Receipt, Printer, Mail, DatabaseBackup, Activity, Settings as SettingsIcon, Keyboard, Tags } from 'lucide-react';
+import { Building2, Archive, Receipt, Printer, Mail, DatabaseBackup, Activity, Settings as SettingsIcon, Keyboard, Tags, CircleDollarSign } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
@@ -16,11 +16,19 @@ export function SettingsDashboard() {
   const settingsCards = [
     {
       title: 'Dados da empresa',
-      description: 'Configure nome, logo, documento, moeda e dados da empresa.',
+      description: 'Configure nome, logo, documento e dados da empresa.',
       icon: Building2,
       path: '/settings/company',
       color: 'text-blue-400',
       bgColor: 'bg-blue-500/10'
+    },
+    {
+      title: 'Moedas',
+      description: 'Defina Real, Dólar e Guarani, cotações e moedas exibidas na loja.',
+      icon: CircleDollarSign,
+      path: '/settings/currencies',
+      color: 'text-emerald-400',
+      bgColor: 'bg-emerald-500/10'
     },
     {
       title: 'Arquivados',
@@ -40,7 +48,7 @@ export function SettingsDashboard() {
     },
     {
       title: 'Impressoras',
-      description: 'Configuração de impressoras térmicas e A4 padrōes.',
+      description: 'Configuração de impressoras térmicas e A4 padrões.',
       icon: Printer,
       path: '/settings/printers',
       color: 'text-gray-400',
@@ -72,7 +80,7 @@ export function SettingsDashboard() {
     },
     {
       title: 'Sistema',
-      description: 'Tema, idioma, timezone e permissōes avançadas.',
+      description: 'Tema, idioma, timezone e permissões avançadas.',
       icon: SettingsIcon,
       path: '/settings/system',
       color: 'text-slate-400',
@@ -122,16 +130,10 @@ export function SettingsDashboard() {
                   </div>
                   <div>
                     <h3 className="text-lg font-medium text-white mb-1">{card.title}</h3>
-                    <p className="text-sm text-gray-400 leading-relaxed">
-                      {card.description}
-                    </p>
+                    <p className="text-sm text-gray-400 leading-relaxed">{card.description}</p>
                   </div>
                 </div>
-                <Button
-                  asChild
-                  variant="ghost"
-                  className="block h-auto w-full rounded-lg bg-brand-navylight px-4 py-2 text-center text-base font-medium text-brand-gold transition hover:bg-gray-800 hover:text-brand-gold dark:hover:bg-gray-800"
-                >
+                <Button asChild variant="ghost" className="block h-auto w-full rounded-lg bg-brand-navylight px-4 py-2 text-center text-base font-medium text-brand-gold transition hover:bg-gray-800 hover:text-brand-gold dark:hover:bg-gray-800">
                   <Link to={card.path}>Abrir</Link>
                 </Button>
                 </CardContent>
