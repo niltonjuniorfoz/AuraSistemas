@@ -22,7 +22,10 @@ const inputNumber = (value: number, decimals: number) => {
   return String(Number(value.toFixed(decimals)));
 };
 
-const ceilMoney = (value: number) => Math.ceil((Number(value) || 0) - 1e-9);
+// Conversão automática USD -> BRL sempre sobe para o próximo inteiro, mas
+// tolera apenas o ruído microscópico de ponto flutuante gerado ao reconstruir
+// um valor em Real que o usuário definiu manualmente.
+const ceilMoney = (value: number) => Math.ceil((Number(value) || 0) - 1e-6);
 
 export function PriceCurrencyInput({
   label,
@@ -38,15 +41,19 @@ export function PriceCurrencyInput({
   const [dualEntryCurrency, setDualEntryCurrency] = useState<BaseCurrency>('USD');
   const entryCurrency: BaseCurrency = systemCurrency === 'BRL' ? 'BRL' : dualEntryCurrency;
   const [isFocused, setIsFocused] = useState(false);
+  const [manualBrlValue, setManualBrlValue] = useState<number | null>(null);
   const dualBrlEntry = systemCurrency === 'DUAL' && entryCurrency === 'BRL';
 
   const entryAmount = useMemo(() => {
     const baseValue = Number(value) || 0;
     if (systemCurrency === 'DUAL' && entryCurrency === 'BRL') {
+      // Depois que o usuário altera o valor em R$, ele passa a ser a fonte de
+      // verdade visual e não deve voltar pelo arredondamento automático.
+      if (manualBrlValue !== null) return manualBrlValue;
       return ceilMoney(baseValue * brlRate);
     }
     return baseValue;
-  }, [value, systemCurrency, entryCurrency, brlRate]);
+  }, [value, systemCurrency, entryCurrency, brlRate, manualBrlValue]);
 
   const entryDecimals = dualBrlEntry ? 0 : entryCurrency === 'BRL' ? 2 : 4;
   const [draft, setDraft] = useState(() => inputNumber(entryAmount, entryDecimals));
@@ -57,6 +64,9 @@ export function PriceCurrencyInput({
 
   const changeEntryCurrency = (nextCurrency: BaseCurrency) => {
     setDualEntryCurrency(nextCurrency);
+    // Trocar de moeda inicia uma nova conversão automática. Só depois que o
+    // usuário digita em R$ o valor vira override manual.
+    setManualBrlValue(null);
     const baseValue = Number(value) || 0;
     const converted = nextCurrency === 'BRL' ? ceilMoney(baseValue * brlRate) : baseValue;
     setDraft(inputNumber(converted, nextCurrency === 'BRL' ? 0 : 4));
@@ -65,6 +75,7 @@ export function PriceCurrencyInput({
   const handleChange = (raw: string) => {
     setDraft(raw);
     if (raw.trim() === '') {
+      if (dualBrlEntry) setManualBrlValue(0);
       onChange(0);
       return;
     }
@@ -73,17 +84,22 @@ export function PriceCurrencyInput({
     if (!Number.isFinite(parsed)) return;
 
     if (systemCurrency === 'DUAL' && entryCurrency === 'BRL') {
-      const roundedBrl = ceilMoney(parsed);
-      onChange(Number((roundedBrl / brlRate).toFixed(6)));
+      // Valor digitado manualmente em Real é obedecido exatamente. Não aplica
+      // Math.ceil aqui; o ceil é exclusivo da conversão automática USD -> BRL.
+      setManualBrlValue(parsed);
+      onChange(Number((parsed / brlRate).toFixed(8)));
       return;
     }
 
+    setManualBrlValue(null);
     onChange(Number(parsed.toFixed(4)));
   };
 
   const conversionHint = systemCurrency === 'DUAL'
     ? entryCurrency === 'BRL'
-      ? `Salvo como base em dólar: ${formatCurrency(value, 'pt-BR', 'USD')}. Você pode ajustar este valor em Real.`
+      ? manualBrlValue !== null
+        ? `Valor final em Real definido manualmente: ${formatCurrency(manualBrlValue, 'pt-BR', 'BRL')}.`
+        : `Conversão automática em Real: ${formatCurrency(ceilMoney((Number(value) || 0) * brlRate), 'pt-BR', 'BRL')}. Edite para definir o valor exato.`
       : `Conversão automática: R$ ${ceilMoney((Number(value) || 0) * brlRate).toLocaleString('pt-BR')} (arredondado para cima). Troque para R$ se quiser ajustar.`
     : '';
 
