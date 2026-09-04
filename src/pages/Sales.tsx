@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { CheckCircle, Clock, PackageSearch, Search, X, Loader2, ArrowLeft, Printer, Edit2, RotateCcw, Eye, ClipboardList, Download } from "lucide-react";
 import { apiFetch } from "../lib/api";
@@ -570,7 +570,7 @@ export function Sales() {
 
   // Colunas da tabela de vendas (TanStack). Ordenação por coluna, busca instantânea e
   // paginação vêm do DataTable; os filtros de período/situação continuam no servidor.
-  const salesColumns = useMemo<ColumnDef<any>[]>(() => [
+  const salesColumns: ColumnDef<any>[] = [
     {
       accessorKey: "createdAt",
       header: "Data",
@@ -651,7 +651,7 @@ export function Sales() {
         );
       },
     },
-  ], [t, language, isAdmin]);
+  ];
 
 
   return (
