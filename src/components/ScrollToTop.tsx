@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { useLocation } from "react-router";
 
+const MOBILE_DRAWER_CLOSE_MS = 190;
+
 function saveActionLabel(target: EventTarget | null): string {
   if (!(target instanceof Element)) return "";
   const control = target.closest("button, input[type='submit'], [role='button']");
@@ -31,6 +33,33 @@ function resetStoreScroller() {
       element.scrollTo({ top: 0, left: 0, behavior: "auto" });
     }
   }
+}
+
+function findSmoothMobileDrawer(target: EventTarget | null): HTMLElement | null {
+  if (!(target instanceof Element)) return null;
+  return target.closest<HTMLElement>(
+    "#mobile-store-menu, [role='dialog'][aria-label='Filtros do catálogo']",
+  );
+}
+
+function drawerCloseControl(target: EventTarget | null, drawer: HTMLElement): HTMLElement | null {
+  if (!(target instanceof Element)) return null;
+  const control = target.closest<HTMLElement>("a, button");
+  if (!control || !drawer.contains(control)) return null;
+
+  const aria = String(control.getAttribute("aria-label") || "").toLowerCase();
+  const text = String(control.textContent || "").trim().toLowerCase();
+
+  if (drawer.id === "mobile-store-menu") {
+    if (control.tagName === "A" || aria.startsWith("fechar")) return control;
+    return null;
+  }
+
+  if (drawer.getAttribute("aria-label") === "Filtros do catálogo") {
+    if (aria.startsWith("fechar") || text.includes("aplicar filtros")) return control;
+  }
+
+  return null;
 }
 
 // Centraliza as regras de rolagem da SPA. A loja usa um scroller próprio e o
@@ -153,6 +182,45 @@ export function ScrollToTop() {
       }
     };
   }, [location.pathname]);
+
+  // Categorias e filtros eram desmontados imediatamente no clique de fechar,
+  // então somente a entrada podia ser animada por CSS. Interceptamos apenas as
+  // ações que realmente fecham o drawer, tocamos a animação de saída e, após
+  // 190 ms, repetimos o clique para o React executar a ação original.
+  useEffect(() => {
+    const timers = new Set<number>();
+
+    const onDrawerClick = (event: MouseEvent) => {
+      const drawer = findSmoothMobileDrawer(event.target);
+      if (!drawer) return;
+      const control = drawerCloseControl(event.target, drawer);
+      if (!control) return;
+
+      if (drawer.dataset.smoothCloseBypass === "1") {
+        delete drawer.dataset.smoothCloseBypass;
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      drawer.dataset.smoothClosing = "true";
+
+      const timer = window.setTimeout(() => {
+        timers.delete(timer);
+        if (!document.contains(control)) return;
+        drawer.dataset.smoothCloseBypass = "1";
+        control.click();
+      }, MOBILE_DRAWER_CLOSE_MS);
+      timers.add(timer);
+    };
+
+    document.addEventListener("click", onDrawerClick, true);
+    return () => {
+      document.removeEventListener("click", onDrawerClick, true);
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, []);
 
   // O ERP rola dentro de `.app-content`. Ao acionar Salvar/Guardar, volta ao
   // topo para a mensagem de sucesso/erro ficar visível imediatamente.
