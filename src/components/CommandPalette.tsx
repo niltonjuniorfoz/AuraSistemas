@@ -9,6 +9,7 @@ import {
   CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator, CommandShortcut,
 } from "@/components/ui/command";
 import { apiFetch } from "../lib/api";
+import { AdminExchangeBadge } from "./AdminExchangeBadge";
 
 type Nav = { label: string; path: string; icon: any; keywords?: string };
 
@@ -27,13 +28,14 @@ const NAV: Nav[] = [
   { label: "Clientes", path: "/customers", icon: Users, keywords: "comprador cadastro cpf" },
   { label: "Fornecedores", path: "/suppliers", icon: PackageSearch, keywords: "compra origem china eua paraguai" },
   { label: "Entrada de Mercadoria", path: "/purchases", icon: Package, keywords: "compra importacao nota entrada usd" },
-  { label: "Transferências", path: "/transfers", icon: ArrowRightLeft, keywords: "estoque mover loja deposito" },
+  { label: "Transferências", path: "/transfers", icon: ArrowLeftRight, keywords: "estoque mover loja deposito" },
   { label: "Relatórios", path: "/reports", icon: BarChart3, keywords: "abc margem real comissoes lucro" },
   { label: "Margem Real (câmbio)", path: "/reports/real-margin", icon: BarChart3, keywords: "lucro verdadeiro custo epoca fifo" },
   { label: "DRE & Patrimônio (PL)", path: "/reports/statements", icon: BarChart3, keywords: "dre resultado balanco patrimonio liquido pl lucro demonstrativo" },
   { label: "Curva ABC", path: "/reports/abc", icon: BarChart3, keywords: "produtos mais vendem classe" },
   { label: "Usuários & Permissões", path: "/users", icon: Shield, keywords: "acesso funcionario papel" },
   { label: "Configurações", path: "/settings", icon: Settings, keywords: "empresa pix whatsapp moeda backup" },
+  { label: "Moedas e cotações", path: "/settings/currencies", icon: ArrowLeftRight, keywords: "cambio cotacao dolar guarani real moedas" },
 ];
 
 const ACTIONS: Nav[] = [
@@ -60,7 +62,6 @@ export function CommandPalette() {
       }
     };
     document.addEventListener("keydown", onKey);
-    // Permite abrir a paleta de qualquer lugar (ex.: botão no cabeçalho).
     const onOpen = () => setOpen(true);
     window.addEventListener("origin:open-command", onOpen as EventListener);
     return () => {
@@ -69,7 +70,6 @@ export function CommandPalette() {
     };
   }, []);
 
-  // Busca no servidor com debounce (só a partir de 2 caracteres).
   React.useEffect(() => {
     const q = query.trim();
     if (q.length < 2) { setProducts([]); setCustomers([]); setSearching(false); return; }
@@ -150,19 +150,23 @@ export function CommandPalette() {
   );
 }
 
-// Botão de busca do cabeçalho — dispara a mesma paleta.
+// Botão de busca do cabeçalho. A cotação fica imediatamente depois dele e
+// abre Configurações > Moedas ao clicar, sem ocupar uma linha nova do header.
 export function CommandTrigger({ className = "" }: { className?: string }) {
   return (
-    <button
-      type="button"
-      onClick={() => window.dispatchEvent(new Event("origin:open-command"))}
-      className={`group flex h-9 items-center gap-2 rounded-lg border border-gray-800 bg-brand-navylight px-3 text-xs text-gray-400 transition hover:border-brand-gold/50 hover:text-gray-200 ${className}`}
-    >
-      <Search className="h-3.5 w-3.5" />
-      <span className="hidden sm:inline">Buscar...</span>
-      <kbd className="ml-2 hidden items-center gap-0.5 rounded border border-gray-700 bg-[#171717] px-1.5 py-0.5 font-mono text-[10px] text-gray-500 sm:inline-flex">
-        Ctrl K
-      </kbd>
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={() => window.dispatchEvent(new Event("origin:open-command"))}
+        className={`group flex h-9 items-center gap-2 rounded-lg border border-gray-800 bg-brand-navylight px-3 text-xs text-gray-400 transition hover:border-brand-gold/50 hover:text-gray-200 ${className}`}
+      >
+        <Search className="h-3.5 w-3.5" />
+        <span className="hidden sm:inline">Buscar...</span>
+        <kbd className="ml-2 hidden items-center gap-0.5 rounded border border-gray-700 bg-[#171717] px-1.5 py-0.5 font-mono text-[10px] text-gray-500 sm:inline-flex">
+          Ctrl K
+        </kbd>
+      </button>
+      <AdminExchangeBadge />
+    </>
   );
 }
