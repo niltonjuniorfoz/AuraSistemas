@@ -98,8 +98,8 @@ async function ensureFirstPurchaseCoupon() {
   }
 }
 
-// Guardas operacionais: não permitem que uma venda não paga siga fisicamente
-// sem uma decisão explícita de admin/master. O front recebe 409 e abre a confirmação.
+// Guardas operacionais: venda não paga não segue fisicamente sem uma decisão
+// explícita de Admin/Master. O front recebe 409 e oferece Continuar/Cancelar.
 export const operationsGuardRouter = Router();
 operationsGuardRouter.patch("/sales/:id/fulfillment", requireAuth, async (req: AuthRequest, res, next) => {
   try {
@@ -127,8 +127,8 @@ operationsGuardRouter.post("/separation/sales/:saleId/start", requireAuth, async
   } catch (error) { next(error); }
 });
 
-// Rota de detalhe enxuta e defensiva. Evita que uma consulta auxiliar de ator
-// derrube a tela inteira de Vendas Realizadas; campos opcionais sempre têm fallback.
+// Detalhe defensivo de Vendas Realizadas. Consultas auxiliares opcionais não
+// derrubam a página inteira caso um dado antigo esteja incompleto.
 operationsGuardRouter.get("/sales/:id", requireAuth, requirePermission("sales", "view"), async (req: AuthRequest, res, next) => {
   try {
     const saleId = req.params.id;
@@ -180,8 +180,8 @@ operationsGuardRouter.get("/sales/:id", requireAuth, requirePermission("sales", 
   } catch (error) { next(error); }
 });
 
-// Visita = um dispositivo por janela de 4h. Refreshs e navegação interna não
-// criam novas visualizações; depois da janela, o mesmo visitorId conta novamente.
+// Visita = um dispositivo por janela de 4h. Refresh e navegação interna não
+// geram outra visualização; depois da janela, o mesmo aparelho conta novamente.
 export const publicStoreGuardRouter = Router();
 publicStoreGuardRouter.post("/pageview", async (req, res, next) => {
   try {
@@ -196,30 +196,47 @@ publicStoreGuardRouter.post("/pageview", async (req, res, next) => {
   } catch { next(); }
 });
 
-publicStoreGuardRouter.post("/orders", requireCustomerAuth, async (req: CustomerAuthRequest, res, next) => {
+// O cupom padrão precisa existir mesmo que o lojista nunca tenha aberto a tela
+// administrativa antes de o primeiro cliente tentar usá-lo.
+publicStoreGuardRouter.post("/coupon/preview", async (req, _res, next) => {
+  try {
+    if (String(req.body?.code || "").trim().toUpperCase() === "PRIMEIRA5OFF") await ensureFirstPurchaseCoupon();
+  } catch {}
+  next();
+});
+
+// Regras por cliente só exigem login quando o cupom realmente usa uma regra
+// por cliente. Cupons genéricos continuam funcionando para checkout convidado.
+publicStoreGuardRouter.post("/orders", async (req, res, next) => {
   try {
     const code = String(req.body?.couponCode || "").trim().toUpperCase();
-    if (!code || !req.customer?.customerId) return next();
+    if (!code) return next();
     const policy = (await readCouponPolicies())[code];
     if (!policy?.firstPurchaseOnly && !policy?.perCustomerLimit) return next();
 
-    const customerId = req.customer.customerId;
-    if (policy.firstPurchaseOnly) {
-      const [previous] = await db.select({ count: sql<number>`count(*)` }).from(storeOrders)
-        .where(and(eq(storeOrders.customerId, customerId), sql`${storeOrders.status} not in ('CANCELED','CANCELLED')`));
-      if (Number(previous?.count || 0) > 0) {
-        return res.status(400).json({ error: "Este cupom é exclusivo para a primeira compra." });
-      }
-    }
+    return requireCustomerAuth(req as CustomerAuthRequest, res, async () => {
+      try {
+        const customerId = (req as CustomerAuthRequest).customer?.customerId;
+        if (!customerId) return res.status(401).json({ error: "Faça login para usar este cupom." });
 
-    if (policy.perCustomerLimit) {
-      const [used] = await db.select({ count: sql<number>`count(*)` }).from(storeOrders)
-        .where(and(eq(storeOrders.customerId, customerId), eq(storeOrders.couponCode, code), sql`${storeOrders.status} not in ('CANCELED','CANCELLED')`));
-      if (Number(used?.count || 0) >= Number(policy.perCustomerLimit)) {
-        return res.status(400).json({ error: `Este cupom pode ser usado no máximo ${policy.perCustomerLimit}x por cliente.` });
-      }
-    }
-    next();
+        if (policy.firstPurchaseOnly) {
+          const [previous] = await db.select({ count: sql<number>`count(*)` }).from(storeOrders)
+            .where(and(eq(storeOrders.customerId, customerId), sql`${storeOrders.status} not in ('CANCELED','CANCELLED')`));
+          if (Number(previous?.count || 0) > 0) {
+            return res.status(400).json({ error: "Este cupom é exclusivo para a primeira compra." });
+          }
+        }
+
+        if (policy.perCustomerLimit) {
+          const [used] = await db.select({ count: sql<number>`count(*)` }).from(storeOrders)
+            .where(and(eq(storeOrders.customerId, customerId), eq(storeOrders.couponCode, code), sql`${storeOrders.status} not in ('CANCELED','CANCELLED')`));
+          if (Number(used?.count || 0) >= Number(policy.perCustomerLimit)) {
+            return res.status(400).json({ error: `Este cupom pode ser usado no máximo ${policy.perCustomerLimit}x por cliente.` });
+          }
+        }
+        next();
+      } catch (error) { next(error); }
+    });
   } catch (error) { next(error); }
 });
 
@@ -249,7 +266,8 @@ storeCouponsAdminRouter.post("/", async (req: AuthRequest, res) => {
     res.json({ data: { ...created, ...parsed.policy } });
   } catch (error: any) {
     const msg = String(error?.message || "Erro ao criar cupom.");
-    res.status(msg.toLowerCase().includes("unique") || msg.toLowerCase().includes("duplicate") ? 409 : 400).json({ error: msg.includes("unique") ? "Já existe um cupom com esse código." : msg });
+    const duplicate = msg.toLowerCase().includes("unique") || msg.toLowerCase().includes("duplicate");
+    res.status(duplicate ? 409 : 400).json({ error: duplicate ? "Já existe um cupom com esse código." : msg });
   }
 });
 
