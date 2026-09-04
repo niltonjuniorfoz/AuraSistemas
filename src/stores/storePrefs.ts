@@ -109,3 +109,28 @@ export function formatPrice(basePrice: number | string, currency: string, rates:
   const c = CURRENCIES.find((item) => item.code === currency) || CURRENCIES[0];
   return c.format(converted);
 }
+
+// O catálogo guarda preços na moeda-base da empresa (USD quando a operação é
+// USD/DUAL; BRL quando é somente Real). Checkout, cupom, frete e PIX usam BRL
+// como moeda contábil, então a conversão precisa acontecer antes de somá-los.
+export function basePriceToBrl(basePrice: number | string, rates: Record<string, number>, baseCurrency?: StoreBaseCurrency) {
+  const value = Number(basePrice) || 0;
+  const source = baseCurrency || useStorePrefs.getState().baseCurrency;
+  if (source === 'BRL') return value;
+  const brlRate = Number(rates.BRL);
+  return value * (Number.isFinite(brlRate) && brlRate > 0 ? brlRate : 5.5);
+}
+
+// Formata um valor que JÁ está em BRL na moeda escolhida pelo cliente. É
+// diferente de formatPrice(), que recebe o valor-base cadastrado do produto.
+export function formatBrlPrice(brlValue: number | string, currency: string, rates: Record<string, number>) {
+  const value = Number(brlValue) || 0;
+  const brlRate = Number(rates.BRL) > 0 ? Number(rates.BRL) : 5.5;
+  const usdValue = value / brlRate;
+  const targetRate = Number(rates[currency]) > 0
+    ? Number(rates[currency])
+    : currency === 'PYG' ? 7300 : currency === 'USD' ? 1 : brlRate;
+  const converted = currency === 'BRL' ? value : currency === 'USD' ? usdValue : usdValue * targetRate;
+  const formatter = CURRENCIES.find((item) => item.code === currency) || CURRENCIES[0];
+  return formatter.format(converted);
+}

@@ -361,6 +361,7 @@ async function ensureRuntimeSchema() {
     await db.execute(sql`ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS discount_brl numeric(15,2);`);
     await db.execute(sql`ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS shipping_zone text;`);
     await db.execute(sql`ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS shipping_fee_brl numeric(15,2);`);
+    await db.execute(sql`ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS payment_method text NOT NULL DEFAULT 'PIX';`);
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS store_shipping_zones (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

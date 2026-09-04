@@ -780,6 +780,7 @@ export const storeOrders = pgTable("store_orders", {
   customerName: text("customer_name").notNull(),
   customerPhone: text("customer_phone").notNull(),
   customerDocument: text("customer_document"),
+  paymentMethod: text("payment_method").notNull().default("PIX"), // PIX | USDT
   deliveryType: text("delivery_type").notNull().default("PICKUP"), // PICKUP | DELIVERY
   cep: text("cep"),
   street: text("street"),

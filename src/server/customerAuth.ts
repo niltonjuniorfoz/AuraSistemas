@@ -290,12 +290,17 @@ router.post("/addresses", requireCustomerAuth, async (req: CustomerAuthRequest, 
   try {
     const { label, cep, street, number, neighborhood, city, state, isDefault } = req.body || {};
     if (String(street || "").trim().length < 3) return res.status(400).json({ error: "Informe a rua." });
-    if (isDefault) {
+    const existing = await db.select({ id: customerAddresses.id }).from(customerAddresses)
+      .where(eq(customerAddresses.customerId, req.customer!.customerId)).limit(1);
+    // O primeiro endereço sempre nasce como padrão; evita um cadastro válido
+    // sem endereço selecionável por padrão no checkout.
+    const makeDefault = !!isDefault || existing.length === 0;
+    if (makeDefault) {
       await db.update(customerAddresses).set({ isDefault: false }).where(eq(customerAddresses.customerId, req.customer!.customerId));
     }
     const [created] = await db.insert(customerAddresses).values({
       customerId: req.customer!.customerId, label: label || "Endereço", cep, street, number, neighborhood, city, state,
-      isDefault: !!isDefault,
+      isDefault: makeDefault,
     }).returning();
     res.json(created);
   } catch (err) {
@@ -322,7 +327,14 @@ router.put("/addresses/:id", requireCustomerAuth, async (req: CustomerAuthReques
 });
 
 router.delete("/addresses/:id", requireCustomerAuth, async (req: CustomerAuthRequest, res) => {
-  await db.delete(customerAddresses).where(and(eq(customerAddresses.id, req.params.id), eq(customerAddresses.customerId, req.customer!.customerId)));
+  const [removed] = await db.delete(customerAddresses)
+    .where(and(eq(customerAddresses.id, req.params.id), eq(customerAddresses.customerId, req.customer!.customerId)))
+    .returning({ wasDefault: customerAddresses.isDefault });
+  if (removed?.wasDefault) {
+    const [replacement] = await db.select({ id: customerAddresses.id }).from(customerAddresses)
+      .where(eq(customerAddresses.customerId, req.customer!.customerId)).orderBy(desc(customerAddresses.createdAt)).limit(1);
+    if (replacement) await db.update(customerAddresses).set({ isDefault: true }).where(eq(customerAddresses.id, replacement.id));
+  }
   res.json({ ok: true });
 });
 

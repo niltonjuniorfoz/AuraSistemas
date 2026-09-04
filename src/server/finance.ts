@@ -61,6 +61,7 @@ const METHOD_ACCOUNT_TYPES: Record<string, string[]> = {
   DEBIT_CARD: ["BANK"],
   CREDIT_CARD: ["CARD_RECEIVABLE"],
   TRANSFER: ["BANK", "OTHER"],
+  USDT: ["BANK", "OTHER"],
 };
 
 interface PostOpts {
@@ -411,7 +412,7 @@ router.get("/method-map", requirePermission("cash", "view"), async (_req: AuthRe
 router.put("/method-map", requirePermission("cash", "manage_accounts"), async (req: AuthRequest, res) => {
   try {
     const map = req.body?.map || {};
-    for (const method of ["CASH", "PIX", "CREDIT_CARD", "DEBIT_CARD", "TRANSFER"]) {
+    for (const method of ["CASH", "PIX", "CREDIT_CARD", "DEBIT_CARD", "TRANSFER", "USDT"]) {
       const accountId = map[method] || null;
       const existing = await db.select().from(paymentMethodAccounts).where(eq(paymentMethodAccounts.method, method)).limit(1);
       if (existing.length) await db.update(paymentMethodAccounts).set({ accountId }).where(eq(paymentMethodAccounts.method, method));

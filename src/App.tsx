@@ -40,6 +40,7 @@ const ShopLayout = lazyNamed(() => import('./pages/store/ShopLayout'), 'ShopLayo
 const StoreHome = lazyNamed(() => import('./pages/store/StoreHome'), 'StoreHome');
 const StoreCatalog = lazyNamed(() => import('./pages/store/StoreCatalog'), 'StoreCatalog');
 const StoreProduct = lazyNamed(() => import('./pages/store/StoreProduct'), 'StoreProduct');
+const CheckoutPage = lazyNamed(() => import('./pages/store/CheckoutPage'), 'CheckoutPage');
 const OrderStatus = lazyNamed(() => import('./pages/store/OrderStatus'), 'OrderStatus');
 const AccountLayout = lazyNamed(() => import('./pages/store/account/AccountLayout'), 'AccountLayout');
 const MyOrders = lazyNamed(() => import('./pages/store/account/MyOrders'), 'MyOrders');
@@ -147,6 +148,7 @@ export default function App() {
             <Route index element={<StoreHome />} />
             <Route path="catalogo" element={<StoreCatalog />} />
             <Route path="produto/:id" element={<StoreProduct />} />
+            <Route path="finalizar" element={<CheckoutPage />} />
             <Route path="conta" element={<AccountLayout />}>
               <Route path="pedidos" element={<MyOrders />} />
               <Route path="dados" element={<MyProfile />} />

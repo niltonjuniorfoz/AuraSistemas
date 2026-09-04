@@ -3,7 +3,7 @@ import { useParams, Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import {
   Copy, Check, Loader2, Upload, MessageCircle, Clock, CheckCircle2, XCircle, FileText, ArrowLeft, QrCode,
-  Split, AlertTriangle, KeyRound, PackageCheck,
+  Split, AlertTriangle, KeyRound, PackageCheck, CircleDollarSign,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { formatBrl } from "../../lib/money";
@@ -151,8 +151,9 @@ export function OrderStatus() {
     </div>
   );
 
+  const isPix = order.paymentMethod !== "USDT";
   const STATUS: Record<string, { label: string; hint: string }> = {
-    AWAITING_PAYMENT: { label: t("orderStatus.statusAwaiting"), hint: t("orderStatus.hintAwaiting") },
+    AWAITING_PAYMENT: { label: t("orderStatus.statusAwaiting"), hint: isPix ? t("orderStatus.hintAwaiting") : t("orderStatus.hintAwaitingUsdt") },
     PROOF_SENT: { label: t("orderStatus.statusProof"), hint: t("orderStatus.hintProof") },
     CONFIRMED: { label: t("orderStatus.statusConfirmed"), hint: t("orderStatus.hintConfirmed") },
     CANCELED: { label: t("orderStatus.statusCanceled"), hint: t("orderStatus.hintCanceled") },
@@ -196,7 +197,7 @@ export function OrderStatus() {
         </div>
 
         {/* PIX não configurado: avisa em vez de sumir com a seção */}
-        {podePagar && !order.pixConfigured && (
+        {isPix && podePagar && !order.pixConfigured && (
           <div className="flex items-start gap-3 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
             <div>
@@ -206,8 +207,31 @@ export function OrderStatus() {
           </div>
         )}
 
+        {order.paymentMethod === "USDT" && podePagar && order.usdtWhatsappUrl && (
+          <div className={cardCls}>
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                <CircleDollarSign className="h-5 w-5" />
+              </span>
+              <div>
+                <h2 className="text-sm font-bold">{t("orderStatus.pagamentoUsdtTitulo")}</h2>
+                <p className="mt-1 text-xs leading-relaxed text-stone-500">{t("orderStatus.pagamentoUsdtDesc")}</p>
+              </div>
+            </div>
+            <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+              <div className="text-[11px] text-stone-500">{t("orderStatus.valorReferenciaBrl")}</div>
+              <div className="text-2xl font-black text-emerald-800">{brl(order.total)}</div>
+              <div className="mt-1 text-[10px] text-stone-500">{t("orderStatus.usdtRedeAlerta")}</div>
+            </div>
+            <a href={order.usdtWhatsappUrl} target="_blank" rel="noreferrer"
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 py-3 text-sm font-bold text-white transition hover:bg-emerald-700">
+              <MessageCircle className="h-4 w-4" /> {t("orderStatus.continuarWhatsappUsdt")}
+            </a>
+          </div>
+        )}
+
         {/* Pagamento único */}
-        {podePagar && order.pixConfigured && !dividido && order.pixPayload && (
+        {isPix && podePagar && order.pixConfigured && !dividido && order.pixPayload && (
           <div className={cardCls}>
             <h2 className="mb-3 flex items-center gap-2 text-sm font-bold"><QrCode className="h-4 w-4 text-amber-600" /> {t("orderStatus.pagueComPix")}</h2>
             <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
@@ -260,7 +284,7 @@ export function OrderStatus() {
         )}
 
         {/* Pagamento dividido */}
-        {podePagar && order.pixConfigured && dividido && (
+        {isPix && podePagar && order.pixConfigured && dividido && (
           <div className={cardCls}>
             <div className="mb-1 flex items-center justify-between">
               <h2 className="flex items-center gap-2 text-sm font-bold"><Split className="h-4 w-4 text-amber-600" /> {t("orderStatus.pagamentoEmNPix", { n: payments.length })}</h2>
@@ -319,7 +343,7 @@ export function OrderStatus() {
         )}
 
         {/* Comprovante (pagamento único) */}
-        {order.status !== "CANCELED" && !dividido && (
+        {isPix && order.status !== "CANCELED" && !dividido && (
           <div className={cardCls}>
             <h2 className="mb-1 flex items-center gap-2 text-sm font-bold"><Upload className="h-4 w-4 text-amber-600" /> {t("orderStatus.comprovantePagamento")}</h2>
             <p className="mb-3 text-xs text-stone-500">
@@ -401,6 +425,7 @@ export function OrderStatus() {
           </div>
           <div className="mt-3 space-y-0.5 text-[11px] text-stone-500">
             <div>{t("orderStatus.cliente")}: {order.customerName}</div>
+            <div>{t("orderStatus.formaPagamento")}: {order.paymentMethod === "USDT" ? "USDT" : "PIX"}</div>
             <div>{order.deliveryType === "DELIVERY" ? `${t("orderStatus.entregaLabel")}: ${order.address}` : t("orderStatus.retiradaLocal")}</div>
           </div>
         </div>

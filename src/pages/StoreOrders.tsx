@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   Store, RefreshCw, ExternalLink, FileText, CheckCircle2, XCircle, Clock, Truck, Package, Copy, Check, Split,
-  IdCard, ShieldCheck, FileDown, AlertTriangle, PackageCheck, Receipt
+  IdCard, ShieldCheck, FileDown, AlertTriangle, PackageCheck, Receipt, QrCode, CircleDollarSign
 } from "lucide-react";
 import { formatCpf as fmtCpf } from "../lib/cpf";
 import { Button } from "../components/ui/button";
@@ -206,6 +206,10 @@ export function StoreOrders() {
                       <Badge variant="outline" className={`rounded-full text-[10px] font-bold ${s.cls}`}>
                         <SIcon className="h-3 w-3" /> {s.label}
                       </Badge>
+                      <Badge variant="outline" className={`rounded-full text-[10px] font-bold ${o.paymentMethod === "USDT" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-violet-500/30 bg-violet-500/10 text-violet-300"}`}>
+                        {o.paymentMethod === "USDT" ? <CircleDollarSign className="h-3 w-3" /> : <QrCode className="h-3 w-3" />}
+                        {o.paymentMethod === "USDT" ? "USDT" : "PIX"}
+                      </Badge>
                     </div>
                     <div className="mt-1 truncate text-sm font-semibold text-white">{o.customerName}</div>
                     <div className="text-[11px] text-gray-500">
@@ -288,7 +292,7 @@ export function StoreOrders() {
                 )}
 
                 <div className="flex flex-wrap gap-2">
-                  {(o.proofFileName || o.partsWithProof > 0) && (
+                  {o.paymentMethod !== "USDT" && (o.proofFileName || o.partsWithProof > 0) && (
                     <Button variant="outline" onClick={() => openProof(o)} className="h-auto gap-1.5 rounded-lg px-3 py-1.5 has-[>svg]:px-3 text-xs font-medium border-blue-500/30 bg-blue-500/10 text-blue-300 transition hover:bg-blue-500/20 hover:text-blue-300 dark:border-blue-500/30 dark:bg-blue-500/10 dark:hover:bg-blue-500/20">
                       <FileText className="size-3.5" /> Ver comprovante{o.partsWithProof > 1 ? "s" : ""}
                     </Button>
@@ -402,22 +406,24 @@ export function StoreOrders() {
               )}
             </div>
 
-            <div>
-              <label className="mb-1 block text-xs text-gray-400">Quanto caiu na conta? *</label>
+              <div>
+                <label className="mb-1 block text-xs text-gray-400">{confirmTarget.paymentMethod === "USDT" ? "Qual valor equivalente em R$ foi recebido? *" : "Quanto caiu na conta PIX? *"}</label>
               <input type="number" step="0.01" min="0" value={confirmForm.receivedAmount}
                 onChange={(e) => setConfirmForm({ ...confirmForm, receivedAmount: e.target.value, force: false, mismatch: null })}
                 className="w-full rounded-lg border border-gray-700 bg-[#171717] px-3 py-2 font-mono text-white outline-none focus:border-brand-gold" />
-              <p className="mt-1 text-[11px] text-gray-500">Já vem com o valor do pedido. Só mude se o cliente pagou diferente.</p>
+              <p className="mt-1 text-[11px] text-gray-500">Já vem com o valor do pedido em Real. Só mude se o valor recebido foi diferente.</p>
             </div>
 
             <div className={`rounded-lg border p-2.5 text-[11px] ${confirmTarget.payerIsBuyer === false ? "border-amber-500/40 bg-amber-500/10 text-amber-200" : "border-gray-800 bg-brand-navy/40 text-gray-400"}`}>
-              {confirmTarget.payerIsBuyer === false
+              {confirmTarget.paymentMethod === "USDT"
+                ? <>Pagamento em <b>USDT</b> combinado pelo WhatsApp. Confirme a rede, o endereço da carteira e o valor efetivamente recebido antes de liberar.</>
+                : confirmTarget.payerIsBuyer === false
                 ? <>No pedido, o cliente declarou que <b>quem paga é {confirmTarget.payerDeclaredName}</b> (CPF {fmtCpf(confirmTarget.payerDeclaredCpf)}) — terceiro autorizado. O comprovante deve vir nesse nome.</>
                 : <>No pedido, o cliente declarou que <b>ele mesmo</b> ({confirmTarget.customerName}) faria o pagamento.</>}
             </div>
 
             <div>
-              <label className="mb-1 block text-xs text-gray-400">Titular que pagou (como aparece no comprovante)</label>
+              <label className="mb-1 block text-xs text-gray-400">{confirmTarget.paymentMethod === "USDT" ? "Responsável pelo pagamento" : "Titular que pagou (como aparece no comprovante)"}</label>
               <input value={confirmForm.payerName} onChange={(e) => setConfirmForm({ ...confirmForm, payerName: e.target.value })}
                 placeholder={confirmTarget.payerIsBuyer === false ? confirmTarget.payerDeclaredName : confirmTarget.customerName}
                 className="w-full rounded-lg border border-gray-700 bg-[#171717] px-3 py-2 text-white outline-none focus:border-brand-gold" />

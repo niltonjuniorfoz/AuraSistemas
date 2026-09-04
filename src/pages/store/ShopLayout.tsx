@@ -1,23 +1,19 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, Link, useNavigate, useLocation } from "react-router";
 import {
-  ShoppingBag, Search, Plus, Minus, Trash2, X, Package, Loader2, ArrowRight, MessageCircle, ShieldCheck, Store, User, Sparkles,
+  ShoppingBag, Search, Plus, Minus, Trash2, X, Package, ArrowRight, MessageCircle, ShieldCheck, Store, User, Sparkles,
   Truck, Heart, Home, LayoutGrid, Tag, Instagram, Headphones, Menu, Gift, Award, Mail,
 } from "lucide-react";
 import { useShopCart, cartTotal, cartCount } from "../../stores/shopCart";
 import { useCustomerAuthStore } from "../../stores/customerAuth";
 import { useWishlistStore } from "../../stores/wishlist";
 import { storeApiFetch } from "../../lib/storeApi";
-import { isValidCpf, formatCpf, isFullName, onlyDigits } from "../../lib/cpf";
 import { APP_VERSION } from "../../lib/version";
 import { toast } from "../../components/Toast";
-import { AccountAuth } from "./account/AccountAuth";
 import { AssistantWidget } from "./AssistantWidget";
-import { PremiumCta } from "./PremiumCta";
 import { useTranslation } from "react-i18next";
 import i18nInstance, { translateCategoryName } from "./i18n";
 import { useStorePrefs, formatPrice, defaultRates } from "../../stores/storePrefs";
-import { calcOrderTotal } from "../../lib/money";
 import { useEditMode } from "./editor/EditModeContext";
 import { Editable } from "./editor/Editable";
 import { effectiveHomeSections } from "./editor/elementCatalog";
@@ -36,7 +32,7 @@ function normalizeInstagramUrl(value: unknown): string | null {
 }
 
 // Casca da loja pública: visual PRÓPRIO claro (separado do ERP), carrinho e
-// checkout disponíveis em todas as páginas da vitrine.
+// carrinho disponível em todas as páginas da vitrine.
 // ID anônimo por navegador (aba Análises: visitante único/taxa de rejeição/sessão) — só um
 // UUID aleatório salvo no aparelho, nunca ligado a nome/CPF/telefone do comprador.
 function getVisitorId(): string {
@@ -155,9 +151,8 @@ export function ShopLayout() {
   }, [info]);
   const [categories, setCategories] = useState<any[]>([]);
   const [ofertaOutlet, setOfertaOutlet] = useState({ hasOferta: false, hasOutlet: false });
-  const { items, open, setOpen, setQty, clear } = useShopCart();
+  const { items, open, setOpen, setQty } = useShopCart();
   const customer = useCustomerAuthStore((s) => s.customer);
-  const logoutCustomer = useCustomerAuthStore((s) => s.logout);
   const setWishlistIds = useWishlistStore((s) => s.setIds);
   const resetWishlist = useWishlistStore((s) => s.reset);
   useEffect(() => {
@@ -166,14 +161,6 @@ export function ShopLayout() {
       .then((rows) => setWishlistIds(Array.isArray(rows) ? rows.map((r: any) => r.productId) : []))
       .catch(() => {});
   }, [customer?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [checkout, setCheckout] = useState(false);
-  const [form, setForm] = useState({ deliveryType: "PICKUP", cep: "", street: "", number: "", neighborhood: "", city: "", state: "", address: "", notes: "" });
-  const [shippingOptions, setShippingOptions] = useState([]);
-  const [selectedShippingId, setSelectedShippingId] = useState("");
-  const [loadingShipping, setLoadingShipping] = useState(false);
-  const [cepError, setCepError] = useState("");
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -183,58 +170,6 @@ export function ShopLayout() {
   const [themeFontsFromInfo, setThemeFontsFromInfo] = useState<{ heading?: { url: string; family: string }; body?: { url: string; family: string } }>({});
   const [pagesFromInfo, setPagesFromInfo] = useState<any>(null);
   const [precisaAtualizar, setPrecisaAtualizar] = useState(false);
-  const [terms, setTerms] = useState<{ termsText: string; termsVersion: string }>({ termsText: "", termsVersion: "" });
-  const [acceptedTerms, setAcceptedTerms] = useState(false);
-  const [payerIsBuyer, setPayerIsBuyer] = useState(true);
-  const [payer, setPayer] = useState({ name: "", cpf: "" });
-  const [termsOpen, setTermsOpen] = useState(false);
-  const [zones, setZones] = useState<any[]>([]);
-  const [zoneId, setZoneId] = useState("");
-  const [couponInput, setCouponInput] = useState("");
-  const [coupon, setCoupon] = useState<{ code: string; discount: number } | null>(null);
-  const [couponMsg, setCouponMsg] = useState("");
-  const [checkingCoupon, setCheckingCoupon] = useState(false);
-
-
-  const handleCepChange = async (cepValue) => {
-    const rawCep = cepValue.replace(/\D/g, "");
-    setForm(prev => ({ ...prev, cep: cepValue }));
-    if (rawCep.length === 8) {
-      setLoadingShipping(true);
-      setCepError("");
-      try {
-        const res = await fetch(`https://viacep.com.br/ws/${rawCep}/json/`);
-        const data = await res.json();
-        if (data.erro) {
-          setCepError(t("checkout.cepNaoEncontrado", "CEP não encontrado."));
-          setShippingOptions([]);
-          setSelectedShippingId("");
-        } else {
-          setForm(prev => ({ ...prev, street: data.logradouro || "", neighborhood: data.bairro || "", city: data.localidade || "", state: data.uf || "" }));
-          const shipRes = await fetch('/api/store/shipping/calculate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cep: rawCep, items })
-          });
-          if (shipRes.ok) {
-            const shipData = await shipRes.json();
-            setShippingOptions(shipData.options || []);
-            if (shipData.options?.length > 0) {
-              setSelectedShippingId(shipData.options[0].id);
-            }
-          }
-        }
-      } catch (e) {
-        setCepError("Erro ao buscar CEP.");
-      } finally {
-        setLoadingShipping(false);
-      }
-    } else {
-      setShippingOptions([]);
-      setSelectedShippingId("");
-    }
-  };
-
   useEffect(() => {
     fetch("/api/store/info").then((r) => r.json()).then((j) => {
       setInfo(j);
@@ -246,13 +181,11 @@ export function ShopLayout() {
     fetch("/api/store/config").then((r) => r.json()).then((c) => {
       setAnnouncement(String(c?.announcement || ""));
       setFooterText(String(c?.footerText || ""));
-      setTerms({ termsText: String(c?.termsText || ""), termsVersion: String(c?.termsVersion || "") });
       setThemeColorsFromInfo(c?.theme?.colors || {});
       setThemeFontsFromInfo(c?.theme?.fonts || {});
       setPagesFromInfo(c?.pages || null);
     }).catch(() => {});
     fetch("/api/store/categories").then((r) => r.json()).then((j) => setCategories(j.data || [])).catch(() => {});
-    fetch("/api/store/shipping-zones").then((r) => r.json()).then((j) => setZones(j.data || [])).catch(() => {});
     fetch("/api/store/filters").then((r) => r.json())
       .then((j) => setOfertaOutlet({ hasOferta: !!j.hasOferta, hasOutlet: !!j.hasOutlet }))
       .catch(() => {});
@@ -295,93 +228,10 @@ export function ShopLayout() {
 
   const subtotal = useMemo(() => cartTotal(items), [items]);
   const count = useMemo(() => cartCount(items), [items]);
-  const selectedZone = zones.find((z) => z.id === zoneId) || null;
-  const shippingFee = form.deliveryType === "DELIVERY" && selectedZone ? Number(selectedZone.feeBrl) : 0;
-  const discount = coupon ? coupon.discount : 0;
-  const total = calcOrderTotal(subtotal, discount, shippingFee);
-
-  // Chamada única do /coupon/preview — antes o efeito de revalidação e o
-  // botão "Aplicar" montavam/tratavam essa mesma requisição cada um do seu
-  // jeito, e já tinham divergido em como reagiam a erro.
-  const previewCoupon = async (code: string, subtotalValue: number) => {
-    const r = await fetch("/api/store/coupon/preview", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code, subtotal: subtotalValue }),
-    });
-    const j = await r.json();
-    return { ok: r.ok, code: j.code, discount: j.discount, error: j.error };
-  };
-
-  // Cupom perde validade se o subtotal muda (item removido etc.) — revalida silenciosamente.
-  // Guarda "alive" evita que uma resposta atrasada de um subtotal antigo
-  // sobrescreva o resultado (já correto) de uma checagem mais nova.
-  useEffect(() => {
-    if (!coupon) return;
-    let alive = true;
-    (async () => {
-      try {
-        const j = await previewCoupon(coupon.code, subtotal);
-        if (!alive) return;
-        if (j.ok) setCoupon({ code: j.code, discount: j.discount });
-        else { setCoupon(null); setCouponMsg(j.error || t("checkout.cupomExpirado", "Cupom deixou de valer pra esse carrinho.")); }
-      } catch { /* mantém como está */ }
-    })();
-    return () => { alive = false; };
-  }, [subtotal]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const applyCoupon = async () => {
-    const code = couponInput.trim().toUpperCase();
-    if (!code) return;
-    setCheckingCoupon(true); setCouponMsg("");
-    try {
-      const j = await previewCoupon(code, subtotal);
-      if (!j.ok) { setCoupon(null); setCouponMsg(j.error || t("checkout.cupomInvalido", "Cupom inválido.")); }
-      else { setCoupon({ code: j.code, discount: j.discount }); setCouponMsg(""); setCouponInput(""); }
-    } catch { setCouponMsg(t("checkout.cupomErroValidar", "Não consegui validar o cupom. Tenta de novo.")); }
-    finally { setCheckingCoupon(false); }
-  };
 
   const submitSearch = (e: React.FormEvent) => {
     e.preventDefault();
     navigate(storePath(`/loja/catalogo${searchTerm.trim() ? `?busca=${encodeURIComponent(searchTerm.trim())}` : ""}`));
-  };
-
-  const submitOrder = async (e: React.FormEvent) => {
-    e.preventDefault();
-    // O editor NUNCA cria pedido de verdade — admin visualizando não é cliente.
-    if (editCtx) { toast.error("Finalização de pedido desativada dentro do editor."); return; }
-    setError("");
-    if (items.length === 0) { setError(t("checkout.erroCarrinhoVazio")); return; }
-    if (!customer) { setError(t("account.precisaEntrar")); return; }
-    if (!payerIsBuyer && (!isFullName(payer.name) || !isValidCpf(payer.cpf))) {
-      setError(t("checkout.erroPagador"));
-      return;
-    }
-    if (!acceptedTerms) { setError(t("checkout.erroTermos")); return; }
-    if (form.deliveryType === "DELIVERY" && zones.length > 0 && !zoneId) { setError(t("checkout.erroRegiao")); return; }
-    setSending(true);
-    try {
-      const r = await storeApiFetch("/api/store/orders", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...form,
-          acceptedTerms: true,
-          payerIsBuyer,
-          payerDeclaredName: payerIsBuyer ? undefined : payer.name,
-          payerDeclaredCpf: payerIsBuyer ? undefined : onlyDigits(payer.cpf),
-          items: items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
-          couponCode: coupon?.code || undefined,
-          shippingZoneId: form.deliveryType === "DELIVERY" && zoneId ? zoneId : undefined,
-        }),
-      });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error || t("checkout.erroPedido"));
-      clear();
-      setOpen(false);
-      setCheckout(false);
-      navigate(`/loja/pedido/${j.code}`);
-    } catch (err: any) { setError(err.message); }
-    finally { setSending(false); }
   };
 
   const wa = info?.whatsapp ? `https://wa.me/${String(info.whatsapp).replace(/\D/g, "")}` : null;
@@ -528,239 +378,80 @@ export function ShopLayout() {
 
 
 
-      {/* Carrinho / Checkout */}
+      {/* O painel lateral é somente o carrinho. Identificação, entrega e pagamento
+          ficam na página dedicada para reduzir ruído e evitar perda de dados. */}
       {open && (
-        <div className="store-cart-overlay fixed inset-0 z-50 flex justify-end bg-stone-900/40 backdrop-blur-sm" onClick={() => !sending && setOpen(false)}>
-          <aside className="store-cart-drawer flex h-full w-full max-w-md flex-col bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="store-cart-overlay fixed inset-0 z-50 flex justify-end bg-stone-900/40 backdrop-blur-sm" onClick={() => setOpen(false)}>
+          <aside className="store-cart-drawer flex h-full w-full max-w-md flex-col bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-stone-200 p-4">
               <h2 className="flex items-center gap-2 text-lg font-bold" style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif", textTransform: "uppercase" }}>
-                <ShoppingBag className="h-5 w-5 text-stone-900" /> {checkout ? t("cart.finalizarPedidoTitulo") : t("cart.titulo")}
+                <ShoppingBag className="h-5 w-5 text-stone-900" /> {t("cart.titulo")}
               </h2>
-              <button onClick={() => setOpen(false)} className="rounded-sm p-2 text-stone-400 hover:bg-stone-100 hover:text-stone-700"><X className="h-4 w-4" /></button>
+              <button type="button" onClick={() => setOpen(false)} aria-label={t("cart.fechar")} className="rounded-sm p-2 text-stone-400 hover:bg-stone-100 hover:text-stone-700">
+                <X className="h-4 w-4" />
+              </button>
             </div>
 
             {items.length === 0 ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-stone-500">
                 <ShoppingBag className="h-12 w-12 text-stone-300" />
                 <p className="text-sm">{t("cart.vazio")}</p>
-                <button onClick={() => { setOpen(false); navigate(storePath("/loja/catalogo")); }} className="rounded-sm border border-stone-300 px-4 py-2 text-sm font-medium hover:border-stone-500">{t("cart.verProdutos")}</button>
+                <button type="button" onClick={() => { setOpen(false); navigate(storePath("/loja/catalogo")); }} className="rounded-sm border border-stone-300 px-4 py-2 text-sm font-medium hover:border-stone-500">
+                  {t("cart.verProdutos")}
+                </button>
               </div>
-            ) : !checkout ? (
+            ) : (
               <>
                 <div className="flex-1 space-y-2 overflow-y-auto p-4">
-                  {items.map((i) => (
-                    <div key={i.productId} className="flex gap-3 rounded-sm border border-stone-200 bg-stone-50 p-2.5">
+                  {items.map((item) => (
+                    <div key={item.productId} className="flex gap-3 rounded-sm border border-stone-200 bg-stone-50 p-2.5">
                       <div className="h-16 w-16 shrink-0 overflow-hidden rounded-sm bg-white">
-                        {i.imageUrl ? <img src={i.imageUrl} alt="" className="h-full w-full object-cover" />
+                        {item.imageUrl
+                          ? <img src={item.imageUrl} alt="" className="h-full w-full object-cover" />
                           : <div className="flex h-full items-center justify-center"><Package className="h-5 w-5 text-stone-300" /></div>}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="line-clamp-2 text-xs font-medium">{i.name}</div>
-                        <div className="mt-0.5 text-sm font-bold text-stone-900">{formatPrice(i.price * i.quantity, currency, rates)}</div>
+                        <div className="line-clamp-2 text-xs font-medium">{item.name}</div>
+                        <div className="mt-0.5 text-sm font-bold text-stone-900">{formatPrice(item.price * item.quantity, currency, rates)}</div>
                         <div className="mt-1 flex items-center gap-1">
-                          <button onClick={() => setQty(i.productId, i.quantity - 1)} className="flex h-6 w-6 items-center justify-center rounded-sm border border-stone-300 hover:border-stone-500"><Minus className="h-3 w-3" /></button>
-                          <span className="w-7 text-center text-xs font-bold">{i.quantity}</span>
-                          <button onClick={() => setQty(i.productId, i.quantity + 1)} disabled={i.quantity >= i.maxQty} className="flex h-6 w-6 items-center justify-center rounded-sm border border-stone-300 hover:border-stone-500 disabled:opacity-40"><Plus className="h-3 w-3" /></button>
-                          <button onClick={() => setQty(i.productId, 0)} className="ml-auto flex h-6 w-6 items-center justify-center rounded-sm text-red-500 hover:bg-red-50"><Trash2 className="h-3 w-3" /></button>
+                          <button type="button" onClick={() => setQty(item.productId, item.quantity - 1)} aria-label={t("cart.diminuirQuantidade")} className="flex h-7 w-7 items-center justify-center rounded-sm border border-stone-300 hover:border-stone-500"><Minus className="h-3 w-3" /></button>
+                          <span className="w-7 text-center text-xs font-bold">{item.quantity}</span>
+                          <button type="button" onClick={() => setQty(item.productId, item.quantity + 1)} disabled={item.quantity >= item.maxQty} aria-label={t("cart.aumentarQuantidade")} className="flex h-7 w-7 items-center justify-center rounded-sm border border-stone-300 hover:border-stone-500 disabled:opacity-40"><Plus className="h-3 w-3" /></button>
+                          <button type="button" onClick={() => setQty(item.productId, 0)} aria-label={t("cart.remover")} className="ml-auto flex h-7 w-7 items-center justify-center rounded-sm text-red-500 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></button>
                         </div>
                       </div>
                     </div>
                   ))}
                 </div>
-                <div className="border-t border-stone-200 p-4">
-                  <div className="mb-3 flex items-center justify-between">
+                <div className="border-t border-stone-200 bg-white p-4">
+                  <div className="mb-4 flex items-center justify-between">
                     <span className="text-sm text-stone-500">{t("cart.subtotal")}</span>
                     <span className="text-2xl font-black text-stone-900">{formatPrice(subtotal, currency, rates)}</span>
                   </div>
-                  <button onClick={() => setCheckout(true)} className="flex w-full items-center justify-center gap-2 rounded-sm bg-stone-900 py-3 text-sm font-bold text-white transition hover:bg-stone-800">
-                    {t("cart.finalizar")} <ArrowRight className="h-4 w-4" />
-                  </button>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <button type="button" onClick={() => { setOpen(false); navigate(storePath("/loja/catalogo")); }} className="rounded-full border border-stone-300 px-4 py-3 text-sm font-semibold text-stone-700 transition hover:border-stone-500">
+                      {t("cart.continuarComprando")}
+                    </button>
+                    <button type="button" onClick={() => {
+                      if (editCtx) {
+                        toast.error("Finalização de pedido desativada dentro do editor.");
+                        return;
+                      }
+                      setOpen(false);
+                      navigate("/loja/finalizar");
+                    }} className="flex items-center justify-center gap-2 rounded-full bg-[var(--store-accent,#e96f95)] px-4 py-3 text-sm font-bold text-[var(--store-accent-text,#fff)] transition hover:brightness-95">
+                      {t("cart.irPagamento")} <ArrowRight className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
               </>
-            ) : (
-              !customer ? (
-                <div className="flex flex-1 flex-col overflow-hidden">
-                  <div className="flex-1 overflow-y-auto p-4">
-                    {/* Nunca um <form> aqui dentro: isso é irmão do <form> de baixo, não filho —
-                        um <form> dentro de outro <form> é HTML inválido e quebra o React (o
-                        AccountAuth tem os próprios <form> por etapa, reaproveitados também
-                        sozinho em /loja/conta). */}
-                    <AccountAuth title={t("account.identifiqueSe")} onSuccess={() => {}} />
-                  </div>
-                  <div className="border-t border-stone-200 p-4">
-                    <div className="mb-3 flex items-center justify-between text-sm">
-                      <span className="text-stone-500">{t("checkout.total")}</span>
-                      <span className="text-2xl font-black text-stone-900">{formatPrice(total, currency, rates)}</span>
-                    </div>
-                    <button type="button" onClick={() => setCheckout(false)} className="w-full rounded-sm border border-stone-300 px-4 py-3 text-sm font-semibold text-stone-600 hover:border-stone-500">{t("checkout.voltarBtn")}</button>
-                  </div>
-                </div>
-              ) : (
-              <form onSubmit={submitOrder} className="flex flex-1 flex-col overflow-hidden">
-                <div className="flex-1 space-y-3 overflow-y-auto p-4">
-                  <div className="flex items-center justify-between rounded-sm border border-emerald-300 bg-emerald-50 px-3 py-2.5">
-                    <span className="text-sm text-stone-700">{t("account.comprandoComo", { name: customer.name.split(" ")[0] })} <span className="text-emerald-700">✓</span></span>
-                    <button type="button" onClick={logoutCustomer} className="text-xs font-semibold text-stone-500 hover:underline">{t("account.sair")}</button>
-                  </div>
-
-                  {/* Quem paga o PIX — se for outra pessoa, registramos a autorização */}
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-stone-500">{t("checkout.quemPaga")}</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {[[true, t("checkout.euMesmo")], [false, t("checkout.outraPessoa")]].map(([v, l]: any) => (
-                        <button key={String(v)} type="button" onClick={() => setPayerIsBuyer(v)}
-                          className={`rounded-sm border px-3 py-2.5 text-sm font-semibold transition ${payerIsBuyer === v ? "border-amber-600 bg-stone-100 text-amber-800" : "border-stone-300 text-stone-500 hover:border-stone-400"}`}>
-                          {l}
-                        </button>
-                      ))}
-                    </div>
-                    {!payerIsBuyer && (
-                      <div className="mt-2 space-y-2 rounded-sm border border-stone-300 bg-stone-50 p-3">
-                        <p className="text-[11px] text-stone-500">
-                          {t("checkout.outraPessoaAjuda")}
-                        </p>
-                        <input value={payer.name} onChange={(e) => setPayer({ ...payer, name: e.target.value })}
-                          placeholder={t("checkout.nomePagadorPlaceholder")} required
-                          className="h-10 w-full rounded-sm border border-stone-300 bg-white px-3 text-sm outline-none focus:border-amber-600" />
-                        <input value={payer.cpf} onChange={(e) => setPayer({ ...payer, cpf: formatCpf(e.target.value) })}
-                          placeholder={t("checkout.cpfPagadorPlaceholder")} inputMode="numeric" required
-                          className={`h-10 w-full rounded-sm border bg-white px-3 text-sm outline-none focus:border-amber-600 ${payer.cpf && !isValidCpf(payer.cpf) ? "border-red-400" : "border-stone-300"}`} />
-                        {payer.cpf && !isValidCpf(payer.cpf) && <p className="text-[11px] text-red-500">{t("checkout.cpfInvalido")}</p>}
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-stone-500">{t("checkout.comoReceber")}</label>
-                    {/* Sem nenhuma zona de frete cadastrada, "Entrega" nem aparece —
-                        senão o pedido passa pelo formulário todo e falha só no final. */}
-                    <div className={`grid gap-2 ${zones.length > 0 ? "grid-cols-2" : "grid-cols-1"}`}>
-                      {(zones.length > 0 ? [["PICKUP", t("checkout.retirar")], ["DELIVERY", t("checkout.entrega")]] : [["PICKUP", t("checkout.retirar")]]).map(([v, l]) => (
-                        <button key={v} type="button" onClick={() => setForm({ ...form, deliveryType: v })}
-                          className={`rounded-sm border px-3 py-2.5 text-sm font-semibold transition ${form.deliveryType === v ? "border-amber-600 bg-stone-100 text-amber-800" : "border-stone-300 text-stone-500 hover:border-stone-400"}`}>
-                          {l}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  {form.deliveryType === "DELIVERY" && (
-                    <>
-                      {zones.length > 0 && (
-                        <div>
-                          <label className="mb-1 block text-xs font-medium text-stone-500">{t("checkout.regiaoLabel")}</label>
-                          <select value={zoneId} onChange={(e) => setZoneId(e.target.value)} required
-                            className="h-10 w-full rounded-sm border border-stone-300 bg-white px-3 text-sm outline-none focus:border-amber-600">
-                            <option value="">{t("checkout.escolherRegiao")}</option>
-                            {zones.map((z) => (
-                              <option key={z.id} value={z.id}>{z.name} — {Number(z.feeBrl) === 0 ? t("checkout.freteGratisOpcao") : formatPrice(z.feeBrl, currency, rates)}</option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-stone-500">{t("checkout.enderecoLabel")}</label>
-                        <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder={t("checkout.enderecoPlaceholder")} required
-                          className="h-10 w-full rounded-sm border border-stone-300 bg-white px-3 text-sm outline-none focus:border-amber-600" />
-                      </div>
-                    </>
-                  )}
-
-                  {/* Cupom */}
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-stone-500">{t("checkout.cupomLabel")}</label>
-                    {coupon ? (
-                      <div className="flex items-center justify-between rounded-sm border border-emerald-300 bg-emerald-50 px-3 py-2.5">
-                        <span className="text-sm font-bold text-emerald-800">{coupon.code} <span className="font-normal">(−{formatPrice(coupon.discount, currency, rates)})</span></span>
-                        <button type="button" onClick={() => { setCoupon(null); setCouponMsg(""); }} className="text-xs font-semibold text-red-500 hover:underline">{t("checkout.remover")}</button>
-                      </div>
-                    ) : (
-                      <div className="flex gap-2">
-                        <input value={couponInput} onChange={(e) => setCouponInput(e.target.value.toUpperCase())} placeholder={t("checkout.cupomPlaceholder")}
-                          className="h-10 min-w-0 flex-1 rounded-sm border border-stone-300 bg-white px-3 text-sm font-mono uppercase outline-none focus:border-amber-600" />
-                        <button type="button" onClick={applyCoupon} disabled={checkingCoupon || !couponInput.trim()}
-                          className="rounded-sm border border-stone-900 px-4 text-sm font-bold text-stone-900 hover:bg-stone-900 hover:text-white disabled:opacity-40">
-                          {checkingCoupon ? "..." : t("checkout.aplicar")}
-                        </button>
-                      </div>
-                    )}
-                    {couponMsg && <p className="mt-1 text-xs text-red-500">{couponMsg}</p>}
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-stone-500">{t("checkout.obs")}</label>
-                    <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder={t("checkout.obsPlaceholder")}
-                      className="h-10 w-full rounded-sm border border-stone-300 bg-white px-3 text-sm outline-none focus:border-amber-600" />
-                  </div>
-
-                  <div className="space-y-1 border-t border-stone-200 pt-3 text-xs text-stone-500">
-                    {items.map((i) => (
-                      <div key={i.productId} className="flex justify-between"><span className="truncate pr-2">{i.quantity}× {i.name}</span><span>{formatPrice(i.price * i.quantity, currency, rates)}</span></div>
-                    ))}
-                  </div>
-                  <div className="flex items-start gap-2 rounded-sm border border-stone-200 bg-stone-100 p-3 text-[11px] text-stone-600">
-                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-stone-900" />
-                    {t("checkout.proximaTelaNota")}
-                  </div>
-
-                  {/* Aceite dos termos — fica gravado no pedido com data, IP e aparelho */}
-                  <label className={`flex cursor-pointer items-start gap-2.5 rounded-sm border p-3 transition ${acceptedTerms ? "border-emerald-300 bg-emerald-50" : "border-stone-300 bg-white"}`}>
-                    <input type="checkbox" checked={acceptedTerms} onChange={(e) => setAcceptedTerms(e.target.checked)}
-                      className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-600" />
-                    <span className="text-[11px] leading-relaxed text-stone-600">
-                      {payerIsBuyer
-                        ? t("checkout.termosEuMesmo")
-                        : t("checkout.termosOutraPessoa", { nome: payer.name || t("checkout.pessoaInformadaAcima") })}{" "}
-                      <button type="button" onClick={(e) => { e.preventDefault(); setTermsOpen(true); }} className="font-semibold text-stone-900 underline">{t("checkout.lerTermos")}</button>
-                    </span>
-                  </label>
-                  {error && <div className="rounded-sm border border-red-200 bg-red-50 p-3 text-xs text-red-600">{error}</div>}
-                </div>
-                <div className="border-t border-stone-200 p-4">
-                  <div className="mb-3 space-y-1 text-sm">
-                    <div className="flex justify-between text-stone-500"><span>{t("cart.subtotal")}</span><span>{formatPrice(subtotal, currency, rates)}</span></div>
-                    {discount > 0 && <div className="flex justify-between font-medium text-emerald-700"><span>{t("checkout.cupomCodigo", { code: coupon?.code })}</span><span>−{formatPrice(discount, currency, rates)}</span></div>}
-                    {form.deliveryType === "DELIVERY" && selectedZone && (
-                      <div className="flex justify-between text-stone-500"><span>{t("checkout.freteZona", { zona: selectedZone.name })}</span><span>{shippingFee === 0 ? t("checkout.gratis") : `+${formatPrice(shippingFee, currency, rates)}`}</span></div>
-                    )}
-                    <div className="flex items-center justify-between border-t border-stone-200 pt-2">
-                      <span className="text-stone-500">{t("checkout.total")}</span>
-                      <span className="text-2xl font-black text-stone-900">{formatPrice(total, currency, rates)}</span>
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <button type="button" onClick={() => setCheckout(false)} disabled={sending} className="rounded-sm border border-stone-300 px-4 py-3 text-sm font-semibold text-stone-600 hover:border-stone-500 disabled:opacity-50">{t("checkout.voltarBtn")}</button>
-                    <PremiumCta type="submit" size="md" className="flex-1" disabled={sending || !acceptedTerms}>
-                      {sending ? <><Loader2 className="h-4 w-4 animate-spin" /> {t("checkout.enviando")}</> : <>{t("checkout.gerarPix")} <ArrowRight className="h-4 w-4" /></>}
-                    </PremiumCta>
-                  </div>
-                </div>
-              </form>
-              )
             )}
           </aside>
         </div>
       )}
 
-      {/* Termos do pedido */}
-      {termsOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-stone-900/50 p-4" onClick={() => setTermsOpen(false)}>
-          <div className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-sm bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-stone-200 p-4">
-              <h3 className="text-lg font-bold" style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif", textTransform: "uppercase" }}>{t("checkout.termosModalTitulo")}</h3>
-              <button onClick={() => setTermsOpen(false)} className="rounded-sm p-2 text-stone-400 hover:bg-stone-100"><X className="h-4 w-4" /></button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4">
-              <p className="whitespace-pre-line text-sm leading-relaxed text-stone-600">{terms.termsText || t("checkout.termosIndisponivel")}</p>
-            </div>
-            <div className="border-t border-stone-200 p-4">
-              <button onClick={() => { setAcceptedTerms(true); setTermsOpen(false); }} className="w-full rounded-sm bg-stone-900 py-2.5 text-sm font-bold text-white hover:bg-stone-900">
-                {t("checkout.liConcordo")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Rodapé editorial inspirado na organização da DroidStore, com a identidade da loja. */}
-      <footer id="atendimento" className="relative mt-auto overflow-hidden border-t border-rose-100 bg-white py-10 text-[#6b5b5a]">
+      {normalizedStorePath !== "/loja/finalizar" && <footer id="atendimento" className="relative mt-auto overflow-hidden border-t border-rose-100 bg-white py-10 text-[#6b5b5a]">
         <div className="pointer-events-none absolute inset-x-0 -bottom-3 select-none whitespace-nowrap text-center text-[6.5rem] font-black leading-none tracking-[0.02em] text-[#f8dde5]/35 sm:-bottom-20 sm:text-[15rem]">DB</div>
         <div className="relative mx-auto w-[94%] max-w-[1440px] px-4">
           <div className="hidden gap-9 md:grid md:grid-cols-[1.25fr_.8fr_1fr_1fr]">
@@ -813,7 +504,7 @@ export function ShopLayout() {
             <div className="flex items-center gap-2 text-[10px] text-[#6b5b5a]/60"><ShieldCheck className="h-3.5 w-3.5" /> Compra protegida por SSL</div>
           </div>
         </div>
-      </footer>
+      </footer>}
 
       <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-rose-100 bg-white/95 px-2 pb-[max(.35rem,env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-8px_30px_rgba(80,35,50,.08)] backdrop-blur md:hidden">
         {[

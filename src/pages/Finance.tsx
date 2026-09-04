@@ -12,7 +12,7 @@ import { Badge } from "../components/ui/badge";
 
 const TYPE_LABEL: Record<string, string> = { CASH: "Caixa (dinheiro)", BANK: "Banco", CARD_RECEIVABLE: "Cartão a receber", OTHER: "Outra" };
 const TYPE_ICON: Record<string, any> = { CASH: Wallet, BANK: Landmark, CARD_RECEIVABLE: CreditCard, OTHER: PiggyBank };
-const METHODS: Array<[string, string]> = [["CASH", "Dinheiro"], ["PIX", "PIX"], ["DEBIT_CARD", "Cartão de débito"], ["CREDIT_CARD", "Cartão de crédito"], ["TRANSFER", "Transferência"]];
+const METHODS: Array<[string, string]> = [["CASH", "Dinheiro"], ["PIX", "PIX"], ["USDT", "USDT"], ["DEBIT_CARD", "Cartão de débito"], ["CREDIT_CARD", "Cartão de crédito"], ["TRANSFER", "Transferência"]];
 
 // Formata valor na moeda nativa da conta (PYG não usa centavos).
 const fmtCur = (v: any, cur?: string) => {

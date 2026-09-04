@@ -4,7 +4,7 @@ import {
   products, stockBalances, stockReservations, stockMovements, sales, saleItems, customers,
   storeOrders, companySettings, systemSettings, users, roles, auditLogs,
   productGroups, productGroupsDraft, productSubgroups, productImages, accountMovements, storePageviews,
-  storeNewsletterSubscribers,
+  storeNewsletterSubscribers, currencies, customerAddresses,
   brandLogos,
 } from "../db/schema";
 import { and, desc, eq, gt, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
@@ -34,6 +34,34 @@ const MAX_PROOF_BYTES = 3 * 1024 * 1024; // 3 MB: base64 + JSON precisa caber no
 const MAX_FONT_URL_CHARS = 400000; // ~400KB base64 data URL — generous para um arquivo de fonte woff2
 const MAX_ITEMS = 40;
 const MAX_QTY_PER_ITEM = 99;
+
+// O servidor Express aplica esta coluna no boot, mas a função serverless da
+// Vercel não passa por server.ts. Fazemos a migração aditiva uma vez por
+// instância antes das rotas de pedido para que o primeiro deploy já seja
+// compatível com bancos existentes, sem depender de uma operação manual.
+let checkoutSchemaReady: Promise<void> | null = null;
+async function ensureCheckoutSchema() {
+  if (!checkoutSchemaReady) {
+    checkoutSchemaReady = (async () => {
+      await db.execute(sql`ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS payment_method text NOT NULL DEFAULT 'PIX';`);
+    })().catch((error) => {
+      checkoutSchemaReady = null;
+      throw error;
+    });
+  }
+  return checkoutSchemaReady;
+}
+
+router.use(async (req, res, next) => {
+  if (!req.path.startsWith("/orders") && !req.path.startsWith("/admin/orders")) return next();
+  try {
+    await ensureCheckoutSchema();
+    next();
+  } catch (error) {
+    console.error("[store] não foi possível preparar o schema do checkout:", error);
+    res.status(503).json({ error: "Checkout temporariamente indisponível. Tente novamente em instantes." });
+  }
+});
 
 // Código curto e legível para o cliente acompanhar o pedido (sem caracteres ambíguos).
 function makeOrderCode() {
@@ -78,15 +106,23 @@ async function getStoreConfig() {
     ...(fx.USDBRL ? [{ code: "BRL", rateToUsd: fx.USDBRL.rate }] : []),
     ...(fx.USDPYG ? [{ code: "PYG", rateToUsd: fx.USDPYG.rate }] : []),
   ];
-  const [cs] = await db.select().from(companySettings).limit(1);
+  const [[cs], brlRows] = await Promise.all([
+    db.select().from(companySettings).limit(1),
+    db.select().from(currencies).where(eq(currencies.code, "BRL")).limit(1),
+  ]);
   const defaultCurrency = cs?.defaultCurrency || "BRL";
   // Regra da vitrine: sistema configurado somente em Real nao deve mostrar
   // moeda secundaria, bandeira USD/PYG nem conversao paralela nos cards.
-  const currencies = defaultCurrency === "BRL"
+  const storeCurrencies = defaultCurrency === "BRL"
     ? allCurrencies.filter((currency) => currency.code === "BRL")
     : allCurrencies;
   const pixRows = await db.select().from(systemSettings).where(eq(systemSettings.key, PIX_SETTINGS_KEY)).limit(1);
   const pix = (pixRows[0]?.value as any) || {};
+  const configuredBrlRate = Number(brlRows[0]?.rateToUsd);
+  const marketBrlRate = Number(fx.USDBRL?.rate);
+  const brlExchangeRate = configuredBrlRate > 0 ? configuredBrlRate : marketBrlRate > 0 ? marketBrlRate : 5.5;
+  const configuredPixRate = Number(String(pix.pixExchangeRate || "").replace(",", "."));
+  const pixExchangeRate = configuredPixRate > 0 ? configuredPixRate : brlExchangeRate;
   return {
     storeName: cs?.tradeName || cs?.companyName || "Sua loja",
     logoUrl: cs?.logoUrl || "",
@@ -96,8 +132,48 @@ async function getStoreConfig() {
     email: cs?.email || "",
     defaultCurrency,
     pixKey: pix.pixKey || "",
-    currencies,
+    brlExchangeRate,
+    pixExchangeRate,
+    currencies: storeCurrencies,
   };
+}
+
+const storeBaseCurrency = (defaultCurrency: unknown): "BRL" | "USD" => defaultCurrency === "BRL" ? "BRL" : "USD";
+
+function formatOrderAddress(value: any) {
+  const main = [value?.street, value?.number].filter(Boolean).join(", ");
+  const area = [value?.neighborhood, value?.city, value?.state].filter(Boolean).join(" - ");
+  return [main, area, value?.cep ? `CEP ${value.cep}` : ""].filter(Boolean).join(" - ");
+}
+
+function buildUsdtWhatsappUrl(config: { whatsapp: string; storeName: string }, order: {
+  code: string;
+  customerName: string;
+  items: Array<{ name: string; quantity: number; totalBrl: number }>;
+  subtotalBrl: number;
+  discountBrl: number;
+  shippingFeeBrl: number;
+  totalBrl: number;
+  deliveryLabel: string;
+}) {
+  const destination = onlyDigits(config.whatsapp);
+  if (!destination) return "";
+  const lines = [
+    `Olá! Vim pelo site da ${config.storeName} e quero efetivar o pedido ${order.code} via USDT.`,
+    "",
+    `Cliente: ${order.customerName}`,
+    "Itens:",
+    ...order.items.map((item) => `• ${item.quantity}x ${item.name} — ${formatBrl(item.totalBrl)}`),
+    `Subtotal: ${formatBrl(order.subtotalBrl)}`,
+    ...(order.discountBrl > 0 ? [`Desconto: -${formatBrl(order.discountBrl)}`] : []),
+    ...(order.shippingFeeBrl > 0 ? [`Frete: ${formatBrl(order.shippingFeeBrl)}`] : []),
+    `Total de referência: ${formatBrl(order.totalBrl)}`,
+    `Recebimento: ${order.deliveryLabel}`,
+    "Forma de pagamento: USDT",
+    "",
+    "Por favor, envie a rede (ex.: TRC20/ERC20) e o endereço da carteira USDT para eu concluir o pagamento.",
+  ];
+  return `https://wa.me/${destination}?text=${encodeURIComponent(lines.join("\n"))}`;
 }
 
 /* ==================== PÚBLICO (sem login) ==================== */
@@ -109,7 +185,7 @@ router.get("/info", async (_req, res) => {
     // appVersion: a loja aberta há dias no navegador compara com a sua e avisa
     // pra recarregar — senão o formulário velho bate num servidor novo.
     const { APP_VERSION } = await import("../lib/version");
-    res.json({ storeName: c.storeName, logoUrl: c.logoUrl, city: c.city, whatsapp: c.whatsapp, instagramUrl: c.instagramUrl, email: c.email, defaultCurrency: c.defaultCurrency, pixEnabled: !!c.pixKey, appVersion: APP_VERSION, currencies: c.currencies });
+    res.json({ storeName: c.storeName, logoUrl: c.logoUrl, city: c.city, whatsapp: c.whatsapp, instagramUrl: c.instagramUrl, email: c.email, defaultCurrency: c.defaultCurrency, pixEnabled: !!c.pixKey, brlExchangeRate: c.brlExchangeRate, pixExchangeRate: c.pixExchangeRate, appVersion: APP_VERSION, currencies: c.currencies });
   } catch (err: any) { res.status(500).json({ error: "Loja indisponível." }); }
 });
 
@@ -723,8 +799,21 @@ router.post("/orders", requireCustomerAuth, async (req: CustomerAuthRequest, res
       return res.status(429).json({ error: "Muitos pedidos deste dispositivo. Tente novamente em alguns minutos." });
     }
 
-    const { deliveryType, address, cep, street, number, neighborhood, city, state, shippingMethod, shippingFeeBrl, notes, items, couponCode, shippingZoneId, acceptedTerms } = req.body || {};
+    const { deliveryType, address, addressId, cep, street, number, neighborhood, city, state, shippingMethod, notes, items, couponCode, shippingZoneId, acceptedTerms } = req.body || {};
     if (!acceptedTerms) return res.status(400).json({ error: "É preciso aceitar os termos do pedido para continuar." });
+    const paymentMethod = String(req.body?.paymentMethod || "PIX").toUpperCase();
+    if (!(["PIX", "USDT"] as const).includes(paymentMethod as any)) {
+      return res.status(400).json({ error: "Forma de pagamento inválida." });
+    }
+    const storeConfig = await getStoreConfig();
+    if (paymentMethod === "USDT" && !onlyDigits(storeConfig.whatsapp)) {
+      return res.status(400).json({ error: "Pagamento em USDT indisponível: configure o WhatsApp da loja." });
+    }
+    const baseCurrency = storeBaseCurrency(storeConfig.defaultCurrency);
+    const brlRate = paymentMethod === "PIX" ? storeConfig.pixExchangeRate : storeConfig.brlExchangeRate;
+    if (baseCurrency === "USD" && !(brlRate > 0)) {
+      return res.status(400).json({ error: "Cotação para conversão em Real não configurada." });
+    }
 
     // Identidade vem da conta logada (Minha Conta), não mais de campos digitados no formulário —
     // ninguém mais consegue "emprestar" o CPF de outra pessoa pra fechar um pedido.
@@ -737,10 +826,10 @@ router.post("/orders", requireCustomerAuth, async (req: CustomerAuthRequest, res
 
     // Quem paga o PIX. Se for outra pessoa, o comprador declara nome e CPF dela
     // — é isso que sustenta o pagamento de terceiro numa contestação.
-    const payerIsBuyer = req.body?.payerIsBuyer !== false;
+    const payerIsBuyer = paymentMethod === "PIX" ? req.body?.payerIsBuyer !== false : true;
     let payerName2: string | null = null;
     let payerCpf: string | null = null;
-    if (!payerIsBuyer) {
+    if (paymentMethod === "PIX" && !payerIsBuyer) {
       payerName2 = String(req.body?.payerDeclaredName || "").trim().replace(/\s+/g, " ");
       payerCpf = onlyDigits(req.body?.payerDeclaredCpf);
       if (!isFullName(payerName2)) return res.status(400).json({ error: "Informe o nome completo de quem vai pagar." });
@@ -750,8 +839,15 @@ router.post("/orders", requireCustomerAuth, async (req: CustomerAuthRequest, res
     if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: "Carrinho vazio." });
     if (items.length > MAX_ITEMS) return res.status(400).json({ error: "Pedido muito grande. Fale conosco pelo WhatsApp." });
     const delivery = deliveryType === "DELIVERY" ? "DELIVERY" : "PICKUP";
-    if (delivery === "DELIVERY" && String(address || "").trim().length < 8) {
-      return res.status(400).json({ error: "Informe o endereço de entrega." });
+    let deliveryAddress: any = { address, cep, street, number, neighborhood, city, state };
+    if (delivery === "DELIVERY" && addressId) {
+      const [savedAddress] = await db.select().from(customerAddresses)
+        .where(and(eq(customerAddresses.id, String(addressId)), eq(customerAddresses.customerId, buyer.id))).limit(1);
+      if (!savedAddress) return res.status(400).json({ error: "Endereço salvo não encontrado. Selecione novamente." });
+      deliveryAddress = { ...savedAddress, address: formatOrderAddress(savedAddress) };
+    }
+    if (delivery === "DELIVERY" && String(deliveryAddress.address || formatOrderAddress(deliveryAddress)).trim().length < 8) {
+      return res.status(400).json({ error: "Selecione ou cadastre um endereço de entrega completo." });
     }
 
     // Texto vigente dos termos — vai gravado no pedido como prova do que foi aceito.
@@ -769,7 +865,7 @@ router.post("/orders", requireCustomerAuth, async (req: CustomerAuthRequest, res
       const customerId = buyer.id;
       const patch: any = {};
       if (!buyer.phone && phone) patch.phone = phone;
-      if (!buyer.address && delivery === "DELIVERY" && address) patch.address = String(address).trim();
+      if (!buyer.address && delivery === "DELIVERY" && deliveryAddress.address) patch.address = String(deliveryAddress.address).trim();
       if (Object.keys(patch).length > 0) {
         await tx.update(customers).set({ ...patch, updatedAt: new Date() }).where(eq(customers.id, customerId));
       }
@@ -784,8 +880,9 @@ router.post("/orders", requireCustomerAuth, async (req: CustomerAuthRequest, res
         .for("update"); // trava o estoque enquanto valida
 
       const map = new Map(prods.map((p) => [p.id, p]));
-      let subtotal = 0;
+      let subtotal = 0; // moeda-base do catálogo (BRL ou USD)
       const toInsert: any[] = [];
+      const orderItems: Array<{ name: string; quantity: number; totalBrl: number }> = [];
       const saleId = uuidv4();
 
       for (const raw of items) {
@@ -805,7 +902,18 @@ router.post("/orders", requireCustomerAuth, async (req: CustomerAuthRequest, res
           unitPrice: unit.toFixed(2), totalPrice: total.toFixed(2),
           discountAmount: "0", ivaAmount: "0",
         });
+        orderItems.push({
+          name: p.name,
+          quantity: qty,
+          totalBrl: round2(baseCurrency === "USD" ? total * brlRate : total),
+        });
       }
+
+      // Pedido, cupom, frete e cobrança pública são sempre consolidados em BRL.
+      // A venda e seus itens continuam na moeda-base do ERP para não quebrar
+      // relatórios e a exibição dual já usada em Vendas Realizadas.
+      const subtotalBrl = round2(baseCurrency === "USD" ? subtotal * brlRate : subtotal);
+      const fromBrlToBase = (value: number) => round2(baseCurrency === "USD" ? value / brlRate : value);
 
       // FASE E4 — frete por região ou método direto
       let shippingFee = 0;
@@ -835,23 +943,26 @@ router.post("/orders", requireCustomerAuth, async (req: CustomerAuthRequest, res
         if (c.validUntil && nowD > new Date(c.validUntil)) throw new Error("Cupom expirado.");
         if (c.maxUses != null && Number(c.usedCount) >= Number(c.maxUses)) throw new Error("Cupom esgotado.");
         const min = c.minOrderBrl != null ? Number(c.minOrderBrl) : 0;
-        if (subtotal < min) throw new Error(`Pedido mínimo de R$ ${min.toFixed(2).replace(".", ",")} pra usar esse cupom.`);
+        if (subtotalBrl < min) throw new Error(`Pedido mínimo de R$ ${min.toFixed(2).replace(".", ",")} pra usar esse cupom.`);
         // Desconto incide sobre os PRODUTOS (frete não entra).
-        discount = c.type === "FIXED" ? Math.min(round2(Number(c.value)), subtotal) : round2(subtotal * Number(c.value) / 100);
+        discount = c.type === "FIXED" ? Math.min(round2(Number(c.value)), subtotalBrl) : round2(subtotalBrl * Number(c.value) / 100);
         appliedCoupon = codeUp;
         await tx.update(storeCoupons).set({ usedCount: Number(c.usedCount) + 1, updatedAt: new Date() }).where(eq(storeCoupons.id, c.id));
       }
 
-      const grandTotal = calcOrderTotal(subtotal, discount, shippingFee);
+      const grandTotal = calcOrderTotal(subtotalBrl, discount, shippingFee);
+      const saleSubtotal = round2(subtotal + fromBrlToBase(shippingFee));
+      const saleDiscount = fromBrlToBase(discount);
+      const saleTotal = fromBrlToBase(grandTotal);
 
       // Venda no ERP: confirmada, aguardando pagamento, aguardando entrega.
       // totalAmount inclui o frete; o desconto do cupom entra em discountAmount.
       await tx.insert(sales).values({
         id: saleId, series: "LOJ", userId: owner.id, customerId,
-        priceTable: "A", subtotalAmount: round2(subtotal + shippingFee).toFixed(2), discountAmount: discount.toFixed(2),
-        ivaAmount: "0", totalAmount: grandTotal.toFixed(2), currency: "BRL",
+        priceTable: "A", subtotalAmount: saleSubtotal.toFixed(2), discountAmount: saleDiscount.toFixed(2),
+        ivaAmount: "0", totalAmount: saleTotal.toFixed(2), currency: baseCurrency,
         orderStatus: "CONFIRMED", paymentStatus: "PENDING", fulfillmentStatus: "PENDING",
-        observations: `PEDIDO ONLINE - ${name} - ${phone}${delivery === "DELIVERY" ? ` - ENTREGA: ${String(address).trim()}` : " - RETIRADA"}${zoneName ? ` - REGIAO: ${zoneName} (FRETE R$ ${shippingFee.toFixed(2)})` : ""}${appliedCoupon ? ` - CUPOM: ${appliedCoupon} (-R$ ${discount.toFixed(2)})` : ""}${notes ? ` - OBS: ${String(notes).trim()}` : ""}`.toUpperCase(),
+        observations: `PEDIDO ONLINE - ${name} - ${phone} - PAGAMENTO ${paymentMethod}${delivery === "DELIVERY" ? ` - ENTREGA: ${String(deliveryAddress.address).trim()}` : " - RETIRADA"}${zoneName ? ` - REGIAO: ${zoneName} (FRETE R$ ${shippingFee.toFixed(2)})` : ""}${appliedCoupon ? ` - CUPOM: ${appliedCoupon} (-R$ ${discount.toFixed(2)})` : ""}${notes ? ` - OBS: ${String(notes).trim()}` : ""}`.toUpperCase(),
       });
       await tx.insert(saleItems).values(toInsert);
 
@@ -883,6 +994,7 @@ router.post("/orders", requireCustomerAuth, async (req: CustomerAuthRequest, res
       const [order] = await tx.insert(storeOrders).values({
         code, saleId, customerName: name, customerPhone: phone,
         customerDocument: cpf,
+        paymentMethod,
         customerId,
         // Prova de aceite: texto exato, versão, quando, de onde e de qual aparelho.
         clientUserAgent: String(req.headers["user-agent"] || "").slice(0, 400),
@@ -897,17 +1009,17 @@ router.post("/orders", requireCustomerAuth, async (req: CustomerAuthRequest, res
         payerDeclaredName: payerName2,
         payerDeclaredCpf: payerCpf,
         deliveryType: delivery, 
-        address: delivery === "DELIVERY" ? String(address).trim() : null,
-        cep: delivery === "DELIVERY" && cep ? String(cep).trim() : null,
-        street: delivery === "DELIVERY" && street ? String(street).trim() : null,
-        number: delivery === "DELIVERY" && number ? String(number).trim() : null,
-        neighborhood: delivery === "DELIVERY" && neighborhood ? String(neighborhood).trim() : null,
-        city: delivery === "DELIVERY" && city ? String(city).trim() : null,
-        state: delivery === "DELIVERY" && state ? String(state).trim() : null,
+        address: delivery === "DELIVERY" ? String(deliveryAddress.address || formatOrderAddress(deliveryAddress)).trim() : null,
+        cep: delivery === "DELIVERY" && deliveryAddress.cep ? String(deliveryAddress.cep).trim() : null,
+        street: delivery === "DELIVERY" && deliveryAddress.street ? String(deliveryAddress.street).trim() : null,
+        number: delivery === "DELIVERY" && deliveryAddress.number ? String(deliveryAddress.number).trim() : null,
+        neighborhood: delivery === "DELIVERY" && deliveryAddress.neighborhood ? String(deliveryAddress.neighborhood).trim() : null,
+        city: delivery === "DELIVERY" && deliveryAddress.city ? String(deliveryAddress.city).trim() : null,
+        state: delivery === "DELIVERY" && deliveryAddress.state ? String(deliveryAddress.state).trim() : null,
         shippingMethod: delivery === "DELIVERY" && shippingMethod ? String(shippingMethod).trim() : null,
         notes: notes ? String(notes).trim() : null,
         totalAmount: grandTotal.toFixed(2),
-        subtotalBrl: subtotal.toFixed(2),
+        subtotalBrl: subtotalBrl.toFixed(2),
         couponCode: appliedCoupon,
         discountBrl: discount > 0 ? discount.toFixed(2) : null,
         shippingZone: zoneName,
@@ -926,10 +1038,20 @@ router.post("/orders", requireCustomerAuth, async (req: CustomerAuthRequest, res
 
       await tx.insert(auditLogs).values({
         id: uuidv4(), userId: owner.id, action: "STORE_ORDER_CREATED", tableName: "store_orders",
-        recordId: order.id, newValues: JSON.stringify({ code, total: grandTotal, subtotal, discount, shippingFee, coupon: appliedCoupon, items: toInsert.length }),
+        recordId: order.id, newValues: JSON.stringify({ code, paymentMethod, totalBrl: grandTotal, subtotalBrl, subtotalBase: subtotal, baseCurrency, brlRate, discount, shippingFee, coupon: appliedCoupon, items: toInsert.length }),
       });
 
-      return { code: order.code, total: grandTotal, customerName: order.customerName };
+      return {
+        code: order.code,
+        total: grandTotal,
+        customerName: order.customerName,
+        paymentMethod,
+        subtotalBrl,
+        discountBrl: discount,
+        shippingFeeBrl: shippingFee,
+        orderItems,
+        deliveryLabel: delivery === "DELIVERY" ? String(order.address || "Entrega") : "Retirada na loja",
+      };
     });
 
     await createNotification(db, {
@@ -938,7 +1060,19 @@ router.post("/orders", requireCustomerAuth, async (req: CustomerAuthRequest, res
       link: "/store-orders",
     });
 
-    res.status(201).json({ success: true, ...result });
+    const whatsappUrl = result.paymentMethod === "USDT"
+      ? buildUsdtWhatsappUrl(storeConfig, {
+          code: result.code,
+          customerName: result.customerName,
+          items: result.orderItems,
+          subtotalBrl: result.subtotalBrl,
+          discountBrl: result.discountBrl,
+          shippingFeeBrl: result.shippingFeeBrl,
+          totalBrl: result.total,
+          deliveryLabel: result.deliveryLabel,
+        })
+      : "";
+    res.status(201).json({ success: true, code: result.code, total: result.total, paymentMethod: result.paymentMethod, whatsappUrl });
   } catch (err: any) { res.status(400).json({ error: err.message || "Não foi possível criar o pedido." }); }
 });
 
@@ -953,11 +1087,20 @@ router.get("/orders/:code", async (req, res) => {
     const [order] = await db.select().from(storeOrders).where(eq(storeOrders.code, code)).limit(1);
     if (!order) return res.status(404).json({ error: "Pedido não encontrado." });
 
-    const items = order.saleId
+    const rawItems = order.saleId
       ? await db.select({ name: products.name, quantity: saleItems.quantity, unitPrice: saleItems.unitPrice, totalPrice: saleItems.totalPrice })
           .from(saleItems).leftJoin(products, eq(saleItems.productId, products.id))
           .where(eq(saleItems.saleId, order.saleId))
       : [];
+    const rawItemsTotal = rawItems.reduce((sum, item) => sum + Number(item.totalPrice || 0), 0);
+    const itemBrlFactor = rawItemsTotal > 0 && order.subtotalBrl != null
+      ? Number(order.subtotalBrl) / rawItemsTotal
+      : 1;
+    const items = rawItems.map((item) => ({
+      ...item,
+      unitPrice: round2(Number(item.unitPrice || 0) * itemBrlFactor),
+      totalPrice: round2(Number(item.totalPrice || 0) * itemBrlFactor),
+    }));
 
     const cfg = await getStoreConfig();
     // Gera o copia-e-cola PIX já COM o valor (campo 54 do payload) — o cliente
@@ -972,8 +1115,9 @@ router.get("/orders/:code", async (req, res) => {
         });
       } catch { return ""; }
     };
-    const openForPayment = order.status === "AWAITING_PAYMENT" || order.status === "PROOF_SENT";
-    const pixPayload = order.status === "AWAITING_PAYMENT" ? await makePix(Number(order.totalAmount), order.code.replace("-", "")) : "";
+    const paymentMethod = String(order.paymentMethod || "PIX").toUpperCase() === "USDT" ? "USDT" : "PIX";
+    const openForPayment = paymentMethod === "PIX" && (order.status === "AWAITING_PAYMENT" || order.status === "PROOF_SENT");
+    const pixPayload = paymentMethod === "PIX" && order.status === "AWAITING_PAYMENT" ? await makePix(Number(order.totalAmount), order.code.replace("-", "")) : "";
 
     // Pagamento dividido (2+ PIX): cada parcela tem o seu QR com o valor dela.
     const { storeOrderPayments } = await import("../db/schema");
@@ -991,8 +1135,22 @@ router.get("/orders/:code", async (req, res) => {
     }
     const paidSent = payments.filter((p) => p.hasProof).reduce((s, p) => s + p.amount, 0);
 
+    const usdtWhatsappUrl = paymentMethod === "USDT" && order.status !== "CANCELED"
+      ? buildUsdtWhatsappUrl(cfg, {
+          code: order.code,
+          customerName: order.customerName,
+          items: items.map((item) => ({ name: item.name || "Produto", quantity: Number(item.quantity), totalBrl: Number(item.totalPrice) })),
+          subtotalBrl: order.subtotalBrl != null ? Number(order.subtotalBrl) : Number(order.totalAmount),
+          discountBrl: order.discountBrl != null ? Number(order.discountBrl) : 0,
+          shippingFeeBrl: order.shippingFeeBrl != null ? Number(order.shippingFeeBrl) : 0,
+          totalBrl: Number(order.totalAmount),
+          deliveryLabel: order.deliveryType === "DELIVERY" ? String(order.address || "Entrega") : "Retirada na loja",
+        })
+      : "";
+
     res.json({
-      pixConfigured: !!cfg.pixKey,
+      paymentMethod,
+      pixConfigured: paymentMethod === "PIX" && !!cfg.pixKey,
       payments,
       paidSent: round2(paidSent),
       remaining: round2(Math.max(0, Number(order.totalAmount) - paidSent)),
@@ -1005,7 +1163,8 @@ router.get("/orders/:code", async (req, res) => {
       customerName: order.customerName, deliveryType: order.deliveryType, address: order.address,
       createdAt: order.createdAt, hasProof: !!order.proofData,
       deliveryConfirmedAt: order.deliveryConfirmedAt,
-      items, pixPayload, pixKey: order.status === "AWAITING_PAYMENT" ? cfg.pixKey : "",
+      items, pixPayload, pixKey: paymentMethod === "PIX" && order.status === "AWAITING_PAYMENT" ? cfg.pixKey : "",
+      usdtWhatsappUrl,
       storeName: cfg.storeName, whatsapp: cfg.whatsapp,
     });
   } catch (err: any) { res.status(500).json({ error: "Erro ao consultar pedido." }); }
@@ -1028,6 +1187,7 @@ router.post("/orders/:code/proof", async (req, res) => {
     const [order] = await db.select().from(storeOrders).where(eq(storeOrders.code, code)).limit(1);
     if (!order) return res.status(404).json({ error: "Pedido não encontrado." });
     if (order.status === "CANCELED") return res.status(400).json({ error: "Este pedido foi cancelado." });
+    if (String(order.paymentMethod || "PIX") !== "PIX") return res.status(400).json({ error: "Este pedido não usa pagamento por PIX." });
 
     await db.update(storeOrders).set({
       proofFileName: String(fileName || "comprovante").slice(0, 120),
@@ -1097,6 +1257,7 @@ router.post("/orders/:code/split", async (req, res) => {
     if (!order) return res.status(404).json({ error: "Pedido não encontrado." });
     if (order.status === "CANCELED") return res.status(400).json({ error: "Este pedido foi cancelado." });
     if (order.status === "CONFIRMED") return res.status(400).json({ error: "Este pedido já está pago." });
+    if (String(order.paymentMethod || "PIX") !== "PIX") return res.status(400).json({ error: "Divisão disponível somente para PIX." });
 
     const { storeOrderPayments } = await import("../db/schema");
     const existing = await db.select().from(storeOrderPayments).where(eq(storeOrderPayments.orderId, order.id));
@@ -1133,6 +1294,7 @@ router.post("/orders/:code/payments/:paymentId/proof", async (req, res) => {
     const [order] = await db.select().from(storeOrders).where(eq(storeOrders.code, code)).limit(1);
     if (!order) return res.status(404).json({ error: "Pedido não encontrado." });
     if (order.status === "CANCELED") return res.status(400).json({ error: "Este pedido foi cancelado." });
+    if (String(order.paymentMethod || "PIX") !== "PIX") return res.status(400).json({ error: "Este pedido não usa pagamento por PIX." });
 
     const { storeOrderPayments } = await import("../db/schema");
     const [part] = await db.select().from(storeOrderPayments)
@@ -1171,7 +1333,11 @@ router.get("/admin/orders", requireAuth, requirePermission("sales", "view"), asy
       payerIsBuyer: storeOrders.payerIsBuyer, payerDeclaredName: storeOrders.payerDeclaredName,
       payerDeclaredCpf: storeOrders.payerDeclaredCpf,
       deliveryConfirmedAt: storeOrders.deliveryConfirmedAt,
-      deliveryType: storeOrders.deliveryType, address: storeOrders.address, notes: storeOrders.notes,
+      paymentMethod: storeOrders.paymentMethod,
+      deliveryType: storeOrders.deliveryType, address: storeOrders.address,
+      cep: storeOrders.cep, street: storeOrders.street, number: storeOrders.number,
+      neighborhood: storeOrders.neighborhood, city: storeOrders.city, state: storeOrders.state,
+      shippingMethod: storeOrders.shippingMethod, notes: storeOrders.notes,
       totalAmount: storeOrders.totalAmount, status: storeOrders.status,
       proofFileName: storeOrders.proofFileName, proofSentAt: storeOrders.proofSentAt,
       createdAt: storeOrders.createdAt, confirmedAt: storeOrders.confirmedAt,
@@ -1245,6 +1411,7 @@ router.post("/admin/orders/:id/confirm", requireAuth, requirePermission("cash", 
     // Conferência do dinheiro: o valor que caiu na conta tem que bater com o pedido.
     // Se veio a menos, só confirma com aceite explícito (e a diferença fica registrada).
     const total = round2(Number(o.totalAmount));
+    const paymentMethod = String(o.paymentMethod || "PIX").toUpperCase() === "USDT" ? "USDT" : "PIX";
     const informed = req.body?.receivedAmount;
     const received = informed == null || informed === "" ? total : round2(Number(informed));
     if (!(received >= 0)) return res.status(400).json({ error: "Valor recebido inválido." });
@@ -1281,7 +1448,7 @@ router.post("/admin/orders/:id/confirm", requireAuth, requirePermission("cash", 
         .where(eq(storeOrderPayments.orderId, o.id));
 
       if (o.saleId) {
-        await routePayment(tx, "PIX", received, {
+        await routePayment(tx, paymentMethod, received, {
           saleId: o.saleId, saleLabel: `Pedido ${o.code}`, userId: req.user!.userId, sourceCurrency: "BRL",
         });
         const [sale] = await tx.select().from(sales).where(eq(sales.id, o.saleId)).limit(1).for("update");
@@ -1293,13 +1460,13 @@ router.post("/admin/orders/:id/confirm", requireAuth, requirePermission("cash", 
       }
 
       await logAction(req.user!.userId, "STORE_ORDER_CONFIRM", "store_orders", o.id, null, {
-        code: o.code, total, received, missing: missing > 0 ? missing : 0, payerName: req.body?.payerName || null,
+        code: o.code, paymentMethod, total, received, missing: missing > 0 ? missing : 0, payerName: req.body?.payerName || null,
       }, tx);
     });
 
     await createNotification(db, {
       type: "PAYMENT_CONFIRMED", title: "Pagamento confirmado",
-      message: `Pagamento de ${formatBrl(received)} do pedido ${o.code} (${o.customerName}) confirmado.`,
+      message: `Pagamento ${paymentMethod} de ${formatBrl(received)} do pedido ${o.code} (${o.customerName}) confirmado.`,
       link: "/store-orders",
     });
 
@@ -1497,7 +1664,7 @@ router.get("/admin/orders/:id/dossier", requireAuth, requirePermission("sales", 
     const statusCor = o.status === "CONFIRMED" ? OK : o.status === "CANCELED" ? BAD : WARN;
     doc.roundedRect(M, y, W, 52, 4).fillAndStroke(SOFT, LINE);
     // valor em destaque à esquerda
-    doc.fontSize(6).font("Helvetica").fillColor(MUTED).text("VALOR PAGO POR PIX", M + 14, y + 9, { characterSpacing: 0.5, width: 200 });
+    doc.fontSize(6).font("Helvetica").fillColor(MUTED).text("VALOR DO PEDIDO", M + 14, y + 9, { characterSpacing: 0.5, width: 200 });
     doc.fontSize(19).font("Helvetica-Bold").fillColor(INK).text(brl(o.totalAmount), M + 14, y + 20, { width: 200 });
     // três blocos à direita
     const info: Array<[string, string, string]> = [
@@ -1524,12 +1691,15 @@ router.get("/admin/orders/:id/dossier", requireAuth, requirePermission("sales", 
 
     const recebido = o.receivedAmountBrl != null ? Number(o.receivedAmountBrl) : null;
     const falta = recebido != null ? round2(Number(o.totalAmount) - recebido) : 0;
-    yR = kv(COL2, yR, COL, "Forma", parts.length > 0 ? `PIX em ${parts.length} pagamentos` : "PIX à vista");
+    const orderPaymentMethod = String(o.paymentMethod || "PIX").toUpperCase() === "USDT" ? "USDT" : "PIX";
+    yR = kv(COL2, yR, COL, "Forma", orderPaymentMethod === "USDT" ? "USDT · combinado pelo WhatsApp" : parts.length > 0 ? `PIX em ${parts.length} pagamentos` : "PIX à vista");
     yR = kv(COL2, yR, COL, "Quem paga (declarado no pedido)",
-      o.payerIsBuyer === false
+      orderPaymentMethod === "USDT"
+        ? "comprador · negociação pelo WhatsApp"
+        : o.payerIsBuyer === false
         ? `${o.payerDeclaredName || "—"} · CPF ${cpfFmt(o.payerDeclaredCpf)} (autorizado)`
         : "o próprio comprador");
-    yR = kv(COL2, yR, COL, "Titular do comprovante", o.payerName || "não informado");
+    yR = kv(COL2, yR, COL, "Titular do pagamento", o.payerName || "não informado");
     yR = kv(COL2, yR, COL, "Valor conferido pela loja",
       recebido == null ? "ainda não conferido" : falta > 0.009 ? `${brl(recebido)} — faltaram ${brl(falta)}` : `${brl(recebido)} — confere`,
       recebido == null ? WARN : falta > 0.009 ? BAD : OK);

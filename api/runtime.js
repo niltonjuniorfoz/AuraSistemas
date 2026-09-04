@@ -850,6 +850,8 @@ var init_schema = __esm({
       customerName: text("customer_name").notNull(),
       customerPhone: text("customer_phone").notNull(),
       customerDocument: text("customer_document"),
+      paymentMethod: text("payment_method").notNull().default("PIX"),
+      // PIX | USDT
       deliveryType: text("delivery_type").notNull().default("PICKUP"),
       // PICKUP | DELIVERY
       cep: text("cep"),
@@ -4177,7 +4179,8 @@ var METHOD_ACCOUNT_TYPES = {
   PIX: ["BANK"],
   DEBIT_CARD: ["BANK"],
   CREDIT_CARD: ["CARD_RECEIVABLE"],
-  TRANSFER: ["BANK", "OTHER"]
+  TRANSFER: ["BANK", "OTHER"],
+  USDT: ["BANK", "OTHER"]
 };
 async function postMovement(tx, accountId, type, amount, opts = {}) {
   const rows = await tx.select().from(financialAccounts).where(eq13(financialAccounts.id, accountId)).limit(1).for("update");
@@ -4471,7 +4474,7 @@ router12.get("/method-map", requirePermission("cash", "view"), async (_req, res)
 router12.put("/method-map", requirePermission("cash", "manage_accounts"), async (req, res) => {
   try {
     const map = req.body?.map || {};
-    for (const method of ["CASH", "PIX", "CREDIT_CARD", "DEBIT_CARD", "TRANSFER"]) {
+    for (const method of ["CASH", "PIX", "CREDIT_CARD", "DEBIT_CARD", "TRANSFER", "USDT"]) {
       const accountId = map[method] || null;
       const existing = await db.select().from(paymentMethodAccounts).where(eq13(paymentMethodAccounts.method, method)).limit(1);
       if (existing.length) await db.update(paymentMethodAccounts).set({ accountId }).where(eq13(paymentMethodAccounts.method, method));
@@ -7462,7 +7465,7 @@ router18.post("/misc-receipt", requirePermission("cash", "receive_payment"), asy
     if (!ALLOWED_PAYMENT_METHODS.includes(String(method))) return res.status(400).json({ error: "Forma de pagamento inv\xE1lida." });
     const amt = Number(amount);
     if (!Number.isFinite(amt) || amt <= 0) return res.status(400).json({ error: "Valor deve ser maior que zero." });
-    const desc24 = String(description || "Recebimento avulso").trim() || "Recebimento avulso";
+    const desc25 = String(description || "Recebimento avulso").trim() || "Recebimento avulso";
     await db.transaction(async (tx) => {
       if (method === "CASH" && cashRegisterId) {
         const reg = await tx.select().from(cashRegisters).where(eq21(cashRegisters.id, cashRegisterId)).limit(1);
@@ -7470,14 +7473,14 @@ router18.post("/misc-receipt", requirePermission("cash", "receive_payment"), asy
           if (reg[0].userId !== req.user.userId && !isPrivilegedRole2(req.user.roleName)) {
             throw new Error("Este caixa pertence a outro operador.");
           }
-          await tx.insert(cashMovements).values({ cashRegisterId, type: "SUPPLY", amountUsd: amt.toFixed(2), description: `Avulso: ${desc24}`, createdBy: req.user.userId });
+          await tx.insert(cashMovements).values({ cashRegisterId, type: "SUPPLY", amountUsd: amt.toFixed(2), description: `Avulso: ${desc25}`, createdBy: req.user.userId });
         }
       }
       const companyRows = await tx.select({ defaultCurrency: companySettings.defaultCurrency }).from(companySettings).limit(1);
       const miscCurrency = companyRows[0]?.defaultCurrency === "BRL" ? "BRL" : "USD";
-      const routed = await routePayment(tx, method, amt, { saleLabel: `Avulso: ${desc24}`, userId: req.user.userId, accountId: accountId || null, sourceCurrency: miscCurrency });
+      const routed = await routePayment(tx, method, amt, { saleLabel: `Avulso: ${desc25}`, userId: req.user.userId, accountId: accountId || null, sourceCurrency: miscCurrency });
       if (!routed) throw new Error(`Nenhuma conta configurada para ${method} \u2014 mapeie em Financeiro > Mapear Contas antes de receber.`);
-      await tx.insert(auditLogs).values({ id: uuidv49(), userId: req.user.userId, action: "MISC_RECEIPT", tableName: "financial_accounts", recordId: accountId || "-", newValues: JSON.stringify({ method, amount: amt, description: desc24 }) });
+      await tx.insert(auditLogs).values({ id: uuidv49(), userId: req.user.userId, action: "MISC_RECEIPT", tableName: "financial_accounts", recordId: accountId || "-", newValues: JSON.stringify({ method, amount: amt, description: desc25 }) });
     });
     res.status(201).json({ success: true });
   } catch (err) {
@@ -7546,6 +7549,7 @@ router19.get("/queue", requirePermission("separation", "view"), async (req, res)
       id: sales.id,
       series: sales.series,
       number: sales.number,
+      paymentStatus: sales.paymentStatus,
       fulfillmentStatus: sales.fulfillmentStatus,
       createdAt: sales.createdAt
     }).from(sales).where(inArray9(sales.fulfillmentStatus, ["PENDING", "SEPARATING"])).orderBy(desc11(sales.createdAt)).limit(100);
@@ -7664,9 +7668,7 @@ router19.post("/tasks/:taskId/cancel", requirePermission("separation", "process"
   try {
     const { taskId } = req.params;
     const task = await db.select().from(separationTasks).where(eq22(separationTasks.id, taskId)).limit(1);
-    if (task.length === 0) {
-      return res.status(404).json({ error: "Separa\xE7\xE3o n\xE3o encontrada." });
-    }
+    if (task.length === 0) return res.status(404).json({ error: "Separa\xE7\xE3o n\xE3o encontrada." });
     if (["COMPLETED"].includes(task[0].status)) {
       return res.status(400).json({ error: "Separa\xE7\xE3o j\xE1 finalizada n\xE3o pode ser cancelada por aqui." });
     }
@@ -7685,9 +7687,7 @@ router19.post("/tasks/:taskId/complete", requirePermission("separation", "proces
     const { taskId } = req.params;
     const items = await db.select().from(separationItems).where(eq22(separationItems.separationTaskId, taskId));
     const hasPending = items.some((i) => i.status === "PENDING");
-    if (hasPending) {
-      return res.status(400).json({ error: "Cannot complete task with PENDING items." });
-    }
+    if (hasPending) return res.status(400).json({ error: "Cannot complete task with PENDING items." });
     const hasDivergent = items.some((i) => i.status === "DIVERGENT");
     await db.transaction(async (tx) => {
       const taskStatus = hasDivergent ? "DIVERGENT" : "COMPLETED";
@@ -9197,16 +9197,157 @@ router22.put("/brands/:name", requirePermission("settings", "manage"), async (re
 });
 var settings_default = router22;
 
+// src/server/currencyConfig.ts
+init_db();
+init_schema();
+init_authMiddleware();
+init_audit();
+import { Router as Router23 } from "express";
+import { eq as eq27 } from "drizzle-orm";
+var router23 = Router23();
+var PREFS_KEY = "currency_preferences";
+var PIX_KEY = "company_pix";
+var SUPPORTED = ["BRL", "PYG", "USD"];
+var DEFAULT_RATES = {
+  USD: 1,
+  BRL: 5.5,
+  PYG: 7300
+};
+function positiveNumber(value, fallback) {
+  const parsed = Number(String(value ?? "").replace(",", "."));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+function normalizeEnabled(value) {
+  const raw = Array.isArray(value) ? value : [];
+  const unique2 = [...new Set(raw.map((item) => String(item || "").toUpperCase()))].filter((code) => SUPPORTED.includes(code));
+  return unique2.length ? unique2 : [...SUPPORTED];
+}
+function normalizeMode(value) {
+  const mode = String(value || "").toUpperCase();
+  if (mode === "BRL" || mode === "USD" || mode === "DUAL") return mode;
+  return "DUAL";
+}
+async function readCurrencyConfig() {
+  const [companyRows, currencyRows, preferenceRows, pixRows] = await Promise.all([
+    db.select().from(companySettings).limit(1),
+    db.select().from(currencies),
+    db.select().from(systemSettings).where(eq27(systemSettings.key, PREFS_KEY)).limit(1),
+    db.select().from(systemSettings).where(eq27(systemSettings.key, PIX_KEY)).limit(1)
+  ]);
+  const rateMap = new Map(currencyRows.map((row) => [String(row.code || "").toUpperCase(), positiveNumber(row.rateToUsd, 1)]));
+  const preferences = preferenceRows[0]?.value || {};
+  const pix = pixRows[0]?.value || {};
+  const defaultCurrency = normalizeMode(companyRows[0]?.defaultCurrency || preferences.defaultCurrency || "DUAL");
+  const enabledCurrencies = normalizeEnabled(preferences.enabledCurrencies);
+  return {
+    defaultCurrency,
+    enabledCurrencies,
+    rates: {
+      USD: 1,
+      BRL: positiveNumber(rateMap.get("BRL"), DEFAULT_RATES.BRL),
+      PYG: positiveNumber(rateMap.get("PYG"), DEFAULT_RATES.PYG)
+    },
+    pixExchangeRate: positiveNumber(pix.pixExchangeRate, positiveNumber(rateMap.get("BRL"), DEFAULT_RATES.BRL))
+  };
+}
+async function upsertSystemSetting(key, value) {
+  const rows = await db.select().from(systemSettings).where(eq27(systemSettings.key, key)).limit(1);
+  if (rows.length) {
+    await db.update(systemSettings).set({ value, updatedAt: /* @__PURE__ */ new Date() }).where(eq27(systemSettings.key, key));
+  } else {
+    await db.insert(systemSettings).values({ key, value });
+  }
+}
+async function upsertRate(code, rate, updatedBy) {
+  const existing = await db.select().from(currencies).where(eq27(currencies.code, code)).limit(1);
+  const metadata = code === "USD" ? { name: "D\xF3lar americano", symbol: "US$" } : code === "BRL" ? { name: "Real brasileiro", symbol: "R$" } : { name: "Guarani paraguaio", symbol: "Gs" };
+  if (existing.length) {
+    await db.update(currencies).set({
+      rateToUsd: String(rate),
+      name: existing[0].name || metadata.name,
+      symbol: existing[0].symbol || metadata.symbol,
+      updatedAt: /* @__PURE__ */ new Date(),
+      updatedBy
+    }).where(eq27(currencies.code, code));
+  } else {
+    await db.insert(currencies).values({
+      code,
+      name: metadata.name,
+      symbol: metadata.symbol,
+      rateToUsd: String(rate),
+      updatedBy
+    });
+  }
+}
+router23.get("/public", async (_req, res) => {
+  try {
+    const config = await readCurrencyConfig();
+    res.setHeader("Cache-Control", "no-store");
+    res.json(config);
+  } catch (error) {
+    res.status(500).json({ error: error.message || "N\xE3o foi poss\xEDvel carregar as moedas." });
+  }
+});
+router23.use((req, res, next) => requireAuth(req, res, next));
+router23.get("/", requirePermission("settings", "manage"), async (_req, res) => {
+  try {
+    res.json(await readCurrencyConfig());
+  } catch (error) {
+    res.status(500).json({ error: error.message || "N\xE3o foi poss\xEDvel carregar as moedas." });
+  }
+});
+router23.put("/", requirePermission("settings", "manage"), async (req, res) => {
+  try {
+    const updatedBy = req.user.userId;
+    const current = await readCurrencyConfig();
+    const defaultCurrency = normalizeMode(req.body?.defaultCurrency ?? current.defaultCurrency);
+    const enabledCurrencies = normalizeEnabled(req.body?.enabledCurrencies ?? current.enabledCurrencies);
+    const brlRate = positiveNumber(req.body?.brlRate ?? req.body?.rates?.BRL, current.rates.BRL);
+    const pygRate = positiveNumber(req.body?.pygRate ?? req.body?.rates?.PYG, current.rates.PYG);
+    const pixExchangeRate = positiveNumber(req.body?.pixExchangeRate, brlRate);
+    await Promise.all([
+      upsertRate("USD", 1, updatedBy),
+      upsertRate("BRL", brlRate, updatedBy),
+      upsertRate("PYG", pygRate, updatedBy)
+    ]);
+    const companyRows = await db.select().from(companySettings).limit(1);
+    if (companyRows.length) {
+      await db.update(companySettings).set({ defaultCurrency, updatedAt: /* @__PURE__ */ new Date(), updatedBy }).where(eq27(companySettings.id, companyRows[0].id));
+    } else {
+      await db.insert(companySettings).values({ defaultCurrency, updatedBy });
+    }
+    await upsertSystemSetting(PREFS_KEY, { defaultCurrency, enabledCurrencies });
+    const pixRows = await db.select().from(systemSettings).where(eq27(systemSettings.key, PIX_KEY)).limit(1);
+    const oldPix = pixRows[0]?.value || {};
+    await upsertSystemSetting(PIX_KEY, {
+      ...oldPix,
+      pixKey: String(oldPix.pixKey || ""),
+      pixExchangeRate: String(pixExchangeRate)
+    });
+    clearApiCache("settings:");
+    await logAction(updatedBy, "UPDATE", "currency_preferences", PREFS_KEY, current, {
+      defaultCurrency,
+      enabledCurrencies,
+      rates: { USD: 1, BRL: brlRate, PYG: pygRate },
+      pixExchangeRate
+    });
+    res.json(await readCurrencyConfig());
+  } catch (error) {
+    res.status(500).json({ error: error.message || "N\xE3o foi poss\xEDvel salvar as moedas." });
+  }
+});
+var currencyConfig_default = router23;
+
 // src/server/receipts.ts
 init_db();
 init_schema();
 init_authMiddleware();
-import { Router as Router23 } from "express";
-import { eq as eq27, and as and22, inArray as inArray12, sql as sql20 } from "drizzle-orm";
+import { Router as Router24 } from "express";
+import { eq as eq28, and as and22, inArray as inArray12, sql as sql20 } from "drizzle-orm";
 import PDFDocument3 from "pdfkit";
 import nodemailer2 from "nodemailer";
-var router23 = Router23();
-router23.use(requireAuth);
+var router24 = Router24();
+router24.use(requireAuth);
 var companySettingsCompatReady2 = false;
 async function ensureCompanySettingsCompat2() {
   if (companySettingsCompatReady2) return;
@@ -9229,7 +9370,7 @@ async function getReceiptData(saleId) {
     totalAmount: sales.totalAmount,
     currency: sales.currency,
     observations: sales.observations
-  }).from(sales).where(eq27(sales.id, saleId)).limit(1);
+  }).from(sales).where(eq28(sales.id, saleId)).limit(1);
   if (!saleData.length) throw new Error("Venda n\xE3o encontrada.");
   const sale = saleData[0];
   const sItems = await db.select({
@@ -9244,7 +9385,7 @@ async function getReceiptData(saleId) {
       sku: products.sku,
       upc: products.upc
     }
-  }).from(saleItems).leftJoin(products, eq27(saleItems.productId, products.id)).where(eq27(saleItems.saleId, saleId));
+  }).from(saleItems).leftJoin(products, eq28(saleItems.productId, products.id)).where(eq28(saleItems.saleId, saleId));
   const sis = sItems.map((i) => i.id);
   let saleSerials = [];
   let saleLots = [];
@@ -9252,7 +9393,7 @@ async function getReceiptData(saleId) {
     saleSerials = await db.select({
       saleItemId: productSerials.saleItemId,
       serialNumber: productSerials.serialNumber
-    }).from(productSerials).where(and22(inArray12(productSerials.saleItemId, sis), eq27(productSerials.status, "SOLD")));
+    }).from(productSerials).where(and22(inArray12(productSerials.saleItemId, sis), eq28(productSerials.status, "SOLD")));
     saleLots = await db.select({
       saleItemId: saleItemLots.saleItemId,
       lotNumber: saleItemLots.lotNumber,
@@ -9264,8 +9405,8 @@ async function getReceiptData(saleId) {
     serials: saleSerials.filter((s) => s.saleItemId === si.id).map((s) => s.serialNumber),
     lots: saleLots.filter((l) => l.saleItemId === si.id).map((l) => ({ lotNumber: l.lotNumber, quantity: l.quantity }))
   }));
-  const customerObj = await db.select().from(sales).leftJoin(customers, eq27(sales.customerId, customers.id)).where(eq27(sales.id, saleId)).limit(1);
-  const userObj = await db.select().from(sales).leftJoin(users, eq27(sales.userId, users.id)).where(eq27(sales.id, saleId)).limit(1);
+  const customerObj = await db.select().from(sales).leftJoin(customers, eq28(sales.customerId, customers.id)).where(eq28(sales.id, saleId)).limit(1);
+  const userObj = await db.select().from(sales).leftJoin(users, eq28(sales.userId, users.id)).where(eq28(sales.id, saleId)).limit(1);
   const company = await db.select().from(companySettings).limit(1);
   const currencySettings = await getServerCurrencySettings(company[0]?.defaultCurrency);
   return {
@@ -9414,7 +9555,7 @@ var budgetNumber = (value) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 };
-router23.post("/budget/pdf", requirePermission("sales", "create"), async (req, res) => {
+router24.post("/budget/pdf", requirePermission("sales", "create"), async (req, res) => {
   try {
     await ensureCompanySettingsCompat2();
     const body = req.body || {};
@@ -9529,7 +9670,7 @@ router23.post("/budget/pdf", requirePermission("sales", "create"), async (req, r
     res.status(500).json({ error: error.message || "Erro ao gerar PDF do or\xE7amento." });
   }
 });
-router23.get("/:id/receipt", requirePermission("receipt", "view"), async (req, res) => {
+router24.get("/:id/receipt", requirePermission("receipt", "view"), async (req, res) => {
   try {
     const data = await getReceiptData(req.params.id);
     res.json(data);
@@ -9537,7 +9678,7 @@ router23.get("/:id/receipt", requirePermission("receipt", "view"), async (req, r
     res.status(404).json({ error: "Erro ao carregar recibo", details: error.message });
   }
 });
-router23.get("/:id/receipt/pdf", requirePermission("receipt", "download"), async (req, res) => {
+router24.get("/:id/receipt/pdf", requirePermission("receipt", "download"), async (req, res) => {
   try {
     const { format, action = "download" } = req.query;
     const data = await getReceiptData(req.params.id);
@@ -9606,7 +9747,7 @@ Total: ${money(it.totalPrice)}`, { align: "right" });
     res.status(500).json({ error: "Erro ao gerar PDF do recibo", details: error.message });
   }
 });
-router23.post("/:id/receipt/email", requirePermission("receipt", "email"), async (req, res) => {
+router24.post("/:id/receipt/email", requirePermission("receipt", "email"), async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) throw new Error("E-mail n\xE3o informado.");
@@ -9676,20 +9817,20 @@ ${storeName}`,
     res.status(500).json({ error: "Erro ao enviar e-mail", details: error.message });
   }
 });
-var receipts_default = router23;
+var receipts_default = router24;
 
 // src/server/suppliers.ts
 init_db();
 init_schema();
 init_authMiddleware();
-import { Router as Router24 } from "express";
-import { eq as eq28, ilike as ilike5, or as or5, and as and23, isNull as isNull7, sql as sql21, desc as desc14 } from "drizzle-orm";
+import { Router as Router25 } from "express";
+import { eq as eq29, ilike as ilike5, or as or5, and as and23, isNull as isNull7, sql as sql21, desc as desc14 } from "drizzle-orm";
 import multer2 from "multer";
 import fs3 from "fs";
 import path3 from "path";
 import { v4 as uuidv413 } from "uuid";
-var router24 = Router24();
-router24.use(requireAuth);
+var router25 = Router25();
+router25.use(requireAuth);
 var upload2 = multer2({ storage: multer2.memoryStorage() });
 var SUPPLIER_INVOICE_MAX_BYTES = 4 * 1024 * 1024;
 var SUPPLIER_INVOICE_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"];
@@ -9701,13 +9842,13 @@ function toSafeDate(value) {
 function resolveUploadPath(filePath) {
   return path3.join(process.cwd(), filePath.replace(/^\//, ""));
 }
-router24.get("/", requirePermission("supplier", "view"), async (req, res) => {
+router25.get("/", requirePermission("supplier", "view"), async (req, res) => {
   try {
     const { search, includeInactive } = req.query;
     const page = Math.max(parseInt(req.query.page) || 1, 1);
     const limit = Math.min(Math.max(parseInt(req.query.limit) || 50, 1), 500);
     const offset = (page - 1) * limit;
-    let conditions = includeInactive === "true" ? [isNull7(suppliers.deletedAt)] : [eq28(suppliers.isActive, true), isNull7(suppliers.deletedAt)];
+    let conditions = includeInactive === "true" ? [isNull7(suppliers.deletedAt)] : [eq29(suppliers.isActive, true), isNull7(suppliers.deletedAt)];
     let whereClause = and23(...conditions);
     if (search) {
       const q = `%${search}%`;
@@ -9733,7 +9874,7 @@ router24.get("/", requirePermission("supplier", "view"), async (req, res) => {
     res.status(500).json({ error: "Erro ao buscar fornecedores", details: e.message });
   }
 });
-router24.post("/", requirePermission("supplier", "create"), async (req, res) => {
+router25.post("/", requirePermission("supplier", "create"), async (req, res) => {
   try {
     const data = req.body;
     const [created] = await db.insert(suppliers).values({
@@ -9752,19 +9893,19 @@ router24.post("/", requirePermission("supplier", "create"), async (req, res) => 
     res.status(500).json({ error: "Erro ao criar fornecedor", details: e.message });
   }
 });
-router24.get("/:id/invoices", requirePermission("supplier", "view"), async (req, res) => {
+router25.get("/:id/invoices", requirePermission("supplier", "view"), async (req, res) => {
   try {
     const supplierId = req.params.id;
-    const list = await db.select().from(supplierInvoiceFiles).where(eq28(supplierInvoiceFiles.supplierId, supplierId)).orderBy(desc14(supplierInvoiceFiles.createdAt));
+    const list = await db.select().from(supplierInvoiceFiles).where(eq29(supplierInvoiceFiles.supplierId, supplierId)).orderBy(desc14(supplierInvoiceFiles.createdAt));
     res.json({ data: list, total: list.length });
   } catch (e) {
     res.status(500).json({ error: "Erro ao buscar notas do fornecedor", details: e.message });
   }
 });
-router24.post("/:id/invoices", requirePermission("supplier", "edit"), upload2.single("file"), async (req, res) => {
+router25.post("/:id/invoices", requirePermission("supplier", "edit"), upload2.single("file"), async (req, res) => {
   try {
     const supplierId = req.params.id;
-    const [supplier] = await db.select().from(suppliers).where(eq28(suppliers.id, supplierId)).limit(1);
+    const [supplier] = await db.select().from(suppliers).where(eq29(suppliers.id, supplierId)).limit(1);
     if (!supplier) return res.status(404).json({ error: "Fornecedor n\xE3o encontrado" });
     if (!req.file) return res.status(400).json({ error: "Selecione uma foto/PDF da nota." });
     if (!SUPPLIER_INVOICE_MIME_TYPES.includes(req.file.mimetype)) {
@@ -9793,7 +9934,7 @@ router24.post("/:id/invoices", requirePermission("supplier", "edit"), upload2.si
     res.status(500).json({ error: "Erro ao anexar nota ao fornecedor", details: e.message });
   }
 });
-router24.put("/:id/invoices/:invoiceId", requirePermission("supplier", "edit"), async (req, res) => {
+router25.put("/:id/invoices/:invoiceId", requirePermission("supplier", "edit"), async (req, res) => {
   try {
     const supplierId = req.params.id;
     const invoiceId = req.params.invoiceId;
@@ -9802,20 +9943,20 @@ router24.put("/:id/invoices/:invoiceId", requirePermission("supplier", "edit"), 
       invoiceDate: toSafeDate(req.body.invoiceDate),
       observations: req.body.observations ? String(req.body.observations).toUpperCase() : null,
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(and23(eq28(supplierInvoiceFiles.id, invoiceId), eq28(supplierInvoiceFiles.supplierId, supplierId))).returning();
+    }).where(and23(eq29(supplierInvoiceFiles.id, invoiceId), eq29(supplierInvoiceFiles.supplierId, supplierId))).returning();
     if (!updated) return res.status(404).json({ error: "Nota n\xE3o encontrada" });
     res.json(updated);
   } catch (e) {
     res.status(500).json({ error: "Erro ao atualizar nota", details: e.message });
   }
 });
-router24.delete("/:id/invoices/:invoiceId", requirePermission("supplier", "edit"), async (req, res) => {
+router25.delete("/:id/invoices/:invoiceId", requirePermission("supplier", "edit"), async (req, res) => {
   try {
     const supplierId = req.params.id;
     const invoiceId = req.params.invoiceId;
-    const [invoice] = await db.select().from(supplierInvoiceFiles).where(and23(eq28(supplierInvoiceFiles.id, invoiceId), eq28(supplierInvoiceFiles.supplierId, supplierId))).limit(1);
+    const [invoice] = await db.select().from(supplierInvoiceFiles).where(and23(eq29(supplierInvoiceFiles.id, invoiceId), eq29(supplierInvoiceFiles.supplierId, supplierId))).limit(1);
     if (!invoice) return res.status(404).json({ error: "Nota n\xE3o encontrada" });
-    await db.delete(supplierInvoiceFiles).where(eq28(supplierInvoiceFiles.id, invoiceId));
+    await db.delete(supplierInvoiceFiles).where(eq29(supplierInvoiceFiles.id, invoiceId));
     if (invoice.source !== "OCR" && invoice.filePath && String(invoice.filePath).startsWith("/uploads/")) {
       const localPath = resolveUploadPath(invoice.filePath);
       if (fs3.existsSync(localPath)) {
@@ -9830,7 +9971,7 @@ router24.delete("/:id/invoices/:invoiceId", requirePermission("supplier", "edit"
     res.status(500).json({ error: "Erro ao excluir nota", details: e.message });
   }
 });
-router24.put("/:id", requirePermission("supplier", "edit"), async (req, res) => {
+router25.put("/:id", requirePermission("supplier", "edit"), async (req, res) => {
   try {
     const data = req.body;
     const [updated] = await db.update(suppliers).set({
@@ -9844,47 +9985,47 @@ router24.put("/:id", requirePermission("supplier", "edit"), async (req, res) => 
       observations: data.observations?.toUpperCase(),
       isActive: data.isActive,
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq28(suppliers.id, req.params.id)).returning();
+    }).where(eq29(suppliers.id, req.params.id)).returning();
     if (!updated) return res.status(404).json({ error: "N\xE3o encontrado" });
     res.json(updated);
   } catch (e) {
     res.status(500).json({ error: "Erro ao atualizar fornecedor", details: e.message });
   }
 });
-router24.patch("/:id/archive", requirePermission("supplier", "archive"), async (req, res) => {
+router25.patch("/:id/archive", requirePermission("supplier", "archive"), async (req, res) => {
   try {
     const [updated] = await db.update(suppliers).set({
       isActive: false,
       deletedAt: /* @__PURE__ */ new Date(),
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq28(suppliers.id, req.params.id)).returning();
+    }).where(eq29(suppliers.id, req.params.id)).returning();
     if (!updated) return res.status(404).json({ error: "N\xE3o encontrado" });
     res.json(updated);
   } catch (e) {
     res.status(500).json({ error: "Erro ao arquivar fornecedor", details: e.message });
   }
 });
-router24.delete("/:id/hard-delete", requirePermission("supplier", "delete"), async (req, res) => {
+router25.delete("/:id/hard-delete", requirePermission("supplier", "delete"), async (req, res) => {
   try {
     const id = req.params.id;
-    const history = await db.select().from(purchaseOrders).where(eq28(purchaseOrders.supplierId, id)).limit(1);
+    const history = await db.select().from(purchaseOrders).where(eq29(purchaseOrders.supplierId, id)).limit(1);
     if (history.length > 0) {
       return res.status(400).json({ error: "Fornecedor possui compras. Arquive em vez de excluir." });
     }
-    await db.delete(suppliers).where(eq28(suppliers.id, id));
+    await db.delete(suppliers).where(eq29(suppliers.id, id));
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: "Erro ao excluir fornecedor", details: e.message });
   }
 });
-var suppliers_default = router24;
+var suppliers_default = router25;
 
 // src/server/purchases.ts
 init_db();
 init_schema();
 init_authMiddleware();
-import { Router as Router26 } from "express";
-import { eq as eq30, or as or6, and as and25, desc as desc16 } from "drizzle-orm";
+import { Router as Router27 } from "express";
+import { eq as eq31, or as or6, and as and25, desc as desc16 } from "drizzle-orm";
 import multer3 from "multer";
 
 // src/server/ocrService.ts
@@ -9973,14 +10114,14 @@ init_db();
 init_schema();
 init_authMiddleware();
 init_audit();
-import { Router as Router25 } from "express";
-import { and as and24, desc as desc15, eq as eq29 } from "drizzle-orm";
-var router25 = Router25();
-router25.use(requireAuth);
+import { Router as Router26 } from "express";
+import { and as and24, desc as desc15, eq as eq30 } from "drizzle-orm";
+var router26 = Router26();
+router26.use(requireAuth);
 async function createPayableForPurchase(tx, order, userId) {
   const amount = Number(order.totalAmount || 0);
   if (amount <= 0) return;
-  const existing = await tx.select({ id: payables.id }).from(payables).where(and24(eq29(payables.source, "PURCHASE"), eq29(payables.referenceId, order.id))).limit(1);
+  const existing = await tx.select({ id: payables.id }).from(payables).where(and24(eq30(payables.source, "PURCHASE"), eq30(payables.referenceId, order.id))).limit(1);
   if (existing.length > 0) return;
   await tx.insert(payables).values({
     source: "PURCHASE",
@@ -9995,7 +10136,7 @@ async function createPayableForPurchase(tx, order, userId) {
     createdBy: userId || null
   });
 }
-router25.get("/", requirePermission("cash", "view"), async (req, res) => {
+router26.get("/", requirePermission("cash", "view"), async (req, res) => {
   try {
     const onlyOverdue = String(req.query.overdue || "") === "true";
     const includePaid = String(req.query.includePaid || "") === "true";
@@ -10010,7 +10151,7 @@ router25.get("/", requirePermission("cash", "view"), async (req, res) => {
       status: payables.status,
       paidAt: payables.paidAt,
       createdAt: payables.createdAt
-    }).from(payables).leftJoin(suppliers, eq29(payables.supplierId, suppliers.id)).orderBy(desc15(payables.createdAt)).limit(500);
+    }).from(payables).leftJoin(suppliers, eq30(payables.supplierId, suppliers.id)).orderBy(desc15(payables.createdAt)).limit(500);
     const now = Date.now();
     let data = rows.filter((r) => includePaid || r.status !== "PAID").map((r) => {
       const outstanding = Math.round(Math.max(0, Number(r.amountUsd) - Number(r.paidAmount)) * 100) / 100;
@@ -10035,7 +10176,7 @@ router25.get("/", requirePermission("cash", "view"), async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-router25.post("/", requirePermission("expenses", "manage"), async (req, res) => {
+router26.post("/", requirePermission("expenses", "manage"), async (req, res) => {
   try {
     const { description, amountUsd, dueDate, supplierId, notes } = req.body || {};
     const amount = Number(amountUsd);
@@ -10058,16 +10199,16 @@ router25.post("/", requirePermission("expenses", "manage"), async (req, res) => 
     res.status(400).json({ error: err.message });
   }
 });
-router25.post("/:id/pay", requirePermission("expenses", "manage"), async (req, res) => {
+router26.post("/:id/pay", requirePermission("expenses", "manage"), async (req, res) => {
   try {
     const { amount, accountId } = req.body || {};
     if (!accountId) return res.status(400).json({ error: "Escolha a conta de onde o dinheiro sai." });
     const result = await db.transaction(async (tx) => {
-      const rows = await tx.select().from(payables).where(eq29(payables.id, req.params.id)).limit(1).for("update");
+      const rows = await tx.select().from(payables).where(eq30(payables.id, req.params.id)).limit(1).for("update");
       if (rows.length === 0) throw new Error("T\xEDtulo n\xE3o encontrado.");
       const p = rows[0];
       if (p.status === "PAID") throw new Error("T\xEDtulo j\xE1 est\xE1 pago.");
-      const [acc] = await tx.select().from(financialAccounts).where(eq29(financialAccounts.id, accountId)).limit(1);
+      const [acc] = await tx.select().from(financialAccounts).where(eq30(financialAccounts.id, accountId)).limit(1);
       if (!acc) throw new Error("Conta financeira inv\xE1lida.");
       if (acc.type === "CARD_RECEIVABLE") throw new Error("Conta de cart\xE3o a receber n\xE3o pode pagar contas.");
       const total = Number(p.amountUsd);
@@ -10083,7 +10224,7 @@ router25.post("/:id/pay", requirePermission("expenses", "manage"), async (req, r
         status,
         paidAt: status === "PAID" ? /* @__PURE__ */ new Date() : p.paidAt,
         updatedAt: /* @__PURE__ */ new Date()
-      }).where(eq29(payables.id, p.id));
+      }).where(eq30(payables.id, p.id));
       const conv = await convertBrlToAccountCurrency(applied, String(acc.currency || "BRL"));
       const fxNote = String(acc.currency || "BRL") !== "BRL" ? ` - R$ ${applied.toFixed(2)} -> ${acc.currency} ${conv.amount.toFixed(2)} (cambio do dia)` : "";
       await postMovement(tx, accountId, "EXPENSE", -conv.amount, {
@@ -10100,15 +10241,15 @@ router25.post("/:id/pay", requirePermission("expenses", "manage"), async (req, r
     res.status(400).json({ error: err.message });
   }
 });
-router25.delete("/:id", requirePermission("expenses", "manage"), async (req, res) => {
+router26.delete("/:id", requirePermission("expenses", "manage"), async (req, res) => {
   try {
     await db.transaction(async (tx) => {
-      const rows = await tx.select().from(payables).where(eq29(payables.id, req.params.id)).limit(1).for("update");
+      const rows = await tx.select().from(payables).where(eq30(payables.id, req.params.id)).limit(1).for("update");
       if (rows.length === 0) throw new Error("T\xEDtulo n\xE3o encontrado.");
       const p = rows[0];
       if (p.source !== "MANUAL") throw new Error("Somente t\xEDtulos manuais podem ser exclu\xEDdos.");
       if (Number(p.paidAmount) > 0) {
-        const movs = await tx.select().from(accountMovements).where(and24(eq29(accountMovements.referenceType, "payable"), eq29(accountMovements.referenceId, p.id)));
+        const movs = await tx.select().from(accountMovements).where(and24(eq30(accountMovements.referenceType, "payable"), eq30(accountMovements.referenceId, p.id)));
         for (const m of movs) {
           const amt = Number(m.amountUsd);
           if (amt === 0) continue;
@@ -10120,7 +10261,7 @@ router25.delete("/:id", requirePermission("expenses", "manage"), async (req, res
           });
         }
       }
-      await tx.delete(payables).where(eq29(payables.id, p.id));
+      await tx.delete(payables).where(eq30(payables.id, p.id));
       await logAction(req.user.userId, "DELETE", "payables", p.id, p, null);
     });
     res.json({ success: true });
@@ -10128,7 +10269,7 @@ router25.delete("/:id", requirePermission("expenses", "manage"), async (req, res
     res.status(400).json({ error: err.message });
   }
 });
-var payables_default = router25;
+var payables_default = router26;
 
 // src/server/purchases.ts
 init_fx();
@@ -10137,10 +10278,10 @@ import fs4 from "fs";
 import path4 from "path";
 import xlsx from "xlsx";
 import Papa from "papaparse";
-var router26 = Router26();
-router26.use(requireAuth);
+var router27 = Router27();
+router27.use(requireAuth);
 var upload3 = multer3({ storage: multer3.memoryStorage() });
-router26.post("/import/spreadsheet", requirePermission("purchase", "import"), upload3.single("file"), async (req, res) => {
+router27.post("/import/spreadsheet", requirePermission("purchase", "import"), upload3.single("file"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "Nenhum arquivo enviado" });
     const ext = req.file.originalname.split(".").pop()?.toLowerCase();
@@ -10183,7 +10324,7 @@ router26.post("/import/spreadsheet", requirePermission("purchase", "import"), up
     res.status(500).json({ error: "Erro ao ler planilha", details: e.message });
   }
 });
-router26.post("/ocr", requirePermission("purchase", "ocr"), upload3.single("file"), async (req, res) => {
+router27.post("/ocr", requirePermission("purchase", "ocr"), upload3.single("file"), async (req, res) => {
   const jobId = uuidv414();
   try {
     if (!req.file) {
@@ -10214,7 +10355,7 @@ router26.post("/ocr", requirePermission("purchase", "ocr"), upload3.single("file
       rawText: ocrResult.rawText || "",
       parsedJson: JSON.stringify(ocrResult),
       completedAt: /* @__PURE__ */ new Date()
-    }).where(eq30(purchaseOcrJobs.id, jobId));
+    }).where(eq31(purchaseOcrJobs.id, jobId));
     res.json({
       jobId,
       ...ocrResult
@@ -10222,13 +10363,13 @@ router26.post("/ocr", requirePermission("purchase", "ocr"), upload3.single("file
   } catch (err) {
     console.error("OCR Route error:", err);
     try {
-      const [jobExists] = await db.select().from(purchaseOcrJobs).where(eq30(purchaseOcrJobs.id, jobId)).limit(1);
+      const [jobExists] = await db.select().from(purchaseOcrJobs).where(eq31(purchaseOcrJobs.id, jobId)).limit(1);
       if (jobExists) {
         await db.update(purchaseOcrJobs).set({
           status: "FAILED",
           errorMessage: err.message || "Erro desconhecido durante o processamento OCR.",
           completedAt: /* @__PURE__ */ new Date()
-        }).where(eq30(purchaseOcrJobs.id, jobId));
+        }).where(eq31(purchaseOcrJobs.id, jobId));
       } else {
         await db.insert(purchaseOcrJobs).values({
           id: jobId,
@@ -10247,7 +10388,7 @@ router26.post("/ocr", requirePermission("purchase", "ocr"), upload3.single("file
     res.status(500).json({ error: err.message || "Falha ao processar o arquivo via OCR." });
   }
 });
-router26.get("/ocr/jobs", requirePermission("purchase", "view"), async (req, res) => {
+router27.get("/ocr/jobs", requirePermission("purchase", "view"), async (req, res) => {
   try {
     const list = await db.select({
       id: purchaseOcrJobs.id,
@@ -10262,13 +10403,13 @@ router26.get("/ocr/jobs", requirePermission("purchase", "view"), async (req, res
       completedAt: purchaseOcrJobs.completedAt,
       purchaseId: purchaseOrders.id,
       purchaseStatus: purchaseOrders.status
-    }).from(purchaseOcrJobs).leftJoin(purchaseOrders, eq30(purchaseOcrJobs.id, purchaseOrders.ocrJobId)).orderBy(desc16(purchaseOcrJobs.createdAt));
+    }).from(purchaseOcrJobs).leftJoin(purchaseOrders, eq31(purchaseOcrJobs.id, purchaseOrders.ocrJobId)).orderBy(desc16(purchaseOcrJobs.createdAt));
     res.json({ data: list });
   } catch (err) {
     res.status(500).json({ error: "Erro ao buscar hist\xF3rico de OCR", details: err.message });
   }
 });
-router26.get("/ocr/jobs/:id", requirePermission("purchase", "view"), async (req, res) => {
+router27.get("/ocr/jobs/:id", requirePermission("purchase", "view"), async (req, res) => {
   try {
     const list = await db.select({
       id: purchaseOcrJobs.id,
@@ -10284,7 +10425,7 @@ router26.get("/ocr/jobs/:id", requirePermission("purchase", "view"), async (req,
       completedAt: purchaseOcrJobs.completedAt,
       purchaseId: purchaseOrders.id,
       purchaseStatus: purchaseOrders.status
-    }).from(purchaseOcrJobs).leftJoin(purchaseOrders, eq30(purchaseOcrJobs.id, purchaseOrders.ocrJobId)).where(eq30(purchaseOcrJobs.id, req.params.id)).limit(1);
+    }).from(purchaseOcrJobs).leftJoin(purchaseOrders, eq31(purchaseOcrJobs.id, purchaseOrders.ocrJobId)).where(eq31(purchaseOcrJobs.id, req.params.id)).limit(1);
     if (!list.length) {
       return res.status(404).json({ error: "Trabalho OCR n\xE3o encontrado" });
     }
@@ -10316,10 +10457,10 @@ router26.get("/ocr/jobs/:id", requirePermission("purchase", "view"), async (req,
     res.status(500).json({ error: "Erro ao carregar detalhes do trabalho OCR", details: err.message });
   }
 });
-router26.delete("/ocr/jobs/:id", requirePermission("purchase", "ocr"), async (req, res) => {
+router27.delete("/ocr/jobs/:id", requirePermission("purchase", "ocr"), async (req, res) => {
   try {
     const jobId = req.params.id;
-    const [job] = await db.select().from(purchaseOcrJobs).where(eq30(purchaseOcrJobs.id, jobId)).limit(1);
+    const [job] = await db.select().from(purchaseOcrJobs).where(eq31(purchaseOcrJobs.id, jobId)).limit(1);
     if (!job) {
       return res.status(404).json({ error: "Trabalho OCR n\xE3o encontrado" });
     }
@@ -10333,7 +10474,7 @@ router26.delete("/ocr/jobs/:id", requirePermission("purchase", "ocr"), async (re
         }
       }
     }
-    await db.delete(purchaseOcrJobs).where(eq30(purchaseOcrJobs.id, jobId));
+    await db.delete(purchaseOcrJobs).where(eq31(purchaseOcrJobs.id, jobId));
     res.json({ success: true, message: "Hist\xF3rico OCR exclu\xEDdo com sucesso." });
   } catch (err) {
     res.status(500).json({ error: "Erro ao excluir hist\xF3rico de OCR", details: err.message });
@@ -10341,10 +10482,10 @@ router26.delete("/ocr/jobs/:id", requirePermission("purchase", "ocr"), async (re
 });
 async function attachOcrInvoiceToSupplier(tx, data, purchaseOrderId, userId) {
   if (!data?.supplierId || !data?.ocrJobId) return;
-  const [job] = await tx.select().from(purchaseOcrJobs).where(eq30(purchaseOcrJobs.id, data.ocrJobId)).limit(1);
+  const [job] = await tx.select().from(purchaseOcrJobs).where(eq31(purchaseOcrJobs.id, data.ocrJobId)).limit(1);
   if (!job || !job.filePath) return;
   const invoiceDate = data.invoiceDate ? new Date(data.invoiceDate) : null;
-  const [existing] = await tx.select().from(supplierInvoiceFiles).where(eq30(supplierInvoiceFiles.ocrJobId, data.ocrJobId)).limit(1);
+  const [existing] = await tx.select().from(supplierInvoiceFiles).where(eq31(supplierInvoiceFiles.ocrJobId, data.ocrJobId)).limit(1);
   let persistentFilePath = job.filePath;
   if (String(job.filePath).startsWith("/uploads/")) {
     try {
@@ -10372,16 +10513,16 @@ async function attachOcrInvoiceToSupplier(tx, data, purchaseOrderId, userId) {
     updatedAt: /* @__PURE__ */ new Date()
   };
   if (existing) {
-    await tx.update(supplierInvoiceFiles).set(values).where(eq30(supplierInvoiceFiles.id, existing.id));
+    await tx.update(supplierInvoiceFiles).set(values).where(eq31(supplierInvoiceFiles.id, existing.id));
     return;
   }
   await tx.insert(supplierInvoiceFiles).values(values);
 }
 async function approvePurchaseOrder(tx, orderId, userId) {
-  const [order] = await tx.select().from(purchaseOrders).where(eq30(purchaseOrders.id, orderId)).limit(1);
+  const [order] = await tx.select().from(purchaseOrders).where(eq31(purchaseOrders.id, orderId)).limit(1);
   if (!order) throw new Error("Compra n\xE3o encontrada");
   if (order.status !== "DRAFT") throw new Error("Apenas compras em rascunho podem ser aprovadas");
-  const items = await tx.select().from(purchaseOrderItems).where(eq30(purchaseOrderItems.purchaseOrderId, order.id));
+  const items = await tx.select().from(purchaseOrderItems).where(eq31(purchaseOrderItems.purchaseOrderId, order.id));
   const duplicateErrors = {};
   const orderCurrency = String(order.currency || "BRL");
   let fxToBrl = Number(order.fxRateToBrl) || 0;
@@ -10392,7 +10533,7 @@ async function approvePurchaseOrder(tx, orderId, userId) {
       fxToBrl = orderCurrency === "USD" ? rates.USDBRL?.rate || 0 : orderCurrency === "PYG" ? rates.BRLPYG?.rate ? 1 / rates.BRLPYG.rate : 0 : orderCurrency === "USDT" ? rates.USDTBRL?.rate || 0 : 0;
       if (!(fxToBrl > 0)) throw new Error(`Sem c\xE2mbio ${orderCurrency}\u2192BRL. Informe o c\xE2mbio na compra ou em Financeiro > C\xE2mbio de hoje.`);
     }
-    await tx.update(purchaseOrders).set({ fxRateToBrl: fxToBrl.toFixed(6) }).where(eq30(purchaseOrders.id, order.id));
+    await tx.update(purchaseOrders).set({ fxRateToBrl: fxToBrl.toFixed(6) }).where(eq31(purchaseOrders.id, order.id));
   }
   const totalUnits = items.reduce((s, i) => s + Number(i.quantity || 0), 0);
   const freightPerUnit = totalUnits > 0 ? Number(order.freightAmount || 0) / totalUnits : 0;
@@ -10414,8 +10555,8 @@ async function approvePurchaseOrder(tx, orderId, userId) {
       if (pA <= 0) duplicateErrors[`items.${idx}.salePriceA`] = "Pre\xE7o A deve ser maior que zero para novo produto.";
       const [existing] = await tx.select().from(products).where(
         or6(
-          eq30(products.sku, item.sku.toUpperCase()),
-          item.upc ? eq30(products.upc, item.upc.toUpperCase()) : void 0
+          eq31(products.sku, item.sku.toUpperCase()),
+          item.upc ? eq31(products.upc, item.upc.toUpperCase()) : void 0
         )
       ).limit(1);
       if (existing) {
@@ -10437,10 +10578,10 @@ async function approvePurchaseOrder(tx, orderId, userId) {
           unitMeasure: "UN"
         }).returning();
         activeProductId = insertedProduct.id;
-        await tx.update(purchaseOrderItems).set({ productId: activeProductId, status: "MAPPED" }).where(eq30(purchaseOrderItems.id, item.id));
+        await tx.update(purchaseOrderItems).set({ productId: activeProductId, status: "MAPPED" }).where(eq31(purchaseOrderItems.id, item.id));
       }
     } else {
-      const [existingProd] = await tx.select().from(products).where(eq30(products.id, activeProductId)).limit(1);
+      const [existingProd] = await tx.select().from(products).where(eq31(products.id, activeProductId)).limit(1);
       if (existingProd) {
         if (existingProd.hasSerialNumber && !item.hasSerialNumber) {
           duplicateErrors[`items.${idx}.serials`] = `Aten\xE7\xE3o: Este produto controla S/N. Forne\xE7a os seriais.`;
@@ -10470,7 +10611,7 @@ async function approvePurchaseOrder(tx, orderId, userId) {
         }
         if (hasUpdates) {
           updates.updatedAt = /* @__PURE__ */ new Date();
-          await tx.update(products).set(updates).where(eq30(products.id, activeProductId));
+          await tx.update(products).set(updates).where(eq31(products.id, activeProductId));
           if (userId) {
             await tx.insert(auditLogs).values({
               userId,
@@ -10484,16 +10625,16 @@ async function approvePurchaseOrder(tx, orderId, userId) {
         }
       }
     }
-    const requireSerial = activeProductId ? (await tx.select().from(products).where(eq30(products.id, activeProductId)).limit(1))[0]?.hasSerialNumber : item.hasSerialNumber;
+    const requireSerial = activeProductId ? (await tx.select().from(products).where(eq31(products.id, activeProductId)).limit(1))[0]?.hasSerialNumber : item.hasSerialNumber;
     if (requireSerial) {
-      const serials = await tx.select().from(purchaseOrderSerials).where(eq30(purchaseOrderSerials.purchaseOrderItemId, item.id));
+      const serials = await tx.select().from(purchaseOrderSerials).where(eq31(purchaseOrderSerials.purchaseOrderItemId, item.id));
       if (serials.length !== item.quantity) {
         duplicateErrors[`items.${idx}.serials`] = `Produto requer ${item.quantity} seriais, possui apenas ${serials.length}.`;
       }
       const duplicatesFound = [];
       for (const sn of serials) {
         if (!activeProductId) continue;
-        const [existingSn] = await tx.select().from(productSerials).where(and25(eq30(productSerials.productId, activeProductId), eq30(productSerials.serialNumber, sn.serialNumber.toUpperCase()))).limit(1);
+        const [existingSn] = await tx.select().from(productSerials).where(and25(eq31(productSerials.productId, activeProductId), eq31(productSerials.serialNumber, sn.serialNumber.toUpperCase()))).limit(1);
         if (existingSn) {
           duplicatesFound.push(sn.serialNumber);
         } else {
@@ -10502,7 +10643,7 @@ async function approvePurchaseOrder(tx, orderId, userId) {
             serialNumber: sn.serialNumber.toUpperCase(),
             status: "AVAILABLE"
           });
-          await tx.update(purchaseOrderSerials).set({ status: "IMPORTED", productId: activeProductId }).where(eq30(purchaseOrderSerials.id, sn.id));
+          await tx.update(purchaseOrderSerials).set({ status: "IMPORTED", productId: activeProductId }).where(eq31(purchaseOrderSerials.id, sn.id));
         }
       }
       if (duplicatesFound.length > 0) {
@@ -10510,7 +10651,7 @@ async function approvePurchaseOrder(tx, orderId, userId) {
       }
     }
     if (Object.keys(duplicateErrors).length === 0 && activeProductId) {
-      let [sb] = await tx.select().from(stockBalances).where(eq30(stockBalances.productId, activeProductId)).limit(1);
+      let [sb] = await tx.select().from(stockBalances).where(eq31(stockBalances.productId, activeProductId)).limit(1);
       let beforePhys = 0;
       let beforeRes = 0;
       if (!sb) {
@@ -10526,7 +10667,7 @@ async function approvePurchaseOrder(tx, orderId, userId) {
         [sb] = await tx.update(stockBalances).set({
           physicalStock: sb.physicalStock + item.quantity,
           updatedAt: /* @__PURE__ */ new Date()
-        }).where(eq30(stockBalances.productId, activeProductId)).returning();
+        }).where(eq31(stockBalances.productId, activeProductId)).returning();
       }
       if (userId) {
         await tx.insert(stockMovements).values({
@@ -10564,7 +10705,7 @@ async function approvePurchaseOrder(tx, orderId, userId) {
     approvedBy: userId,
     approvedAt: /* @__PURE__ */ new Date(),
     updatedAt: /* @__PURE__ */ new Date()
-  }).where(eq30(purchaseOrders.id, order.id)).returning();
+  }).where(eq31(purchaseOrders.id, order.id)).returning();
   const itemsTotalNative = items.reduce((s, i) => s + (Number(i.costPrice) || 0) * (Number(i.quantity) || 0), 0);
   const payableTotalBrl = Math.round((itemsTotalNative + Number(order.freightAmount || 0)) * fxToBrl * 100) / 100;
   await createPayableForPurchase(tx, {
@@ -10583,7 +10724,7 @@ async function approvePurchaseOrder(tx, orderId, userId) {
   }
   return updated;
 }
-router26.post("/import/confirm", requirePermission("purchase", "import"), async (req, res) => {
+router27.post("/import/confirm", requirePermission("purchase", "import"), async (req, res) => {
   try {
     const data = req.body;
     if (!data.supplierId) return res.status(400).json({ error: "Fornecedor \xE9 obrigat\xF3rio." });
@@ -10657,7 +10798,7 @@ router26.post("/import/confirm", requirePermission("purchase", "import"), async 
     res.status(500).json({ error: "Erro ao confirmar importa\xE7\xE3o", details: e.message });
   }
 });
-router26.get("/", requirePermission("purchase", "view"), async (req, res) => {
+router27.get("/", requirePermission("purchase", "view"), async (req, res) => {
   try {
     const list = await db.select({
       id: purchaseOrders.id,
@@ -10670,7 +10811,7 @@ router26.get("/", requirePermission("purchase", "view"), async (req, res) => {
       supplier: {
         name: suppliers.name
       }
-    }).from(purchaseOrders).leftJoin(suppliers, eq30(purchaseOrders.supplierId, suppliers.id)).orderBy(desc16(purchaseOrders.createdAt));
+    }).from(purchaseOrders).leftJoin(suppliers, eq31(purchaseOrders.supplierId, suppliers.id)).orderBy(desc16(purchaseOrders.createdAt));
     res.json({
       data: list,
       total: list.length,
@@ -10681,12 +10822,12 @@ router26.get("/", requirePermission("purchase", "view"), async (req, res) => {
     res.status(500).json({ error: "Erro ao buscar compras", details: e.message });
   }
 });
-router26.get("/:id", requirePermission("purchase", "view"), async (req, res) => {
+router27.get("/:id", requirePermission("purchase", "view"), async (req, res) => {
   try {
-    const pData = await db.select().from(purchaseOrders).leftJoin(suppliers, eq30(purchaseOrders.supplierId, suppliers.id)).where(eq30(purchaseOrders.id, req.params.id)).limit(1);
+    const pData = await db.select().from(purchaseOrders).leftJoin(suppliers, eq31(purchaseOrders.supplierId, suppliers.id)).where(eq31(purchaseOrders.id, req.params.id)).limit(1);
     if (!pData.length) return res.status(404).json({ error: "N\xE3o encontrado" });
-    const items = await db.select().from(purchaseOrderItems).where(eq30(purchaseOrderItems.purchaseOrderId, req.params.id));
-    const serials = await db.select().from(purchaseOrderSerials).innerJoin(purchaseOrderItems, eq30(purchaseOrderSerials.purchaseOrderItemId, purchaseOrderItems.id)).where(eq30(purchaseOrderItems.purchaseOrderId, req.params.id));
+    const items = await db.select().from(purchaseOrderItems).where(eq31(purchaseOrderItems.purchaseOrderId, req.params.id));
+    const serials = await db.select().from(purchaseOrderSerials).innerJoin(purchaseOrderItems, eq31(purchaseOrderSerials.purchaseOrderItemId, purchaseOrderItems.id)).where(eq31(purchaseOrderItems.purchaseOrderId, req.params.id));
     res.json({
       purchase: pData[0].purchase_orders,
       supplier: pData[0].suppliers,
@@ -10699,7 +10840,7 @@ router26.get("/:id", requirePermission("purchase", "view"), async (req, res) => 
     res.status(500).json({ error: "Erro ao buscar compra", details: e.message });
   }
 });
-router26.post("/", requirePermission("purchase", "create"), async (req, res) => {
+router27.post("/", requirePermission("purchase", "create"), async (req, res) => {
   try {
     const data = req.body;
     const fields = {};
@@ -10774,7 +10915,7 @@ router26.post("/", requirePermission("purchase", "create"), async (req, res) => 
     res.status(500).json({ error: "Erro ao criar compra", details: e.message });
   }
 });
-router26.post("/:id/approve", requirePermission("purchase", "approve"), async (req, res) => {
+router27.post("/:id/approve", requirePermission("purchase", "approve"), async (req, res) => {
   try {
     const orderId = req.params.id;
     const result = await db.transaction(async (tx) => {
@@ -10788,7 +10929,7 @@ router26.post("/:id/approve", requirePermission("purchase", "approve"), async (r
     res.status(500).json({ error: "Erro ao aprovar compra", details: e.message });
   }
 });
-router26.put("/:id", requirePermission("purchase", "create"), async (req, res) => {
+router27.put("/:id", requirePermission("purchase", "create"), async (req, res) => {
   try {
     const orderId = req.params.id;
     const data = req.body;
@@ -10799,7 +10940,7 @@ router26.put("/:id", requirePermission("purchase", "create"), async (req, res) =
       return res.status(400).json({ error: "Dados inv\xE1lidos.", fields });
     }
     const updated = await db.transaction(async (tx) => {
-      const [order] = await tx.select().from(purchaseOrders).where(eq30(purchaseOrders.id, orderId)).limit(1);
+      const [order] = await tx.select().from(purchaseOrders).where(eq31(purchaseOrders.id, orderId)).limit(1);
       if (!order) throw new Error("Compra n\xE3o encontrada.");
       if (order.status !== "DRAFT") throw new Error("Somente rascunhos podem ser editados.");
       const [updatedOrder] = await tx.update(purchaseOrders).set({
@@ -10813,12 +10954,12 @@ router26.put("/:id", requirePermission("purchase", "create"), async (req, res) =
         notes: data.notes || null,
         totalAmount: data.items.reduce((acc, cur) => acc + Number(cur.quantity) * Number(cur.costPrice), 0).toString(),
         updatedAt: /* @__PURE__ */ new Date()
-      }).where(eq30(purchaseOrders.id, orderId)).returning();
-      const existingItems = await tx.select().from(purchaseOrderItems).where(eq30(purchaseOrderItems.purchaseOrderId, orderId));
+      }).where(eq31(purchaseOrders.id, orderId)).returning();
+      const existingItems = await tx.select().from(purchaseOrderItems).where(eq31(purchaseOrderItems.purchaseOrderId, orderId));
       for (const it of existingItems) {
-        await tx.delete(purchaseOrderSerials).where(eq30(purchaseOrderSerials.purchaseOrderItemId, it.id));
+        await tx.delete(purchaseOrderSerials).where(eq31(purchaseOrderSerials.purchaseOrderItemId, it.id));
       }
-      await tx.delete(purchaseOrderItems).where(eq30(purchaseOrderItems.purchaseOrderId, orderId));
+      await tx.delete(purchaseOrderItems).where(eq31(purchaseOrderItems.purchaseOrderId, orderId));
       for (const item of data.items) {
         const [pi] = await tx.insert(purchaseOrderItems).values({
           purchaseOrderId: orderId,
@@ -10860,17 +11001,17 @@ router26.put("/:id", requirePermission("purchase", "create"), async (req, res) =
     res.status(500).json({ error: "Erro ao atualizar compra", details: e.message });
   }
 });
-router26.post("/:id/cancel", requirePermission("purchase", "create"), async (req, res) => {
+router27.post("/:id/cancel", requirePermission("purchase", "create"), async (req, res) => {
   try {
     const orderId = req.params.id;
     const canceled = await db.transaction(async (tx) => {
-      const [order] = await tx.select().from(purchaseOrders).where(eq30(purchaseOrders.id, orderId)).limit(1);
+      const [order] = await tx.select().from(purchaseOrders).where(eq31(purchaseOrders.id, orderId)).limit(1);
       if (!order) throw new Error("Compra n\xE3o encontrada.");
       if (order.status !== "DRAFT") throw new Error("Apenas rascunhos podem ser cancelados diretamente.");
       const [updated] = await tx.update(purchaseOrders).set({
         status: "CANCELED",
         updatedAt: /* @__PURE__ */ new Date()
-      }).where(eq30(purchaseOrders.id, orderId)).returning();
+      }).where(eq31(purchaseOrders.id, orderId)).returning();
       return updated;
     });
     res.json(canceled);
@@ -10878,25 +11019,25 @@ router26.post("/:id/cancel", requirePermission("purchase", "create"), async (req
     res.status(500).json({ error: "Erro ao cancelar compra", details: e.message });
   }
 });
-var purchases_default = router26;
+var purchases_default = router27;
 
 // src/server/expenses.ts
 init_db();
 init_schema();
 init_authMiddleware();
-import { Router as Router27 } from "express";
-import { eq as eq31, desc as desc17, and as and26, gte as gte6, lte as lte6 } from "drizzle-orm";
+import { Router as Router28 } from "express";
+import { eq as eq32, desc as desc17, and as and26, gte as gte6, lte as lte6 } from "drizzle-orm";
 import { v4 as uuidv415 } from "uuid";
-var router27 = Router27();
-router27.get("/categories", requireAuth, async (req, res) => {
+var router28 = Router28();
+router28.get("/categories", requireAuth, async (req, res) => {
   try {
-    const categories = await db.select().from(expenseCategories).where(eq31(expenseCategories.isActive, true));
+    const categories = await db.select().from(expenseCategories).where(eq32(expenseCategories.isActive, true));
     res.json(categories);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
-router27.post("/categories", requireAuth, requirePermission("expenses", "manage"), async (req, res) => {
+router28.post("/categories", requireAuth, requirePermission("expenses", "manage"), async (req, res) => {
   try {
     const { name, type } = req.body;
     const result = await db.insert(expenseCategories).values({
@@ -10909,7 +11050,7 @@ router27.post("/categories", requireAuth, requirePermission("expenses", "manage"
     res.status(500).json({ error: error.message });
   }
 });
-router27.get("/", requireAuth, requirePermission("expenses", "view"), async (req, res) => {
+router28.get("/", requireAuth, requirePermission("expenses", "view"), async (req, res) => {
   try {
     const { dateFrom, dateTo } = req.query;
     let conditions = [];
@@ -10929,17 +11070,17 @@ router27.get("/", requireAuth, requirePermission("expenses", "view"), async (req
       dueDay: expenses.dueDay,
       isActive: expenses.isActive,
       recurrence: expenses.recurrence
-    }).from(expenses).leftJoin(expenseCategories, eq31(expenses.categoryId, expenseCategories.id)).where(conditions.length > 0 ? and26(...conditions) : void 0).orderBy(desc17(expenses.expenseDate));
+    }).from(expenses).leftJoin(expenseCategories, eq32(expenses.categoryId, expenseCategories.id)).where(conditions.length > 0 ? and26(...conditions) : void 0).orderBy(desc17(expenses.expenseDate));
     res.json(results);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
-router27.post("/", requireAuth, requirePermission("expenses", "manage"), async (req, res) => {
+router28.post("/", requireAuth, requirePermission("expenses", "manage"), async (req, res) => {
   try {
     let { categoryId, description, expenseDate, amountUsd, paymentMethod, notes, isFixed, recurrence, dueDay, isActive } = req.body;
     if (!categoryId) {
-      const outrosCat = await db.select().from(expenseCategories).where(eq31(expenseCategories.name, "OUTROS")).limit(1);
+      const outrosCat = await db.select().from(expenseCategories).where(eq32(expenseCategories.name, "OUTROS")).limit(1);
       if (outrosCat.length > 0) {
         categoryId = outrosCat[0].id;
       }
@@ -10963,13 +11104,13 @@ router27.post("/", requireAuth, requirePermission("expenses", "manage"), async (
     res.status(500).json({ error: error.message });
   }
 });
-router27.put("/:id", requireAuth, requirePermission("expenses", "manage"), async (req, res) => {
+router28.put("/:id", requireAuth, requirePermission("expenses", "manage"), async (req, res) => {
   try {
     const { id } = req.params;
     let { categoryId, description, expenseDate, amountUsd, paymentMethod, notes, isFixed, recurrence, dueDay, isActive } = req.body;
     const updateData = { updatedAt: /* @__PURE__ */ new Date() };
     if (categoryId === "") {
-      const outrosCat = await db.select().from(expenseCategories).where(eq31(expenseCategories.name, "OUTROS")).limit(1);
+      const outrosCat = await db.select().from(expenseCategories).where(eq32(expenseCategories.name, "OUTROS")).limit(1);
       if (outrosCat.length > 0) {
         categoryId = outrosCat[0].id;
       }
@@ -10984,30 +11125,30 @@ router27.put("/:id", requireAuth, requirePermission("expenses", "manage"), async
     if (dueDay !== void 0) updateData.dueDay = dueDay ? Number(dueDay) : null;
     if (isActive !== void 0) updateData.isActive = isActive;
     if (recurrence !== void 0) updateData.recurrence = recurrence;
-    const result = await db.update(expenses).set(updateData).where(eq31(expenses.id, id)).returning();
+    const result = await db.update(expenses).set(updateData).where(eq32(expenses.id, id)).returning();
     res.json({ success: true, expense: result[0] });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
-router27.delete("/:id", requireAuth, requirePermission("expenses", "manage"), async (req, res) => {
+router28.delete("/:id", requireAuth, requirePermission("expenses", "manage"), async (req, res) => {
   try {
     const { id } = req.params;
-    await db.delete(expenses).where(eq31(expenses.id, id));
+    await db.delete(expenses).where(eq32(expenses.id, id));
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
-var expenses_default = router27;
+var expenses_default = router28;
 
 // src/server/dashboard.ts
 init_db();
 init_schema();
 init_authMiddleware();
-import { Router as Router28 } from "express";
-import { and as and27, gte as gte7, lte as lte7, eq as eq32, desc as desc18, sql as sql22, inArray as inArray13, isNotNull as isNotNull3 } from "drizzle-orm";
-var router28 = Router28();
+import { Router as Router29 } from "express";
+import { and as and27, gte as gte7, lte as lte7, eq as eq33, desc as desc18, sql as sql22, inArray as inArray13, isNotNull as isNotNull3 } from "drizzle-orm";
+var router29 = Router29();
 var toNumber = (value) => Number(value || 0);
 function isMasterRole3(roleName) {
   const normalized = String(roleName || "").trim().toLowerCase();
@@ -11023,13 +11164,13 @@ function getRecentAuditLogsForUser(roleName) {
     userId: auditLogs.userId,
     userName: users.name,
     recordId: auditLogs.recordId
-  }).from(auditLogs).leftJoin(users, eq32(auditLogs.userId, users.id)).leftJoin(roles, eq32(users.roleId, roles.id)).$dynamic();
+  }).from(auditLogs).leftJoin(users, eq33(auditLogs.userId, users.id)).leftJoin(roles, eq33(users.roleId, roles.id)).$dynamic();
   if (!isMasterRole3(roleName)) {
     query = query.where(hideMasterLogsCondition2);
   }
   return query.orderBy(desc18(auditLogs.createdAt)).limit(10);
 }
-router28.get("/overview", requireAuth, async (req, res) => {
+router29.get("/overview", requireAuth, async (req, res) => {
   try {
     const { dateFrom, dateTo } = req.query;
     const fromDate = dateFrom ? dayStartUtc(String(dateFrom)) : new Date((/* @__PURE__ */ new Date()).setDate(1));
@@ -11038,8 +11179,8 @@ router28.get("/overview", requireAuth, async (req, res) => {
     const prevTo = new Date(fromDate.getTime() - 1);
     const prevFrom = new Date(fromDate.getTime() - 1 - spanMs);
     const [activeProductsCount, activeCustomersCount, salesList, variableExpensesList, fixedExpensesList, recentAuditLogs, prevSalesRows, paymentMixRows, prevCustomersRows, pageviewRows, prevPageviewsRows] = await Promise.all([
-      db.select({ count: sql22`count(*)` }).from(products).where(eq32(products.isActive, true)),
-      db.select({ count: sql22`count(*)` }).from(customers).where(eq32(customers.isActive, true)),
+      db.select({ count: sql22`count(*)` }).from(products).where(eq33(products.isActive, true)),
+      db.select({ count: sql22`count(*)` }).from(customers).where(eq33(customers.isActive, true)),
       db.select({
         id: sales.id,
         subtotalAmount: sales.subtotalAmount,
@@ -11051,30 +11192,30 @@ router28.get("/overview", requireAuth, async (req, res) => {
         gte7(sales.createdAt, fromDate),
         lte7(sales.createdAt, toDate),
         sql22`"sales"."order_status" NOT IN ('CANCELED', 'CANCELLED', 'RETURNED')`,
-        eq32(sales.paymentStatus, "PAID")
+        eq33(sales.paymentStatus, "PAID")
       )),
       db.select().from(expenses).where(and27(
         gte7(expenses.expenseDate, fromDate),
         lte7(expenses.expenseDate, toDate),
-        eq32(expenses.isFixed, false)
+        eq33(expenses.isFixed, false)
       )),
-      db.select().from(expenses).where(and27(eq32(expenses.isFixed, true), eq32(expenses.isActive, true))),
+      db.select().from(expenses).where(and27(eq33(expenses.isFixed, true), eq33(expenses.isActive, true))),
       getRecentAuditLogsForUser(req.user?.roleName),
       // Faturamento e nº de vendas do período anterior (para comparativo).
       db.select({ total: sql22`coalesce(sum(cast(${sales.totalAmount} as numeric)), 0)`, count: sql22`count(*)` }).from(sales).where(and27(
         gte7(sales.createdAt, prevFrom),
         lte7(sales.createdAt, prevTo),
         sql22`"sales"."order_status" NOT IN ('CANCELED', 'CANCELLED', 'RETURNED')`,
-        eq32(sales.paymentStatus, "PAID")
+        eq33(sales.paymentStatus, "PAID")
       )),
       // Formas de pagamento recebidas no período.
-      db.select({ method: payments.paymentMethod, total: sql22`sum(cast(${payments.amountUsd} as numeric))` }).from(payments).where(and27(gte7(payments.createdAt, fromDate), lte7(payments.createdAt, toDate), eq32(payments.status, "COMPLETED"))).groupBy(payments.paymentMethod),
+      db.select({ method: payments.paymentMethod, total: sql22`sum(cast(${payments.amountUsd} as numeric))` }).from(payments).where(and27(gte7(payments.createdAt, fromDate), lte7(payments.createdAt, toDate), eq33(payments.status, "COMPLETED"))).groupBy(payments.paymentMethod),
       // Clientes distintos que compraram no período ANTERIOR (comparativo de "clientes ativos").
       db.select({ count: sql22`count(distinct ${sales.customerId})` }).from(sales).where(and27(
         gte7(sales.createdAt, prevFrom),
         lte7(sales.createdAt, prevTo),
         sql22`"sales"."order_status" NOT IN ('CANCELED', 'CANCELLED', 'RETURNED')`,
-        eq32(sales.paymentStatus, "PAID"),
+        eq33(sales.paymentStatus, "PAID"),
         isNotNull3(sales.customerId)
       )),
       // Visualizações de página da loja no período atual (só a data, pra agrupar por dia depois).
@@ -11095,7 +11236,7 @@ router28.get("/overview", requireAuth, async (req, res) => {
         commissionPercent: users.commissionPercent,
         total: sql22`coalesce(sum(cast(${sales.totalAmount} as numeric)), 0)`,
         count: sql22`count(*)`
-      }).from(sales).leftJoin(users, eq32(sales.userId, users.id)).where(and27(salesPeriodFilter, isNotNull3(sales.userId))).groupBy(sales.userId, users.name, users.commissionPercent).orderBy(desc18(sql22`sum(cast(${sales.totalAmount} as numeric))`)).limit(6),
+      }).from(sales).leftJoin(users, eq33(sales.userId, users.id)).where(and27(salesPeriodFilter, isNotNull3(sales.userId))).groupBy(sales.userId, users.name, users.commissionPercent).orderBy(desc18(sql22`sum(cast(${sales.totalAmount} as numeric))`)).limit(6),
       // Top compradores: melhores clientes do período.
       db.select({
         customerId: sales.customerId,
@@ -11103,7 +11244,7 @@ router28.get("/overview", requireAuth, async (req, res) => {
         total: sql22`coalesce(sum(cast(${sales.totalAmount} as numeric)), 0)`,
         count: sql22`count(*)`,
         lastAt: sql22`max(${sales.createdAt})`
-      }).from(sales).leftJoin(customers, eq32(sales.customerId, customers.id)).where(and27(salesPeriodFilter, isNotNull3(sales.customerId))).groupBy(sales.customerId, customers.name).orderBy(desc18(sql22`sum(cast(${sales.totalAmount} as numeric))`)).limit(6),
+      }).from(sales).leftJoin(customers, eq33(sales.customerId, customers.id)).where(and27(salesPeriodFilter, isNotNull3(sales.customerId))).groupBy(sales.customerId, customers.name).orderBy(desc18(sql22`sum(cast(${sales.totalAmount} as numeric))`)).limit(6),
       // Feed: vendas recentes
       db.select({
         id: sales.id,
@@ -11114,7 +11255,7 @@ router28.get("/overview", requireAuth, async (req, res) => {
         createdAt: sales.createdAt,
         customerName: customers.name,
         userName: users.name
-      }).from(sales).leftJoin(customers, eq32(sales.customerId, customers.id)).leftJoin(users, eq32(sales.userId, users.id)).where(salesPeriodFilter).orderBy(desc18(sales.createdAt)).limit(12),
+      }).from(sales).leftJoin(customers, eq33(sales.customerId, customers.id)).leftJoin(users, eq33(sales.userId, users.id)).where(salesPeriodFilter).orderBy(desc18(sales.createdAt)).limit(12),
       // Feed: recebimentos
       db.select({
         id: payments.id,
@@ -11123,7 +11264,7 @@ router28.get("/overview", requireAuth, async (req, res) => {
         amount: payments.amountUsd,
         createdAt: payments.createdAt,
         userName: users.name
-      }).from(payments).leftJoin(users, eq32(payments.receivedBy, users.id)).where(and27(gte7(payments.createdAt, fromDate), lte7(payments.createdAt, toDate), eq32(payments.status, "COMPLETED"))).orderBy(desc18(payments.createdAt)).limit(12),
+      }).from(payments).leftJoin(users, eq33(payments.receivedBy, users.id)).where(and27(gte7(payments.createdAt, fromDate), lte7(payments.createdAt, toDate), eq33(payments.status, "COMPLETED"))).orderBy(desc18(payments.createdAt)).limit(12),
       // Feed: entradas de mercadoria aprovadas (com moeda da compra)
       db.select({
         id: purchaseOrders.id,
@@ -11133,7 +11274,7 @@ router28.get("/overview", requireAuth, async (req, res) => {
         fxRate: purchaseOrders.fxRateToBrl,
         createdAt: purchaseOrders.approvedAt,
         supplierName: suppliers.name
-      }).from(purchaseOrders).leftJoin(suppliers, eq32(purchaseOrders.supplierId, suppliers.id)).where(and27(eq32(purchaseOrders.status, "APPROVED"), gte7(purchaseOrders.approvedAt, fromDate), lte7(purchaseOrders.approvedAt, toDate))).orderBy(desc18(purchaseOrders.approvedAt)).limit(8),
+      }).from(purchaseOrders).leftJoin(suppliers, eq33(purchaseOrders.supplierId, suppliers.id)).where(and27(eq33(purchaseOrders.status, "APPROVED"), gte7(purchaseOrders.approvedAt, fromDate), lte7(purchaseOrders.approvedAt, toDate))).orderBy(desc18(purchaseOrders.approvedAt)).limit(8),
       // Feed: gastos pessoais
       db.select({
         id: personalExpenses.id,
@@ -11143,14 +11284,14 @@ router28.get("/overview", requireAuth, async (req, res) => {
         description: personalExpenses.description,
         createdAt: personalExpenses.expenseDate,
         categoryName: personalCategories.name
-      }).from(personalExpenses).leftJoin(personalCategories, eq32(personalExpenses.categoryId, personalCategories.id)).where(and27(gte7(personalExpenses.expenseDate, fromDate), lte7(personalExpenses.expenseDate, toDate))).orderBy(desc18(personalExpenses.expenseDate)).limit(8),
+      }).from(personalExpenses).leftJoin(personalCategories, eq33(personalExpenses.categoryId, personalCategories.id)).where(and27(gte7(personalExpenses.expenseDate, fromDate), lte7(personalExpenses.expenseDate, toDate))).orderBy(desc18(personalExpenses.expenseDate)).limit(8),
       // Margem REAL do período (custo FIFO da época da compra) — só vendas já entregues.
       db.select({
         saleId: costConsumptions.saleId,
         cost: sql22`sum(${costConsumptions.qty} * cast(${costConsumptions.unitCostBrl} as numeric))`
-      }).from(costConsumptions).where(and27(gte7(costConsumptions.createdAt, fromDate), lte7(costConsumptions.createdAt, toDate), eq32(costConsumptions.reason, "SALE"))).groupBy(costConsumptions.saleId),
+      }).from(costConsumptions).where(and27(gte7(costConsumptions.createdAt, fromDate), lte7(costConsumptions.createdAt, toDate), eq33(costConsumptions.reason, "SALE"))).groupBy(costConsumptions.saleId),
       // Contas pessoais (saldo em moeda nativa) — para o card do módulo Pessoal.
-      db.select({ id: financialAccounts.id, name: financialAccounts.name, currency: financialAccounts.currency, balance: financialAccounts.currentBalance }).from(financialAccounts).where(and27(eq32(financialAccounts.scope, "PERSONAL"), eq32(financialAccounts.isActive, true))),
+      db.select({ id: financialAccounts.id, name: financialAccounts.name, currency: financialAccounts.currency, balance: financialAccounts.currentBalance }).from(financialAccounts).where(and27(eq33(financialAccounts.scope, "PERSONAL"), eq33(financialAccounts.isActive, true))),
       // Pedidos da loja mais recentes (card "Pedidos recentes") — fulfillmentStatus vem da venda
       // ligada pra saber o estágio real (separando/entregue), não só o status do pedido em si.
       db.select({
@@ -11163,7 +11304,7 @@ router28.get("/overview", requireAuth, async (req, res) => {
         createdAt: storeOrders.createdAt,
         saleId: storeOrders.saleId,
         fulfillmentStatus: sales.fulfillmentStatus
-      }).from(storeOrders).leftJoin(sales, eq32(storeOrders.saleId, sales.id)).where(and27(gte7(storeOrders.createdAt, fromDate), lte7(storeOrders.createdAt, toDate))).orderBy(desc18(storeOrders.createdAt)).limit(8)
+      }).from(storeOrders).leftJoin(sales, eq33(storeOrders.saleId, sales.id)).where(and27(gte7(storeOrders.createdAt, fromDate), lte7(storeOrders.createdAt, toDate))).orderBy(desc18(storeOrders.createdAt)).limit(8)
     ]);
     let grossSales = 0;
     let netSales = 0;
@@ -11182,7 +11323,7 @@ router28.get("/overview", requireAuth, async (req, res) => {
         totalPrice: saleItems.totalPrice,
         unitCost: products.costPrice,
         quantity: saleItems.quantity
-      }).from(saleItems).leftJoin(products, eq32(saleItems.productId, products.id)).where(inArray13(saleItems.saleId, saleIds));
+      }).from(saleItems).leftJoin(products, eq33(saleItems.productId, products.id)).where(inArray13(saleItems.saleId, saleIds));
       for (const i of items) {
         const current = saleTotals.get(i.saleId) || { cost: 0, profit: 0 };
         let cost = 0;
@@ -11198,7 +11339,7 @@ router28.get("/overview", requireAuth, async (req, res) => {
       }
     }
     const orderSaleIds = recentOrdersRows.map((o) => o.saleId).filter((id) => !!id);
-    const orderItemRows = orderSaleIds.length ? await db.select({ saleId: saleItems.saleId, productName: products.name }).from(saleItems).leftJoin(products, eq32(saleItems.productId, products.id)).where(inArray13(saleItems.saleId, orderSaleIds)) : [];
+    const orderItemRows = orderSaleIds.length ? await db.select({ saleId: saleItems.saleId, productName: products.name }).from(saleItems).leftJoin(products, eq33(saleItems.productId, products.id)).where(inArray13(saleItems.saleId, orderSaleIds)) : [];
     const itemsByOrderSale = /* @__PURE__ */ new Map();
     for (const it of orderItemRows) {
       if (!it.saleId) continue;
@@ -11464,17 +11605,17 @@ router28.get("/overview", requireAuth, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-var dashboard_default = router28;
+var dashboard_default = router29;
 
 // src/server/analytics.ts
 init_db();
 init_schema();
 init_authMiddleware();
-import { Router as Router29 } from "express";
-import { and as and28, gte as gte8, lte as lte8, eq as eq33, sql as sql23 } from "drizzle-orm";
-var router29 = Router29();
-router29.use(requireAuth);
-router29.use(requirePermission("reports", "financial"));
+import { Router as Router30 } from "express";
+import { and as and28, gte as gte8, lte as lte8, eq as eq34, sql as sql23 } from "drizzle-orm";
+var router30 = Router30();
+router30.use(requireAuth);
+router30.use(requirePermission("reports", "financial"));
 var num = (v) => Number(v || 0);
 var r2 = (n) => Math.round(n * 100) / 100;
 var SESSION_GAP_MS = 30 * 60 * 1e3;
@@ -11505,7 +11646,7 @@ function buildSessions(rows) {
   }
   return sessions;
 }
-router29.get("/overview", async (req, res) => {
+router30.get("/overview", async (req, res) => {
   try {
     const { dateFrom, dateTo } = req.query;
     const fromDate = dateFrom ? dayStartUtc(String(dateFrom)) : new Date((/* @__PURE__ */ new Date()).setDate((/* @__PURE__ */ new Date()).getDate() - 29));
@@ -11586,9 +11727,9 @@ router29.get("/overview", async (req, res) => {
     const revenueRows = await db.select({
       groupName: productGroups.name,
       total: sql23`coalesce(sum(cast(${saleItems.totalPrice} as numeric)), 0)`
-    }).from(saleItems).innerJoin(sales, eq33(saleItems.saleId, sales.id)).leftJoin(products, eq33(saleItems.productId, products.id)).leftJoin(productGroups, eq33(products.groupId, productGroups.id)).where(and28(
-      eq33(sales.series, "LOJ"),
-      eq33(sales.paymentStatus, "PAID"),
+    }).from(saleItems).innerJoin(sales, eq34(saleItems.saleId, sales.id)).leftJoin(products, eq34(saleItems.productId, products.id)).leftJoin(productGroups, eq34(products.groupId, productGroups.id)).where(and28(
+      eq34(sales.series, "LOJ"),
+      eq34(sales.paymentStatus, "PAID"),
       gte8(sales.createdAt, fromDate),
       lte8(sales.createdAt, toDate)
     )).groupBy(productGroups.name);
@@ -11608,18 +11749,18 @@ router29.get("/overview", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-var analytics_default = router29;
+var analytics_default = router30;
 
 // src/server/transfers.ts
 init_db();
 init_schema();
 init_authMiddleware();
-import { Router as Router30 } from "express";
-import { and as and29, desc as desc19, eq as eq34, ilike as ilike7, inArray as inArray14, or as or7 } from "drizzle-orm";
+import { Router as Router31 } from "express";
+import { and as and29, desc as desc19, eq as eq35, ilike as ilike7, inArray as inArray14, or as or7 } from "drizzle-orm";
 import { v4 as uuidv416 } from "uuid";
 import multer4 from "multer";
-var router30 = Router30();
-router30.use(requireAuth);
+var router31 = Router31();
+router31.use(requireAuth);
 var upload4 = multer4({ storage: multer4.memoryStorage() });
 var TRANSFER_INVOICE_MAX_BYTES = 4 * 1024 * 1024;
 var TRANSFER_INVOICE_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"];
@@ -11654,7 +11795,7 @@ async function loadItems(transferIds) {
     quantityDamaged: stockTransferItems.quantityDamaged,
     notes: stockTransferItems.notes,
     createdAt: stockTransferItems.createdAt
-  }).from(stockTransferItems).leftJoin(products, eq34(stockTransferItems.productId, products.id)).where(inArray14(stockTransferItems.transferId, transferIds)).orderBy(stockTransferItems.createdAt);
+  }).from(stockTransferItems).leftJoin(products, eq35(stockTransferItems.productId, products.id)).where(inArray14(stockTransferItems.transferId, transferIds)).orderBy(stockTransferItems.createdAt);
   return rows.map((row) => ({
     ...row,
     productName: row.savedProductName || row.registeredProductName || "Produto sem nome",
@@ -11662,7 +11803,7 @@ async function loadItems(transferIds) {
     requiresLot: !!row.requiresLot
   }));
 }
-router30.get("/", async (req, res) => {
+router31.get("/", async (req, res) => {
   try {
     const status = String(req.query.status || "IN_TRANSIT").toUpperCase();
     const q = String(req.query.q || "").trim();
@@ -11670,7 +11811,7 @@ router30.get("/", async (req, res) => {
     if (status === "RECEIVED") {
       conditions.push(inArray14(stockTransfers.status, ["RECEIVED", "PARTIAL", "DIVERGENT"]));
     } else if (status && status !== "ALL") {
-      conditions.push(eq34(stockTransfers.status, status));
+      conditions.push(eq35(stockTransfers.status, status));
     }
     if (q) {
       conditions.push(or7(
@@ -11729,9 +11870,9 @@ router30.get("/", async (req, res) => {
     res.status(500).json({ error: "N\xE3o foi poss\xEDvel carregar as transfer\xEAncias." });
   }
 });
-router30.post("/:id/invoice", requirePermission("purchase", "create"), upload4.single("file"), async (req, res) => {
+router31.post("/:id/invoice", requirePermission("purchase", "create"), upload4.single("file"), async (req, res) => {
   try {
-    const [transfer] = await db.select({ id: stockTransfers.id }).from(stockTransfers).where(eq34(stockTransfers.id, req.params.id)).limit(1);
+    const [transfer] = await db.select({ id: stockTransfers.id }).from(stockTransfers).where(eq35(stockTransfers.id, req.params.id)).limit(1);
     if (!transfer) return res.status(404).json({ error: "Transfer\xEAncia n\xE3o encontrada." });
     if (!req.file) return res.status(400).json({ error: "Selecione uma foto ou PDF da nota." });
     if (!TRANSFER_INVOICE_MIME_TYPES.includes(req.file.mimetype)) {
@@ -11746,7 +11887,7 @@ router30.post("/:id/invoice", requirePermission("purchase", "create"), upload4.s
       invoiceFileSize: req.file.size,
       invoiceFilePath: `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`,
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq34(stockTransfers.id, transfer.id)).returning({
+    }).where(eq35(stockTransfers.id, transfer.id)).returning({
       id: stockTransfers.id,
       invoiceFileName: stockTransfers.invoiceFileName,
       invoiceFileType: stockTransfers.invoiceFileType,
@@ -11759,7 +11900,7 @@ router30.post("/:id/invoice", requirePermission("purchase", "create"), upload4.s
     res.status(500).json({ error: "N\xE3o foi poss\xEDvel salvar a nota da transfer\xEAncia." });
   }
 });
-router30.delete("/:id/invoice", requirePermission("purchase", "create"), async (req, res) => {
+router31.delete("/:id/invoice", requirePermission("purchase", "create"), async (req, res) => {
   try {
     const [updated] = await db.update(stockTransfers).set({
       invoiceFileName: null,
@@ -11767,16 +11908,16 @@ router30.delete("/:id/invoice", requirePermission("purchase", "create"), async (
       invoiceFileSize: null,
       invoiceFilePath: null,
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq34(stockTransfers.id, req.params.id)).returning({ id: stockTransfers.id });
+    }).where(eq35(stockTransfers.id, req.params.id)).returning({ id: stockTransfers.id });
     if (!updated) return res.status(404).json({ error: "Transfer\xEAncia n\xE3o encontrada." });
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ error: "N\xE3o foi poss\xEDvel remover a nota da transfer\xEAncia." });
   }
 });
-router30.get("/:id", async (req, res) => {
+router31.get("/:id", async (req, res) => {
   try {
-    const [transfer] = await db.select().from(stockTransfers).where(eq34(stockTransfers.id, req.params.id)).limit(1);
+    const [transfer] = await db.select().from(stockTransfers).where(eq35(stockTransfers.id, req.params.id)).limit(1);
     if (!transfer) return res.status(404).json({ error: "Transfer\xEAncia n\xE3o encontrada." });
     const items = await loadItems([transfer.id]);
     res.json({ ...transfer, items });
@@ -11784,7 +11925,7 @@ router30.get("/:id", async (req, res) => {
     res.status(500).json({ error: "N\xE3o foi poss\xEDvel carregar a transfer\xEAncia." });
   }
 });
-router30.post("/", requirePermission("purchase", "create"), async (req, res) => {
+router31.post("/", requirePermission("purchase", "create"), async (req, res) => {
   try {
     const title = cleanText(req.body.title);
     const origin = cleanText(req.body.origin) || "Paraguai";
@@ -11860,30 +12001,30 @@ router30.post("/", requirePermission("purchase", "create"), async (req, res) => 
     });
   }
 });
-router30.post("/:id/dispatch", requirePermission("purchase", "create"), async (req, res) => {
+router31.post("/:id/dispatch", requirePermission("purchase", "create"), async (req, res) => {
   try {
-    const [transfer] = await db.select().from(stockTransfers).where(eq34(stockTransfers.id, req.params.id)).limit(1);
+    const [transfer] = await db.select().from(stockTransfers).where(eq35(stockTransfers.id, req.params.id)).limit(1);
     if (!transfer) return res.status(404).json({ error: "Transfer\xEAncia n\xE3o encontrada." });
     if (transfer.status !== "DRAFT") return res.status(400).json({ error: "Essa transfer\xEAncia n\xE3o est\xE1 aguardando sa\xEDda." });
     await db.update(stockTransfers).set({
       status: "IN_TRANSIT",
       departureAt: /* @__PURE__ */ new Date(),
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq34(stockTransfers.id, transfer.id));
+    }).where(eq35(stockTransfers.id, transfer.id));
     res.json({ ok: true });
   } catch (error) {
     res.status(400).json({ error: error?.message || "N\xE3o foi poss\xEDvel confirmar a sa\xEDda." });
   }
 });
-router30.post("/:id/receive", requirePermission("purchase", "create"), async (req, res) => {
+router31.post("/:id/receive", requirePermission("purchase", "create"), async (req, res) => {
   try {
     const receiptRows = Array.isArray(req.body.items) ? req.body.items : [];
     const receiptNotes = cleanText(req.body.receiptNotes);
     const result = await db.transaction(async (tx) => {
-      const [transfer] = await tx.select().from(stockTransfers).where(eq34(stockTransfers.id, req.params.id)).limit(1);
+      const [transfer] = await tx.select().from(stockTransfers).where(eq35(stockTransfers.id, req.params.id)).limit(1);
       if (!transfer) throw new Error("Transfer\xEAncia n\xE3o encontrada.");
       if (transfer.status !== "IN_TRANSIT") throw new Error("Essa transfer\xEAncia n\xE3o est\xE1 em tr\xE2nsito.");
-      const items = await tx.select().from(stockTransferItems).where(eq34(stockTransferItems.transferId, transfer.id));
+      const items = await tx.select().from(stockTransferItems).where(eq35(stockTransferItems.transferId, transfer.id));
       if (!items.length) throw new Error("A transfer\xEAncia n\xE3o possui produtos.");
       const receivedMap = new Map(receiptRows.map((row) => [String(row.id || ""), row]));
       let hasMissing = false;
@@ -11906,7 +12047,7 @@ router30.post("/:id/receive", requirePermission("purchase", "create"), async (re
           quantityDamaged,
           notes: itemNotes || item.notes,
           updatedAt: /* @__PURE__ */ new Date()
-        }).where(eq34(stockTransferItems.id, item.id));
+        }).where(eq35(stockTransferItems.id, item.id));
       }
       const status = hasDivergence ? "DIVERGENT" : hasMissing ? "PARTIAL" : "RECEIVED";
       await tx.update(stockTransfers).set({
@@ -11915,7 +12056,7 @@ router30.post("/:id/receive", requirePermission("purchase", "create"), async (re
         receivedBy: req.user.userId,
         receiptNotes,
         updatedAt: /* @__PURE__ */ new Date()
-      }).where(eq34(stockTransfers.id, transfer.id));
+      }).where(eq35(stockTransfers.id, transfer.id));
       return { ok: true, status };
     });
     res.json(result);
@@ -11924,27 +12065,27 @@ router30.post("/:id/receive", requirePermission("purchase", "create"), async (re
     res.status(400).json({ error: error?.message || "N\xE3o foi poss\xEDvel confirmar a chegada." });
   }
 });
-router30.delete("/:id", requirePermission("purchase", "create"), async (req, res) => {
+router31.delete("/:id", requirePermission("purchase", "create"), async (req, res) => {
   try {
-    const [transfer] = await db.select().from(stockTransfers).where(eq34(stockTransfers.id, req.params.id)).limit(1);
+    const [transfer] = await db.select().from(stockTransfers).where(eq35(stockTransfers.id, req.params.id)).limit(1);
     if (!transfer) return res.status(404).json({ error: "Transfer\xEAncia n\xE3o encontrada." });
     if (transfer.status !== "DRAFT") return res.status(400).json({ error: "Somente rascunhos podem ser exclu\xEDdos." });
     await db.transaction(async (tx) => {
-      await tx.delete(stockTransferItems).where(eq34(stockTransferItems.transferId, transfer.id));
-      await tx.delete(stockTransfers).where(eq34(stockTransfers.id, transfer.id));
+      await tx.delete(stockTransferItems).where(eq35(stockTransferItems.transferId, transfer.id));
+      await tx.delete(stockTransfers).where(eq35(stockTransfers.id, transfer.id));
     });
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ error: "N\xE3o foi poss\xEDvel excluir o rascunho." });
   }
 });
-var transfers_default = router30;
+var transfers_default = router31;
 
 // src/server/aiReports.ts
 init_authMiddleware();
-import { Router as Router31 } from "express";
-var router31 = Router31();
-router31.use(requireAuth);
+import { Router as Router32 } from "express";
+var router32 = Router32();
+router32.use(requireAuth);
 var cleanData = (data) => {
   const json = JSON.stringify(data ?? {}, (_key, value) => {
     if (typeof value === "string" && value.length > 400) return `${value.slice(0, 400)}...`;
@@ -11952,7 +12093,7 @@ var cleanData = (data) => {
   });
   return json.length > 45e3 ? `${json.slice(0, 45e3)}...` : json;
 };
-router31.post("/analysis", requirePermission("reports", "profit"), async (req, res) => {
+router32.post("/analysis", requirePermission("reports", "profit"), async (req, res) => {
   try {
     const { reportType, language = "pt-BR", filters = {}, data = {} } = req.body || {};
     const outputLanguage = String(language).toLowerCase().startsWith("es") ? "Spanish (Paraguay)" : "Brazilian Portuguese";
@@ -12004,20 +12145,20 @@ Rules:
     res.status(500).json({ code: "AI_ERROR", error: "N\xE3o foi poss\xEDvel gerar a an\xE1lise com IA agora. Tente novamente mais tarde." });
   }
 });
-var aiReports_default = router31;
+var aiReports_default = router32;
 
 // src/server/master.ts
 init_db();
 init_schema();
 init_authMiddleware();
 init_audit();
-import { Router as Router32 } from "express";
+import { Router as Router33 } from "express";
 import bcrypt6 from "bcryptjs";
 import multer5 from "multer";
-import { eq as eq35 } from "drizzle-orm";
-var router32 = Router32();
+import { eq as eq36 } from "drizzle-orm";
+var router33 = Router33();
 var upload5 = multer5({ storage: multer5.memoryStorage(), limits: { fileSize: 80 * 1024 * 1024 } });
-router32.use(requireAuth);
+router33.use(requireAuth);
 function isMaster(req) {
   return String(req.user?.roleName || "").toLowerCase() === "master";
 }
@@ -12027,12 +12168,12 @@ function requireMaster(req, res, next) {
 }
 async function validateMasterPassword(password) {
   if (!password) return false;
-  const row = await db.select({ passwordHash: users.passwordHash, isActive: users.isActive }).from(users).innerJoin(roles, eq35(users.roleId, roles.id)).where(eq35(roles.name, "Master")).limit(1);
+  const row = await db.select({ passwordHash: users.passwordHash, isActive: users.isActive }).from(users).innerJoin(roles, eq36(users.roleId, roles.id)).where(eq36(roles.name, "Master")).limit(1);
   const master = row[0];
   if (!master || !master.isActive) return false;
   return bcrypt6.compare(password, master.passwordHash);
 }
-router32.get("/status", requireMaster, async (req, res) => {
+router33.get("/status", requireMaster, async (req, res) => {
   await checkPendingAutomaticBackupNow("abertura do painel master", { force: true });
   const settings = await getBackupSettings();
   res.json({
@@ -12043,12 +12184,12 @@ router32.get("/status", requireMaster, async (req, res) => {
     renderFreeWarning: true
   });
 });
-router32.put("/backup-settings", requireMaster, async (req, res) => {
+router33.put("/backup-settings", requireMaster, async (req, res) => {
   const saved = await saveBackupSettings(req.body || {});
   await logAction(req.user.userId, "UPDATE_MASTER_BACKUP_SETTINGS", "system_settings", "backup_settings", null, saved);
   res.json({ success: true, backup: saved });
 });
-router32.post("/backup-now", requireMaster, async (req, res) => {
+router33.post("/backup-now", requireMaster, async (req, res) => {
   try {
     const result = await runManualBackup(req.user.userId);
     await logAction(req.user.userId, "MASTER_BACKUP_NOW", "system_settings", "backup_settings", null, result);
@@ -12057,7 +12198,7 @@ router32.post("/backup-now", requireMaster, async (req, res) => {
     res.status(500).json({ error: error.message || "Erro ao gerar backup." });
   }
 });
-router32.post("/backup-restore", requireMaster, upload5.single("backup"), async (req, res) => {
+router33.post("/backup-restore", requireMaster, upload5.single("backup"), async (req, res) => {
   try {
     const { masterPassword } = req.body || {};
     const ok = await validateMasterPassword(masterPassword);
@@ -12069,7 +12210,7 @@ router32.post("/backup-restore", requireMaster, upload5.single("backup"), async 
     res.status(500).json({ error: error.message || "Erro ao restaurar backup." });
   }
 });
-router32.post("/reset-check", requireMaster, async (req, res) => {
+router33.post("/reset-check", requireMaster, async (req, res) => {
   const { masterPassword, confirmation } = req.body || {};
   if (confirmation !== "RESETAR AURA") {
     return res.status(400).json({ error: "Digite exatamente RESETAR AURA para confirmar." });
@@ -12082,7 +12223,7 @@ router32.post("/reset-check", requireMaster, async (req, res) => {
     message: "Confirma\xE7\xE3o validada. Para resetar o banco real com seguran\xE7a, gere backup e execute DROP SCHEMA/db:push/db:seed ou ative a rotina definitiva quando estiver pronto."
   });
 });
-var master_default = router32;
+var master_default = router33;
 
 // api/handler.ts
 init_fx();
@@ -12091,24 +12232,24 @@ init_fx();
 init_db();
 init_schema();
 init_authMiddleware();
-import { Router as Router33 } from "express";
-import { and as and30, asc as asc3, desc as desc20, eq as eq36, gte as gte9, lte as lte9 } from "drizzle-orm";
+import { Router as Router34 } from "express";
+import { and as and30, asc as asc3, desc as desc20, eq as eq37, gte as gte9, lte as lte9 } from "drizzle-orm";
 init_fx();
 init_audit();
-var router33 = Router33();
-router33.use(requireAuth);
-router33.use(requirePermission("cash", "manage_accounts"));
+var router34 = Router34();
+router34.use(requireAuth);
+router34.use(requirePermission("cash", "manage_accounts"));
 var round24 = (n) => Math.round(n * 100) / 100;
 var CURS = ["BRL", "USD", "PYG"];
-router33.get("/categories", async (_req, res) => {
+router34.get("/categories", async (_req, res) => {
   try {
-    const rows = await db.select().from(personalCategories).where(eq36(personalCategories.isActive, true)).orderBy(asc3(personalCategories.sortOrder), asc3(personalCategories.name));
+    const rows = await db.select().from(personalCategories).where(eq37(personalCategories.isActive, true)).orderBy(asc3(personalCategories.sortOrder), asc3(personalCategories.name));
     res.json({ data: rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-router33.post("/categories", async (req, res) => {
+router34.post("/categories", async (req, res) => {
   try {
     const { name, monthlyBudget, budgetCurrency } = req.body || {};
     if (!name || !String(name).trim()) return res.status(400).json({ error: "Nome \xE9 obrigat\xF3rio." });
@@ -12122,7 +12263,7 @@ router33.post("/categories", async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 });
-router33.put("/categories/:id", async (req, res) => {
+router34.put("/categories/:id", async (req, res) => {
   try {
     const { name, monthlyBudget, budgetCurrency, isActive } = req.body || {};
     const updates = {};
@@ -12130,13 +12271,13 @@ router33.put("/categories/:id", async (req, res) => {
     if (monthlyBudget !== void 0) updates.monthlyBudget = (Number(monthlyBudget) > 0 ? Number(monthlyBudget) : 0).toFixed(2);
     if (budgetCurrency !== void 0 && CURS.includes(String(budgetCurrency))) updates.budgetCurrency = String(budgetCurrency);
     if (isActive !== void 0) updates.isActive = !!isActive;
-    await db.update(personalCategories).set(updates).where(eq36(personalCategories.id, req.params.id));
+    await db.update(personalCategories).set(updates).where(eq37(personalCategories.id, req.params.id));
     res.json({ success: true });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
-router33.get("/expenses", async (req, res) => {
+router34.get("/expenses", async (req, res) => {
   try {
     const from = req.query.dateFrom ? new Date(String(req.query.dateFrom)) : /* @__PURE__ */ new Date((/* @__PURE__ */ new Date()).toISOString().slice(0, 8) + "01");
     const to = req.query.dateTo ? dayEndUtc(String(req.query.dateTo)) : /* @__PURE__ */ new Date();
@@ -12151,13 +12292,13 @@ router33.get("/expenses", async (req, res) => {
       categoryName: personalCategories.name,
       accountId: personalExpenses.accountId,
       accountName: financialAccounts.name
-    }).from(personalExpenses).leftJoin(personalCategories, eq36(personalExpenses.categoryId, personalCategories.id)).leftJoin(financialAccounts, eq36(personalExpenses.accountId, financialAccounts.id)).where(and30(gte9(personalExpenses.expenseDate, from), lte9(personalExpenses.expenseDate, to))).orderBy(desc20(personalExpenses.expenseDate)).limit(500);
+    }).from(personalExpenses).leftJoin(personalCategories, eq37(personalExpenses.categoryId, personalCategories.id)).leftJoin(financialAccounts, eq37(personalExpenses.accountId, financialAccounts.id)).where(and30(gte9(personalExpenses.expenseDate, from), lte9(personalExpenses.expenseDate, to))).orderBy(desc20(personalExpenses.expenseDate)).limit(500);
     res.json({ data: rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-router33.post("/expenses", async (req, res) => {
+router34.post("/expenses", async (req, res) => {
   try {
     const { categoryId, accountId, amount, currency, description, expenseDate } = req.body || {};
     const amt = round24(Number(amount));
@@ -12165,7 +12306,7 @@ router33.post("/expenses", async (req, res) => {
     const result = await db.transaction(async (tx) => {
       let cur = CURS.includes(String(currency)) ? String(currency) : "PYG";
       if (accountId) {
-        const [acc] = await tx.select().from(financialAccounts).where(eq36(financialAccounts.id, accountId)).limit(1);
+        const [acc] = await tx.select().from(financialAccounts).where(eq37(financialAccounts.id, accountId)).limit(1);
         if (!acc) throw new Error("Conta n\xE3o encontrada.");
         cur = String(acc.currency || "BRL");
         await postMovement(tx, accountId, "EXPENSE", -amt, {
@@ -12193,10 +12334,10 @@ router33.post("/expenses", async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 });
-router33.delete("/expenses/:id", async (req, res) => {
+router34.delete("/expenses/:id", async (req, res) => {
   try {
     await db.transaction(async (tx) => {
-      const [row] = await tx.select().from(personalExpenses).where(eq36(personalExpenses.id, req.params.id)).limit(1).for("update");
+      const [row] = await tx.select().from(personalExpenses).where(eq37(personalExpenses.id, req.params.id)).limit(1).for("update");
       if (!row) throw new Error("Gasto n\xE3o encontrado.");
       if (row.accountId) {
         await postMovement(tx, row.accountId, "ADJUSTMENT", Number(row.amount), {
@@ -12206,20 +12347,20 @@ router33.delete("/expenses/:id", async (req, res) => {
           description: "Estorno de gasto pessoal excluido"
         });
       }
-      await tx.delete(personalExpenses).where(eq36(personalExpenses.id, row.id));
+      await tx.delete(personalExpenses).where(eq37(personalExpenses.id, row.id));
     });
     res.json({ success: true });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
-router33.get("/summary", async (req, res) => {
+router34.get("/summary", async (req, res) => {
   try {
     const month = String(req.query.month || (/* @__PURE__ */ new Date()).toISOString().slice(0, 7));
     const monthStart = /* @__PURE__ */ new Date(month + "-01");
     const nextMonth = new Date(monthStart);
     nextMonth.setMonth(nextMonth.getMonth() + 1);
-    const cats = await db.select().from(personalCategories).where(eq36(personalCategories.isActive, true)).orderBy(asc3(personalCategories.sortOrder));
+    const cats = await db.select().from(personalCategories).where(eq37(personalCategories.isActive, true)).orderBy(asc3(personalCategories.sortOrder));
     const monthExpenses = await db.select().from(personalExpenses).where(and30(gte9(personalExpenses.expenseDate, monthStart), lte9(personalExpenses.expenseDate, nextMonth)));
     const byCat = /* @__PURE__ */ new Map();
     let monthTotalBrl = 0;
@@ -12256,7 +12397,7 @@ router33.get("/summary", async (req, res) => {
     d90.setDate(d90.getDate() - 90);
     const last90 = await db.select().from(personalExpenses).where(gte9(personalExpenses.expenseDate, d90));
     const avgMonthlyBrl = round24(last90.reduce((s, e) => s + Number(e.amountBrl), 0) / 3);
-    const personalAccounts = await db.select().from(financialAccounts).where(and30(eq36(financialAccounts.scope, "PERSONAL"), eq36(financialAccounts.isActive, true)));
+    const personalAccounts = await db.select().from(financialAccounts).where(and30(eq37(financialAccounts.scope, "PERSONAL"), eq37(financialAccounts.isActive, true)));
     let personalTotalBrl = 0;
     const accounts = [];
     for (const a of personalAccounts) {
@@ -12284,7 +12425,7 @@ router33.get("/summary", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-router33.get("/trend", async (_req, res) => {
+router34.get("/trend", async (_req, res) => {
   try {
     const from = /* @__PURE__ */ new Date();
     from.setMonth(from.getMonth() - 5);
@@ -12307,7 +12448,7 @@ router33.get("/trend", async (_req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-router33.get("/rules", async (_req, res) => {
+router34.get("/rules", async (_req, res) => {
   try {
     const rows = await db.select({
       id: profitDistributionRules.id,
@@ -12317,13 +12458,13 @@ router33.get("/rules", async (_req, res) => {
       isActive: profitDistributionRules.isActive,
       accountName: financialAccounts.name,
       accountCurrency: financialAccounts.currency
-    }).from(profitDistributionRules).leftJoin(financialAccounts, eq36(profitDistributionRules.accountId, financialAccounts.id)).orderBy(asc3(profitDistributionRules.sortOrder));
+    }).from(profitDistributionRules).leftJoin(financialAccounts, eq37(profitDistributionRules.accountId, financialAccounts.id)).orderBy(asc3(profitDistributionRules.sortOrder));
     res.json({ data: rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-router33.put("/rules", async (req, res) => {
+router34.put("/rules", async (req, res) => {
   try {
     const rules = Array.isArray(req.body?.rules) ? req.body.rules : [];
     const activeSum = rules.filter((r) => r.isActive !== false).reduce((s, r) => s + (Number(r.percent) || 0), 0);
@@ -12347,30 +12488,30 @@ router33.put("/rules", async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 });
-router33.post("/distribute", async (req, res) => {
+router34.post("/distribute", async (req, res) => {
   try {
     const { fromAccountId, baseAmountBrl } = req.body || {};
     const base = round24(Number(baseAmountBrl));
     if (!fromAccountId) return res.status(400).json({ error: "Escolha a conta de origem." });
     if (!Number.isFinite(base) || base <= 0) return res.status(400).json({ error: "Valor base inv\xE1lido." });
     const result = await db.transaction(async (tx) => {
-      const [from] = await tx.select().from(financialAccounts).where(eq36(financialAccounts.id, fromAccountId)).limit(1);
+      const [from] = await tx.select().from(financialAccounts).where(eq37(financialAccounts.id, fromAccountId)).limit(1);
       if (!from) throw new Error("Conta de origem n\xE3o encontrada.");
-      const rules = await tx.select().from(profitDistributionRules).where(eq36(profitDistributionRules.isActive, true)).orderBy(asc3(profitDistributionRules.sortOrder));
+      const rules = await tx.select().from(profitDistributionRules).where(eq37(profitDistributionRules.isActive, true)).orderBy(asc3(profitDistributionRules.sortOrder));
       const applicable = rules.filter((r) => r.accountId && r.accountId !== fromAccountId);
       if (!applicable.length) throw new Error("Nenhuma regra ativa com conta de destino definida.");
       const executed = [];
       for (const rule of applicable) {
         const shareBrl = round24(base * (Number(rule.percent) / 100));
         if (shareBrl <= 0) continue;
-        const [to] = await tx.select().from(financialAccounts).where(eq36(financialAccounts.id, rule.accountId)).limit(1);
+        const [to] = await tx.select().from(financialAccounts).where(eq37(financialAccounts.id, rule.accountId)).limit(1);
         if (!to) continue;
         const outConv = await convertBrlToAccountCurrency(shareBrl, String(from.currency || "BRL"));
         const inConv = await convertBrlToAccountCurrency(shareBrl, String(to.currency || "BRL"));
-        const desc24 = `Distribuicao de lucro: ${rule.name} ${Number(rule.percent).toFixed(0)}% (base R$ ${base.toFixed(2)})`;
+        const desc25 = `Distribuicao de lucro: ${rule.name} ${Number(rule.percent).toFixed(0)}% (base R$ ${base.toFixed(2)})`;
         const ref = `dist:${fromAccountId}->${rule.accountId}`;
-        await postMovement(tx, fromAccountId, "TRANSFER_OUT", -outConv.amount, { referenceType: "distribution", referenceId: ref, userId: req.user.userId, description: desc24 });
-        await postMovement(tx, rule.accountId, "TRANSFER_IN", inConv.amount, { referenceType: "distribution", referenceId: ref, userId: req.user.userId, description: desc24 });
+        await postMovement(tx, fromAccountId, "TRANSFER_OUT", -outConv.amount, { referenceType: "distribution", referenceId: ref, userId: req.user.userId, description: desc25 });
+        await postMovement(tx, rule.accountId, "TRANSFER_IN", inConv.amount, { referenceType: "distribution", referenceId: ref, userId: req.user.userId, description: desc25 });
         executed.push({ rule: rule.name, percent: Number(rule.percent), shareBrl, out: { amount: outConv.amount, currency: from.currency }, in: { amount: inConv.amount, currency: to.currency } });
       }
       return executed;
@@ -12381,15 +12522,15 @@ router33.post("/distribute", async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 });
-var personal_default = router33;
+var personal_default = router34;
 
 // src/server/store.ts
 init_db();
 init_schema();
 init_authMiddleware();
 init_audit();
-import { Router as Router36 } from "express";
-import { and as and33, desc as desc22, eq as eq39, inArray as inArray15, isNotNull as isNotNull4, isNull as isNull10, or as or9, sql as sql25 } from "drizzle-orm";
+import { Router as Router37 } from "express";
+import { and as and33, desc as desc22, eq as eq40, inArray as inArray15, isNotNull as isNotNull4, isNull as isNull10, or as or9, sql as sql25 } from "drizzle-orm";
 import { v4 as uuidv417 } from "uuid";
 
 // src/lib/cpf.ts
@@ -12415,11 +12556,11 @@ function isFullName(value) {
 init_db();
 init_schema();
 init_authMiddleware();
-import { Router as Router34 } from "express";
-import { eq as eq37, and as and31, lt, or as or8, isNull as isNull9 } from "drizzle-orm";
+import { Router as Router35 } from "express";
+import { eq as eq38, and as and31, lt, or as or8, isNull as isNull9 } from "drizzle-orm";
 import fs5 from "fs";
 import path5 from "path";
-var router34 = Router34();
+var router35 = Router35();
 async function purgeOldOcrJobs() {
   try {
     const cutoff = /* @__PURE__ */ new Date();
@@ -12439,7 +12580,7 @@ async function purgeOldOcrJobs() {
           }
         }
       }
-      await db.delete(purchaseOcrJobs).where(eq37(purchaseOcrJobs.id, job.id));
+      await db.delete(purchaseOcrJobs).where(eq38(purchaseOcrJobs.id, job.id));
       totalDeleted++;
     }
     if (totalDeleted > 0) {
@@ -12456,27 +12597,27 @@ async function purgeOldOcrJobs() {
   }
 }
 async function deleteDeadSaleRecords(tx, saleId) {
-  const items = await tx.select().from(saleItems).where(eq37(saleItems.saleId, saleId));
+  const items = await tx.select().from(saleItems).where(eq38(saleItems.saleId, saleId));
   for (const item of items) {
-    await tx.delete(deliverySerials).where(eq37(deliverySerials.saleItemId, item.id));
-    await tx.delete(deliveryItems).where(eq37(deliveryItems.saleItemId, item.id));
-    await tx.delete(separationItems).where(eq37(separationItems.saleItemId, item.id));
-    await tx.update(productSerials).set({ saleItemId: null, status: "AVAILABLE", updatedAt: /* @__PURE__ */ new Date() }).where(eq37(productSerials.saleItemId, item.id));
+    await tx.delete(deliverySerials).where(eq38(deliverySerials.saleItemId, item.id));
+    await tx.delete(deliveryItems).where(eq38(deliveryItems.saleItemId, item.id));
+    await tx.delete(separationItems).where(eq38(separationItems.saleItemId, item.id));
+    await tx.update(productSerials).set({ saleItemId: null, status: "AVAILABLE", updatedAt: /* @__PURE__ */ new Date() }).where(eq38(productSerials.saleItemId, item.id));
   }
-  await tx.delete(deliveryTasks).where(eq37(deliveryTasks.saleId, saleId));
-  await tx.delete(separationTasks).where(eq37(separationTasks.saleId, saleId));
-  await tx.delete(deliveryPaymentOverrides).where(eq37(deliveryPaymentOverrides.saleId, saleId));
-  await tx.delete(printLogs).where(eq37(printLogs.saleId, saleId));
-  await tx.delete(emailLogs).where(eq37(emailLogs.saleId, saleId));
-  await tx.delete(payments).where(eq37(payments.saleId, saleId));
-  await tx.delete(stockReservations).where(eq37(stockReservations.saleId, saleId));
-  await tx.delete(stockMovements).where(eq37(stockMovements.referenceId, saleId));
-  await tx.delete(saleItemLots).where(eq37(saleItemLots.saleId, saleId));
-  await tx.delete(saleReturns).where(eq37(saleReturns.saleId, saleId));
-  await tx.delete(costConsumptions).where(eq37(costConsumptions.saleId, saleId));
-  await tx.delete(auditLogs).where(and31(eq37(auditLogs.tableName, "sales"), eq37(auditLogs.recordId, saleId)));
-  await tx.delete(saleItems).where(eq37(saleItems.saleId, saleId));
-  await tx.delete(sales).where(eq37(sales.id, saleId));
+  await tx.delete(deliveryTasks).where(eq38(deliveryTasks.saleId, saleId));
+  await tx.delete(separationTasks).where(eq38(separationTasks.saleId, saleId));
+  await tx.delete(deliveryPaymentOverrides).where(eq38(deliveryPaymentOverrides.saleId, saleId));
+  await tx.delete(printLogs).where(eq38(printLogs.saleId, saleId));
+  await tx.delete(emailLogs).where(eq38(emailLogs.saleId, saleId));
+  await tx.delete(payments).where(eq38(payments.saleId, saleId));
+  await tx.delete(stockReservations).where(eq38(stockReservations.saleId, saleId));
+  await tx.delete(stockMovements).where(eq38(stockMovements.referenceId, saleId));
+  await tx.delete(saleItemLots).where(eq38(saleItemLots.saleId, saleId));
+  await tx.delete(saleReturns).where(eq38(saleReturns.saleId, saleId));
+  await tx.delete(costConsumptions).where(eq38(costConsumptions.saleId, saleId));
+  await tx.delete(auditLogs).where(and31(eq38(auditLogs.tableName, "sales"), eq38(auditLogs.recordId, saleId)));
+  await tx.delete(saleItems).where(eq38(saleItems.saleId, saleId));
+  await tx.delete(sales).where(eq38(sales.id, saleId));
 }
 async function purgeOldCanceledSales() {
   try {
@@ -12485,9 +12626,9 @@ async function purgeOldCanceledSales() {
     cutoff.setDate(cutoff.getDate() - 1);
     const oldCanceled = await db.select().from(sales).where(
       and31(
-        eq37(sales.orderStatus, "CANCELED"),
-        eq37(sales.paymentStatus, "CANCELED"),
-        eq37(sales.fulfillmentStatus, "CANCELED"),
+        eq38(sales.orderStatus, "CANCELED"),
+        eq38(sales.paymentStatus, "CANCELED"),
+        eq38(sales.fulfillmentStatus, "CANCELED"),
         or8(
           lt(sales.canceledAt, cutoff),
           and31(isNull9(sales.canceledAt), lt(sales.createdAt, cutoff)),
@@ -12498,9 +12639,9 @@ async function purgeOldCanceledSales() {
     if (oldCanceled.length === 0) return 0;
     let totalDeleted = 0;
     for (const sale of oldCanceled) {
-      const hasMovement = await db.select({ id: accountMovements.id }).from(accountMovements).where(eq37(accountMovements.referenceId, sale.id)).limit(1);
+      const hasMovement = await db.select({ id: accountMovements.id }).from(accountMovements).where(eq38(accountMovements.referenceId, sale.id)).limit(1);
       if (hasMovement.length > 0) continue;
-      const hasOrder = await db.select({ id: storeOrders.id }).from(storeOrders).where(eq37(storeOrders.saleId, sale.id)).limit(1);
+      const hasOrder = await db.select({ id: storeOrders.id }).from(storeOrders).where(eq38(storeOrders.saleId, sale.id)).limit(1);
       if (hasOrder.length > 0) continue;
       await db.transaction(async (tx) => {
         await deleteDeadSaleRecords(tx, sale.id);
@@ -12520,7 +12661,7 @@ async function purgeOldCanceledSales() {
     return 0;
   }
 }
-router34.post("/purge-canceled-sales", requireAuth, requirePermission("admin", "manage"), async (req, res) => {
+router35.post("/purge-canceled-sales", requireAuth, requirePermission("admin", "manage"), async (req, res) => {
   try {
     const count = await purgeOldCanceledSales();
     res.json({ success: true, count });
@@ -12528,7 +12669,7 @@ router34.post("/purge-canceled-sales", requireAuth, requirePermission("admin", "
     res.status(500).json({ error: err.message });
   }
 });
-router34.post("/purge-ocr-jobs", requireAuth, requirePermission("admin", "manage"), async (req, res) => {
+router35.post("/purge-ocr-jobs", requireAuth, requirePermission("admin", "manage"), async (req, res) => {
   try {
     const deleted = await purgeOldOcrJobs();
     res.json({ success: true, deleted });
@@ -12543,10 +12684,10 @@ init_authMiddleware();
 // src/server/customerAuth.ts
 init_db();
 init_schema();
-import { Router as Router35 } from "express";
+import { Router as Router36 } from "express";
 import jwt3 from "jsonwebtoken";
 import bcrypt7 from "bcryptjs";
-import { and as and32, desc as desc21, eq as eq38, sql as sql24 } from "drizzle-orm";
+import { and as and32, desc as desc21, eq as eq39, sql as sql24 } from "drizzle-orm";
 import nodemailer3 from "nodemailer";
 if (!process.env.JWT_SECRET) {
   throw new Error("JWT_SECRET is missing from environment variables.");
@@ -12594,8 +12735,8 @@ async function findByEmail(email) {
   const [row] = await db.select().from(customers).where(sql24`lower(${customers.email}) = ${email}`).limit(1);
   return row || null;
 }
-var router35 = Router35();
-router35.post("/login", async (req, res) => {
+var router36 = Router36();
+router36.post("/login", async (req, res) => {
   try {
     if (!rateLimit(`login:${clientIp(req)}`, 5, 10 * 60 * 1e3)) {
       return res.status(429).json({ error: "Muitas tentativas. Aguarde alguns minutos." });
@@ -12612,7 +12753,7 @@ router35.post("/login", async (req, res) => {
     res.status(500).json({ error: "Erro no servidor." });
   }
 });
-router35.post("/register", async (req, res) => {
+router36.post("/register", async (req, res) => {
   try {
     if (!rateLimit(`account-write:${clientIp(req)}`, 10, 10 * 60 * 1e3)) {
       return res.status(429).json({ error: "Muitas tentativas. Aguarde alguns minutos." });
@@ -12651,7 +12792,7 @@ router35.post("/register", async (req, res) => {
         phone: existingByCpf.phone || phone,
         name: existingByCpf.name || name,
         updatedAt: /* @__PURE__ */ new Date()
-      }).where(eq38(customers.id, existingByCpf.id)).returning();
+      }).where(eq39(customers.id, existingByCpf.id)).returning();
       return res.json({ token: signCustomerToken(updated.id), customer: publicCustomer(updated) });
     }
     const [created] = await db.insert(customers).values({
@@ -12680,7 +12821,7 @@ router35.post("/register", async (req, res) => {
     res.status(500).json({ error: "Erro no servidor." });
   }
 });
-router35.post("/forgot-password", async (req, res) => {
+router36.post("/forgot-password", async (req, res) => {
   try {
     if (!rateLimit(`forgot:${clientIp(req)}`, 5, 15 * 60 * 1e3)) {
       return res.status(429).json({ error: "Muitas tentativas. Aguarde alguns minutos." });
@@ -12718,7 +12859,7 @@ Esse link expira em 30 minutos. Se n\xE3o foi voc\xEA, ignore este e-mail.`
     res.status(500).json({ error: "Erro no servidor." });
   }
 });
-router35.post("/reset-password", async (req, res) => {
+router36.post("/reset-password", async (req, res) => {
   try {
     const password = String(req.body?.password || "");
     if (password.length < 6) return res.status(400).json({ error: "A senha precisa ter pelo menos 6 caracteres." });
@@ -12730,19 +12871,19 @@ router35.post("/reset-password", async (req, res) => {
     }
     if (payload.kind !== "password-reset") return res.status(400).json({ error: "Link inv\xE1lido." });
     const passwordHash = await bcrypt7.hash(password, 10);
-    await db.update(customers).set({ passwordHash, updatedAt: /* @__PURE__ */ new Date() }).where(eq38(customers.id, payload.customerId));
+    await db.update(customers).set({ passwordHash, updatedAt: /* @__PURE__ */ new Date() }).where(eq39(customers.id, payload.customerId));
     res.json({ token: signCustomerToken(payload.customerId) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erro no servidor." });
   }
 });
-router35.get("/me", requireCustomerAuth, async (req, res) => {
-  const [c] = await db.select().from(customers).where(eq38(customers.id, req.customer.customerId)).limit(1);
+router36.get("/me", requireCustomerAuth, async (req, res) => {
+  const [c] = await db.select().from(customers).where(eq39(customers.id, req.customer.customerId)).limit(1);
   if (!c) return res.status(404).json({ error: "Conta n\xE3o encontrada." });
   res.json(publicCustomer(c));
 });
-router35.put("/me", requireCustomerAuth, async (req, res) => {
+router36.put("/me", requireCustomerAuth, async (req, res) => {
   try {
     const name = String(req.body?.name || "").trim().replace(/\s+/g, " ");
     const phone = onlyDigits(req.body?.phone);
@@ -12755,7 +12896,7 @@ router35.put("/me", requireCustomerAuth, async (req, res) => {
         return res.status(409).json({ error: "Esse e-mail j\xE1 est\xE1 em uso por outra conta." });
       }
     }
-    const [updated] = await db.update(customers).set({ name, phone, email, updatedAt: /* @__PURE__ */ new Date() }).where(eq38(customers.id, req.customer.customerId)).returning();
+    const [updated] = await db.update(customers).set({ name, phone, email, updatedAt: /* @__PURE__ */ new Date() }).where(eq39(customers.id, req.customer.customerId)).returning();
     res.json(publicCustomer(updated));
   } catch (err) {
     if (err?.code === "23505") return res.status(409).json({ error: "Esse e-mail j\xE1 est\xE1 em uso por outra conta." });
@@ -12763,24 +12904,24 @@ router35.put("/me", requireCustomerAuth, async (req, res) => {
     res.status(500).json({ error: "Erro no servidor." });
   }
 });
-router35.post("/password", requireCustomerAuth, async (req, res) => {
+router36.post("/password", requireCustomerAuth, async (req, res) => {
   try {
     const currentPassword = String(req.body?.currentPassword || "");
     const newPassword = String(req.body?.newPassword || "");
     if (newPassword.length < 6) return res.status(400).json({ error: "A nova senha precisa ter pelo menos 6 caracteres." });
-    const [c] = await db.select().from(customers).where(eq38(customers.id, req.customer.customerId)).limit(1);
+    const [c] = await db.select().from(customers).where(eq39(customers.id, req.customer.customerId)).limit(1);
     if (!c?.passwordHash || !await bcrypt7.compare(currentPassword, c.passwordHash)) {
       return res.status(401).json({ error: "Senha atual incorreta." });
     }
     const passwordHash = await bcrypt7.hash(newPassword, 10);
-    await db.update(customers).set({ passwordHash, updatedAt: /* @__PURE__ */ new Date() }).where(eq38(customers.id, c.id));
+    await db.update(customers).set({ passwordHash, updatedAt: /* @__PURE__ */ new Date() }).where(eq39(customers.id, c.id));
     res.json({ ok: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erro no servidor." });
   }
 });
-router35.get("/orders", requireCustomerAuth, async (req, res) => {
+router36.get("/orders", requireCustomerAuth, async (req, res) => {
   const rows = await db.select({
     id: storeOrders.id,
     code: storeOrders.code,
@@ -12788,19 +12929,21 @@ router35.get("/orders", requireCustomerAuth, async (req, res) => {
     totalAmount: storeOrders.totalAmount,
     deliveryType: storeOrders.deliveryType,
     createdAt: storeOrders.createdAt
-  }).from(storeOrders).where(eq38(storeOrders.customerId, req.customer.customerId)).orderBy(desc21(storeOrders.createdAt));
+  }).from(storeOrders).where(eq39(storeOrders.customerId, req.customer.customerId)).orderBy(desc21(storeOrders.createdAt));
   res.json(rows);
 });
-router35.get("/addresses", requireCustomerAuth, async (req, res) => {
-  const rows = await db.select().from(customerAddresses).where(eq38(customerAddresses.customerId, req.customer.customerId)).orderBy(desc21(customerAddresses.isDefault), desc21(customerAddresses.createdAt));
+router36.get("/addresses", requireCustomerAuth, async (req, res) => {
+  const rows = await db.select().from(customerAddresses).where(eq39(customerAddresses.customerId, req.customer.customerId)).orderBy(desc21(customerAddresses.isDefault), desc21(customerAddresses.createdAt));
   res.json(rows);
 });
-router35.post("/addresses", requireCustomerAuth, async (req, res) => {
+router36.post("/addresses", requireCustomerAuth, async (req, res) => {
   try {
     const { label, cep, street, number: number2, neighborhood, city, state, isDefault } = req.body || {};
     if (String(street || "").trim().length < 3) return res.status(400).json({ error: "Informe a rua." });
-    if (isDefault) {
-      await db.update(customerAddresses).set({ isDefault: false }).where(eq38(customerAddresses.customerId, req.customer.customerId));
+    const existing = await db.select({ id: customerAddresses.id }).from(customerAddresses).where(eq39(customerAddresses.customerId, req.customer.customerId)).limit(1);
+    const makeDefault = !!isDefault || existing.length === 0;
+    if (makeDefault) {
+      await db.update(customerAddresses).set({ isDefault: false }).where(eq39(customerAddresses.customerId, req.customer.customerId));
     }
     const [created] = await db.insert(customerAddresses).values({
       customerId: req.customer.customerId,
@@ -12811,7 +12954,7 @@ router35.post("/addresses", requireCustomerAuth, async (req, res) => {
       neighborhood,
       city,
       state,
-      isDefault: !!isDefault
+      isDefault: makeDefault
     }).returning();
     res.json(created);
   } catch (err) {
@@ -12819,13 +12962,13 @@ router35.post("/addresses", requireCustomerAuth, async (req, res) => {
     res.status(500).json({ error: "Erro no servidor." });
   }
 });
-router35.put("/addresses/:id", requireCustomerAuth, async (req, res) => {
+router36.put("/addresses/:id", requireCustomerAuth, async (req, res) => {
   try {
     const { label, cep, street, number: number2, neighborhood, city, state, isDefault } = req.body || {};
     if (isDefault) {
-      await db.update(customerAddresses).set({ isDefault: false }).where(eq38(customerAddresses.customerId, req.customer.customerId));
+      await db.update(customerAddresses).set({ isDefault: false }).where(eq39(customerAddresses.customerId, req.customer.customerId));
     }
-    const [updated] = await db.update(customerAddresses).set({ label, cep, street, number: number2, neighborhood, city, state, isDefault: !!isDefault }).where(and32(eq38(customerAddresses.id, req.params.id), eq38(customerAddresses.customerId, req.customer.customerId))).returning();
+    const [updated] = await db.update(customerAddresses).set({ label, cep, street, number: number2, neighborhood, city, state, isDefault: !!isDefault }).where(and32(eq39(customerAddresses.id, req.params.id), eq39(customerAddresses.customerId, req.customer.customerId))).returning();
     if (!updated) return res.status(404).json({ error: "Endere\xE7o n\xE3o encontrado." });
     res.json(updated);
   } catch (err) {
@@ -12833,11 +12976,15 @@ router35.put("/addresses/:id", requireCustomerAuth, async (req, res) => {
     res.status(500).json({ error: "Erro no servidor." });
   }
 });
-router35.delete("/addresses/:id", requireCustomerAuth, async (req, res) => {
-  await db.delete(customerAddresses).where(and32(eq38(customerAddresses.id, req.params.id), eq38(customerAddresses.customerId, req.customer.customerId)));
+router36.delete("/addresses/:id", requireCustomerAuth, async (req, res) => {
+  const [removed] = await db.delete(customerAddresses).where(and32(eq39(customerAddresses.id, req.params.id), eq39(customerAddresses.customerId, req.customer.customerId))).returning({ wasDefault: customerAddresses.isDefault });
+  if (removed?.wasDefault) {
+    const [replacement] = await db.select({ id: customerAddresses.id }).from(customerAddresses).where(eq39(customerAddresses.customerId, req.customer.customerId)).orderBy(desc21(customerAddresses.createdAt)).limit(1);
+    if (replacement) await db.update(customerAddresses).set({ isDefault: true }).where(eq39(customerAddresses.id, replacement.id));
+  }
   res.json({ ok: true });
 });
-router35.get("/wishlist", requireCustomerAuth, async (req, res) => {
+router36.get("/wishlist", requireCustomerAuth, async (req, res) => {
   const rows = await db.select({
     id: customerWishlist.id,
     productId: products.id,
@@ -12847,10 +12994,10 @@ router35.get("/wishlist", requireCustomerAuth, async (req, res) => {
     isActive: products.isActive,
     storeVisible: products.storeVisible,
     createdAt: customerWishlist.createdAt
-  }).from(customerWishlist).innerJoin(products, eq38(customerWishlist.productId, products.id)).where(eq38(customerWishlist.customerId, req.customer.customerId)).orderBy(desc21(customerWishlist.createdAt));
+  }).from(customerWishlist).innerJoin(products, eq39(customerWishlist.productId, products.id)).where(eq39(customerWishlist.customerId, req.customer.customerId)).orderBy(desc21(customerWishlist.createdAt));
   res.json(rows);
 });
-router35.post("/wishlist", requireCustomerAuth, async (req, res) => {
+router36.post("/wishlist", requireCustomerAuth, async (req, res) => {
   try {
     const productId = String(req.body?.productId || "");
     if (!productId) return res.status(400).json({ error: "Produto inv\xE1lido." });
@@ -12861,24 +13008,46 @@ router35.post("/wishlist", requireCustomerAuth, async (req, res) => {
     res.status(500).json({ error: "Erro no servidor." });
   }
 });
-router35.delete("/wishlist/:productId", requireCustomerAuth, async (req, res) => {
+router36.delete("/wishlist/:productId", requireCustomerAuth, async (req, res) => {
   await db.delete(customerWishlist).where(and32(
-    eq38(customerWishlist.customerId, req.customer.customerId),
-    eq38(customerWishlist.productId, req.params.productId)
+    eq39(customerWishlist.customerId, req.customer.customerId),
+    eq39(customerWishlist.productId, req.params.productId)
   ));
   res.json({ ok: true });
 });
-var customerAuth_default = router35;
+var customerAuth_default = router36;
 
 // src/server/store.ts
 import geoip from "geoip-lite";
-var router36 = Router36();
+var router37 = Router37();
 var availableStockExpr = () => sql25`greatest(${stockBalances.physicalStock} - ${stockBalances.reservedStock}, 0)`;
 var PIX_SETTINGS_KEY2 = "company_pix";
 var MAX_PROOF_BYTES = 3 * 1024 * 1024;
 var MAX_FONT_URL_CHARS = 4e5;
 var MAX_ITEMS = 40;
 var MAX_QTY_PER_ITEM = 99;
+var checkoutSchemaReady = null;
+async function ensureCheckoutSchema() {
+  if (!checkoutSchemaReady) {
+    checkoutSchemaReady = (async () => {
+      await db.execute(sql25`ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS payment_method text NOT NULL DEFAULT 'PIX';`);
+    })().catch((error) => {
+      checkoutSchemaReady = null;
+      throw error;
+    });
+  }
+  return checkoutSchemaReady;
+}
+router37.use(async (req, res, next) => {
+  if (!req.path.startsWith("/orders") && !req.path.startsWith("/admin/orders")) return next();
+  try {
+    await ensureCheckoutSchema();
+    next();
+  } catch (error) {
+    console.error("[store] n\xE3o foi poss\xEDvel preparar o schema do checkout:", error);
+    res.status(503).json({ error: "Checkout temporariamente indispon\xEDvel. Tente novamente em instantes." });
+  }
+});
 function makeOrderCode() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let s = "";
@@ -12910,11 +13079,19 @@ async function getStoreConfig() {
     ...fx.USDBRL ? [{ code: "BRL", rateToUsd: fx.USDBRL.rate }] : [],
     ...fx.USDPYG ? [{ code: "PYG", rateToUsd: fx.USDPYG.rate }] : []
   ];
-  const [cs] = await db.select().from(companySettings).limit(1);
+  const [[cs], brlRows] = await Promise.all([
+    db.select().from(companySettings).limit(1),
+    db.select().from(currencies).where(eq40(currencies.code, "BRL")).limit(1)
+  ]);
   const defaultCurrency = cs?.defaultCurrency || "BRL";
-  const currencies2 = defaultCurrency === "BRL" ? allCurrencies.filter((currency) => currency.code === "BRL") : allCurrencies;
-  const pixRows = await db.select().from(systemSettings).where(eq39(systemSettings.key, PIX_SETTINGS_KEY2)).limit(1);
+  const storeCurrencies = defaultCurrency === "BRL" ? allCurrencies.filter((currency) => currency.code === "BRL") : allCurrencies;
+  const pixRows = await db.select().from(systemSettings).where(eq40(systemSettings.key, PIX_SETTINGS_KEY2)).limit(1);
   const pix = pixRows[0]?.value || {};
+  const configuredBrlRate = Number(brlRows[0]?.rateToUsd);
+  const marketBrlRate = Number(fx.USDBRL?.rate);
+  const brlExchangeRate = configuredBrlRate > 0 ? configuredBrlRate : marketBrlRate > 0 ? marketBrlRate : 5.5;
+  const configuredPixRate = Number(String(pix.pixExchangeRate || "").replace(",", "."));
+  const pixExchangeRate = configuredPixRate > 0 ? configuredPixRate : brlExchangeRate;
   return {
     storeName: cs?.tradeName || cs?.companyName || "Sua loja",
     logoUrl: cs?.logoUrl || "",
@@ -12924,19 +13101,47 @@ async function getStoreConfig() {
     email: cs?.email || "",
     defaultCurrency,
     pixKey: pix.pixKey || "",
-    currencies: currencies2
+    brlExchangeRate,
+    pixExchangeRate,
+    currencies: storeCurrencies
   };
 }
-router36.get("/info", async (_req, res) => {
+var storeBaseCurrency = (defaultCurrency) => defaultCurrency === "BRL" ? "BRL" : "USD";
+function formatOrderAddress(value) {
+  const main = [value?.street, value?.number].filter(Boolean).join(", ");
+  const area = [value?.neighborhood, value?.city, value?.state].filter(Boolean).join(" - ");
+  return [main, area, value?.cep ? `CEP ${value.cep}` : ""].filter(Boolean).join(" - ");
+}
+function buildUsdtWhatsappUrl(config, order) {
+  const destination = onlyDigits(config.whatsapp);
+  if (!destination) return "";
+  const lines = [
+    `Ol\xE1! Vim pelo site da ${config.storeName} e quero efetivar o pedido ${order.code} via USDT.`,
+    "",
+    `Cliente: ${order.customerName}`,
+    "Itens:",
+    ...order.items.map((item) => `\u2022 ${item.quantity}x ${item.name} \u2014 ${formatBrl(item.totalBrl)}`),
+    `Subtotal: ${formatBrl(order.subtotalBrl)}`,
+    ...order.discountBrl > 0 ? [`Desconto: -${formatBrl(order.discountBrl)}`] : [],
+    ...order.shippingFeeBrl > 0 ? [`Frete: ${formatBrl(order.shippingFeeBrl)}`] : [],
+    `Total de refer\xEAncia: ${formatBrl(order.totalBrl)}`,
+    `Recebimento: ${order.deliveryLabel}`,
+    "Forma de pagamento: USDT",
+    "",
+    "Por favor, envie a rede (ex.: TRC20/ERC20) e o endere\xE7o da carteira USDT para eu concluir o pagamento."
+  ];
+  return `https://wa.me/${destination}?text=${encodeURIComponent(lines.join("\n"))}`;
+}
+router37.get("/info", async (_req, res) => {
   try {
     const c = await getStoreConfig();
     const { APP_VERSION: APP_VERSION2 } = await Promise.resolve().then(() => (init_version(), version_exports));
-    res.json({ storeName: c.storeName, logoUrl: c.logoUrl, city: c.city, whatsapp: c.whatsapp, instagramUrl: c.instagramUrl, email: c.email, defaultCurrency: c.defaultCurrency, pixEnabled: !!c.pixKey, appVersion: APP_VERSION2, currencies: c.currencies });
+    res.json({ storeName: c.storeName, logoUrl: c.logoUrl, city: c.city, whatsapp: c.whatsapp, instagramUrl: c.instagramUrl, email: c.email, defaultCurrency: c.defaultCurrency, pixEnabled: !!c.pixKey, brlExchangeRate: c.brlExchangeRate, pixExchangeRate: c.pixExchangeRate, appVersion: APP_VERSION2, currencies: c.currencies });
   } catch (err) {
     res.status(500).json({ error: "Loja indispon\xEDvel." });
   }
 });
-router36.get("/manifest.webmanifest", async (_req, res) => {
+router37.get("/manifest.webmanifest", async (_req, res) => {
   try {
     const c = await getStoreConfig();
     const name = String(c.storeName || "Sua loja").trim().slice(0, 80) || "Sua loja";
@@ -12959,7 +13164,7 @@ router36.get("/manifest.webmanifest", async (_req, res) => {
     res.status(503).json({ error: "Manifesto da loja indispon\xEDvel." });
   }
 });
-router36.get("/icon/:size", async (req, res) => {
+router37.get("/icon/:size", async (req, res) => {
   try {
     const size = req.params.size === "512" ? "512" : "192";
     const c = await getStoreConfig();
@@ -12984,8 +13189,8 @@ router36.get("/icon/:size", async (req, res) => {
   }
 });
 var catalogWhere = () => and33(
-  eq39(products.isActive, true),
-  eq39(products.storeVisible, true),
+  eq40(products.isActive, true),
+  eq40(products.storeVisible, true),
   isNull10(products.parentId)
 );
 var publicStock = (available) => ({
@@ -12994,7 +13199,7 @@ var publicStock = (available) => ({
   stockQty: available > 0 ? available : void 0,
   maxQty: Math.min(available, MAX_QTY_PER_ITEM)
 });
-router36.get("/products", async (req, res) => {
+router37.get("/products", async (req, res) => {
   try {
     const search = String(req.query.search || "").trim();
     const group = String(req.query.group || "").trim();
@@ -13023,15 +13228,15 @@ router36.get("/products", async (req, res) => {
       groupId: products.groupId,
       groupName: productGroups.name,
       available: availableStockExpr()
-    }).from(products).innerJoin(stockBalances, eq39(products.id, stockBalances.productId)).leftJoin(productGroups, eq39(products.groupId, productGroups.id)).where(and33(
+    }).from(products).innerJoin(stockBalances, eq40(products.id, stockBalances.productId)).leftJoin(productGroups, eq40(products.groupId, productGroups.id)).where(and33(
       catalogWhere(),
       ids.length > 0 ? inArray15(products.id, ids) : void 0,
-      group ? eq39(products.groupId, group) : void 0,
-      subgroup ? eq39(products.subgroupId, subgroup) : void 0,
+      group ? eq40(products.groupId, group) : void 0,
+      subgroup ? eq40(products.subgroupId, subgroup) : void 0,
       canal === "oferta" ? sql25`${products.ofertaQty} > 0` : void 0,
       canal === "outlet" ? sql25`${products.outletQty} > 0` : void 0,
       search ? or9(sql25`${products.name} ILIKE ${"%" + search + "%"}`, sql25`${products.sku} ILIKE ${"%" + search + "%"}`) : void 0,
-      brand ? eq39(products.brand, brand) : void 0,
+      brand ? eq40(products.brand, brand) : void 0,
       model ? sql25`${products.model} ILIKE ${"%" + model + "%"}` : void 0,
       Number.isFinite(minPrice) ? sql25`${effectivePrice} >= ${minPrice}` : void 0,
       Number.isFinite(maxPrice) ? sql25`${effectivePrice} <= ${maxPrice}` : void 0
@@ -13045,7 +13250,7 @@ router36.get("/products", async (req, res) => {
         variantName: products.variantName,
         price: products.salePriceA,
         available: availableStockExpr()
-      }).from(products).innerJoin(stockBalances, eq39(products.id, stockBalances.productId)).where(and33(eq39(products.isActive, true), eq39(products.storeVisible, true), inArray15(products.parentId, parentIds)));
+      }).from(products).innerJoin(stockBalances, eq40(products.id, stockBalances.productId)).where(and33(eq40(products.isActive, true), eq40(products.storeVisible, true), inArray15(products.parentId, parentIds)));
       for (const v of vRows) {
         if (!variantsMap[v.parentId]) variantsMap[v.parentId] = [];
         variantsMap[v.parentId].push({
@@ -13092,14 +13297,14 @@ router36.get("/products", async (req, res) => {
     res.status(500).json({ error: "Erro ao carregar cat\xE1logo." });
   }
 });
-router36.get("/filters", async (_req, res) => {
+router37.get("/filters", async (_req, res) => {
   try {
     const effectivePrice = sql25`coalesce((select min(v.sale_price_a) from products v where v.parent_id = ${products.id} and v.is_active = true and v.store_visible = true), ${products.salePriceA})`;
     const [brandRows, priceRow, ofertaCount, outletCount] = await Promise.all([
-      db.selectDistinct({ brand: products.brand }).from(products).innerJoin(stockBalances, eq39(products.id, stockBalances.productId)).where(and33(catalogWhere(), sql25`${products.brand} is not null and ${products.brand} <> ''`)).orderBy(products.brand),
-      db.select({ min: sql25`min(${effectivePrice})`, max: sql25`max(${effectivePrice})` }).from(products).innerJoin(stockBalances, eq39(products.id, stockBalances.productId)).where(catalogWhere()),
-      db.select({ n: sql25`count(*)` }).from(products).innerJoin(stockBalances, eq39(products.id, stockBalances.productId)).where(and33(catalogWhere(), sql25`${products.ofertaQty} > 0`)),
-      db.select({ n: sql25`count(*)` }).from(products).innerJoin(stockBalances, eq39(products.id, stockBalances.productId)).where(and33(catalogWhere(), sql25`${products.outletQty} > 0`))
+      db.selectDistinct({ brand: products.brand }).from(products).innerJoin(stockBalances, eq40(products.id, stockBalances.productId)).where(and33(catalogWhere(), sql25`${products.brand} is not null and ${products.brand} <> ''`)).orderBy(products.brand),
+      db.select({ min: sql25`min(${effectivePrice})`, max: sql25`max(${effectivePrice})` }).from(products).innerJoin(stockBalances, eq40(products.id, stockBalances.productId)).where(catalogWhere()),
+      db.select({ n: sql25`count(*)` }).from(products).innerJoin(stockBalances, eq40(products.id, stockBalances.productId)).where(and33(catalogWhere(), sql25`${products.ofertaQty} > 0`)),
+      db.select({ n: sql25`count(*)` }).from(products).innerJoin(stockBalances, eq40(products.id, stockBalances.productId)).where(and33(catalogWhere(), sql25`${products.outletQty} > 0`))
     ]);
     res.json({
       brands: brandRows.map((r) => r.brand).filter(Boolean),
@@ -13112,15 +13317,15 @@ router36.get("/filters", async (_req, res) => {
     res.status(500).json({ error: "Erro ao carregar filtros." });
   }
 });
-router36.get("/brands", async (_req, res) => {
+router37.get("/brands", async (_req, res) => {
   try {
-    const rows = await db.select().from(brandLogos).where(and33(eq39(brandLogos.visible, true), isNotNull4(brandLogos.logoUrl))).orderBy(brandLogos.sortOrder);
+    const rows = await db.select().from(brandLogos).where(and33(eq40(brandLogos.visible, true), isNotNull4(brandLogos.logoUrl))).orderBy(brandLogos.sortOrder);
     res.json({ data: rows });
   } catch (err) {
     res.status(500).json({ error: "Erro ao carregar marcas." });
   }
 });
-router36.get("/categories", async (_req, res) => {
+router37.get("/categories", async (_req, res) => {
   try {
     const [rows, countRows, subgroupRows] = await Promise.all([
       db.select({
@@ -13128,15 +13333,15 @@ router36.get("/categories", async (_req, res) => {
         name: productGroups.name,
         icon: productGroups.icon,
         sortOrder: productGroups.sortOrder
-      }).from(productGroups).where(and33(eq39(productGroups.storeVisible, true), eq39(productGroups.isActive, true), isNull10(productGroups.deletedAt))).orderBy(productGroups.sortOrder, productGroups.name),
-      db.select({ groupId: products.groupId, count: sql25`count(*)` }).from(products).innerJoin(stockBalances, eq39(products.id, stockBalances.productId)).where(catalogWhere()).groupBy(products.groupId),
+      }).from(productGroups).where(and33(eq40(productGroups.storeVisible, true), eq40(productGroups.isActive, true), isNull10(productGroups.deletedAt))).orderBy(productGroups.sortOrder, productGroups.name),
+      db.select({ groupId: products.groupId, count: sql25`count(*)` }).from(products).innerJoin(stockBalances, eq40(products.id, stockBalances.productId)).where(catalogWhere()).groupBy(products.groupId),
       // Subgrupos só entram na navegação se tiverem produto visível de
       // verdade — subgrupo vazio não aparece como botão no catálogo.
       db.select({
         id: productSubgroups.id,
         groupId: productSubgroups.groupId,
         name: productSubgroups.name
-      }).from(products).innerJoin(stockBalances, eq39(products.id, stockBalances.productId)).innerJoin(productSubgroups, eq39(products.subgroupId, productSubgroups.id)).where(and33(catalogWhere(), eq39(productSubgroups.isActive, true))).groupBy(productSubgroups.id, productSubgroups.groupId, productSubgroups.name).orderBy(productSubgroups.name)
+      }).from(products).innerJoin(stockBalances, eq40(products.id, stockBalances.productId)).innerJoin(productSubgroups, eq40(products.subgroupId, productSubgroups.id)).where(and33(catalogWhere(), eq40(productSubgroups.isActive, true))).groupBy(productSubgroups.id, productSubgroups.groupId, productSubgroups.name).orderBy(productSubgroups.name)
     ]);
     const countByGroup = new Map(countRows.map((row) => [row.groupId, Number(row.count)]));
     const subgroupsByGroup = {};
@@ -13158,7 +13363,7 @@ async function buscarProdutoImpl(nomeBuscado) {
     name: products.name,
     price: products.salePriceA,
     available: availableStockExpr()
-  }).from(products).innerJoin(stockBalances, eq39(products.id, stockBalances.productId)).where(and33(catalogWhere(), or9(
+  }).from(products).innerJoin(stockBalances, eq40(products.id, stockBalances.productId)).where(and33(catalogWhere(), or9(
     sql25`${products.name} ILIKE ${"%" + termo + "%"}`,
     sql25`${products.sku} ILIKE ${"%" + termo + "%"}`
   ))).limit(5);
@@ -13168,7 +13373,7 @@ async function buscarProdutoImpl(nomeBuscado) {
     parentId: products.parentId,
     price: products.salePriceA,
     available: availableStockExpr()
-  }).from(products).innerJoin(stockBalances, eq39(products.id, stockBalances.productId)).where(and33(eq39(products.isActive, true), eq39(products.storeVisible, true), inArray15(products.parentId, parentIds)));
+  }).from(products).innerJoin(stockBalances, eq40(products.id, stockBalances.productId)).where(and33(eq40(products.isActive, true), eq40(products.storeVisible, true), inArray15(products.parentId, parentIds)));
   const variantsByParent = {};
   for (const v of variantRows) {
     if (!v.parentId) continue;
@@ -13188,7 +13393,7 @@ async function buscarProdutoImpl(nomeBuscado) {
     })
   };
 }
-router36.post("/assistant/chat", async (req, res) => {
+router37.post("/assistant/chat", async (req, res) => {
   try {
     const ip = clientIp2(req);
     if (!rateLimit2(`assistant:${ip}`, 200, 10 * 60 * 1e3)) {
@@ -13201,7 +13406,7 @@ router36.post("/assistant/chat", async (req, res) => {
     const historyRaw = Array.isArray(req.body?.history) ? req.body.history : [];
     const history = historyRaw.filter((h) => h && (h.role === "user" || h.role === "model" || h.role === "assistant") && typeof h.text === "string").slice(-8).map((h) => ({ role: h.role === "model" ? "assistant" : h.role, content: String(h.text).slice(0, 500) }));
     const [company] = await db.select({ tradeName: companySettings.tradeName, companyName: companySettings.companyName }).from(companySettings).limit(1);
-    const categoryRows = await db.select({ name: productGroups.name }).from(products).innerJoin(stockBalances, eq39(products.id, stockBalances.productId)).innerJoin(productGroups, eq39(products.groupId, productGroups.id)).where(and33(catalogWhere(), eq39(productGroups.storeVisible, true))).groupBy(productGroups.id, productGroups.name);
+    const categoryRows = await db.select({ name: productGroups.name }).from(products).innerJoin(stockBalances, eq40(products.id, stockBalances.productId)).innerJoin(productGroups, eq40(products.groupId, productGroups.id)).where(and33(catalogWhere(), eq40(productGroups.storeVisible, true))).groupBy(productGroups.id, productGroups.name);
     const categoryNames = [...new Set(categoryRows.map((r) => r.name))];
     const words = message.replace(/[^\p{L}\p{N}\-]+/gu, " ").split(/\s+/).map((word) => word.trim()).filter((word) => word.length >= 3).filter((word) => !["tem", "uma", "uns", "com", "para", "por", "qual", "quanto", "preco", "pre\xE7o", "produto", "voc\xEAs", "voces"].includes(word.toLowerCase())).slice(0, 5);
     let productContext = await buscarProdutoImpl(message);
@@ -13239,7 +13444,7 @@ Se a pergunta n\xE3o tiver rela\xE7\xE3o com a loja, recuse educadamente e redir
     res.status(500).json({ code: "AI_ERROR", error: "N\xE3o consegui responder agora." });
   }
 });
-router36.get("/product/:id", async (req, res) => {
+router37.get("/product/:id", async (req, res) => {
   try {
     const id = String(req.params.id);
     const [p] = await db.select({
@@ -13255,22 +13460,22 @@ router36.get("/product/:id", async (req, res) => {
       groupId: products.groupId,
       groupName: productGroups.name,
       available: availableStockExpr()
-    }).from(products).innerJoin(stockBalances, eq39(products.id, stockBalances.productId)).leftJoin(productGroups, eq39(products.groupId, productGroups.id)).where(and33(catalogWhere(), eq39(products.id, id))).limit(1);
+    }).from(products).innerJoin(stockBalances, eq40(products.id, stockBalances.productId)).leftJoin(productGroups, eq40(products.groupId, productGroups.id)).where(and33(catalogWhere(), eq40(products.id, id))).limit(1);
     if (!p) return res.status(404).json({ error: "Produto n\xE3o dispon\xEDvel." });
-    const gallery = await db.select({ imageUrl: productImages.imageUrl }).from(productImages).where(eq39(productImages.productId, id)).orderBy(productImages.sortOrder);
+    const gallery = await db.select({ imageUrl: productImages.imageUrl }).from(productImages).where(eq40(productImages.productId, id)).orderBy(productImages.sortOrder);
     const related = p.groupId ? await db.select({
       id: products.id,
       name: products.name,
       imageUrl: products.imageUrl,
       price: products.salePriceA,
       available: availableStockExpr()
-    }).from(products).innerJoin(stockBalances, eq39(products.id, stockBalances.productId)).where(and33(catalogWhere(), eq39(products.groupId, p.groupId), sql25`${products.id} <> ${id}`)).orderBy(desc22(products.createdAt)).limit(12) : [];
+    }).from(products).innerJoin(stockBalances, eq40(products.id, stockBalances.productId)).where(and33(catalogWhere(), eq40(products.groupId, p.groupId), sql25`${products.id} <> ${id}`)).orderBy(desc22(products.createdAt)).limit(12) : [];
     const variantsRows = await db.select({
       id: products.id,
       variantName: products.variantName,
       price: products.salePriceA,
       available: availableStockExpr()
-    }).from(products).innerJoin(stockBalances, eq39(products.id, stockBalances.productId)).where(and33(eq39(products.isActive, true), eq39(products.storeVisible, true), eq39(products.parentId, id)));
+    }).from(products).innerJoin(stockBalances, eq40(products.id, stockBalances.productId)).where(and33(eq40(products.isActive, true), eq40(products.storeVisible, true), eq40(products.parentId, id)));
     const variants = variantsRows.map((v) => ({
       id: v.id,
       variantName: v.variantName,
@@ -13299,7 +13504,7 @@ router36.get("/product/:id", async (req, res) => {
     res.status(500).json({ error: "Erro ao carregar produto." });
   }
 });
-router36.post("/pageview", async (req, res) => {
+router37.post("/pageview", async (req, res) => {
   try {
     const ip = clientIp2(req);
     if (!rateLimit2(`pageview:${ip}`, 60, 60 * 1e3)) return res.status(429).json({ error: "Rate limit exceeded" });
@@ -13321,7 +13526,7 @@ router36.post("/pageview", async (req, res) => {
     res.status(200).json({ success: false });
   }
 });
-router36.post("/newsletter", async (req, res) => {
+router37.post("/newsletter", async (req, res) => {
   try {
     const ip = clientIp2(req);
     if (!rateLimit2(`newsletter:${ip}`, 8, 10 * 60 * 1e3)) {
@@ -13341,7 +13546,7 @@ router36.post("/newsletter", async (req, res) => {
     return res.status(500).json({ error: "N\xE3o foi poss\xEDvel cadastrar agora." });
   }
 });
-router36.post("/cart/abandoned", async (req, res) => {
+router37.post("/cart/abandoned", async (req, res) => {
   try {
     const ip = clientIp2(req);
     if (!rateLimit2(`cart_abandoned:${ip}`, 10, 5 * 60 * 1e3)) {
@@ -13363,16 +13568,16 @@ router36.post("/cart/abandoned", async (req, res) => {
     res.status(500).json({ error: "Internal error" });
   }
 });
-router36.get("/admin/abandoned-carts", requireAuth, requirePermission("sales", "view"), async (req, res) => {
+router37.get("/admin/abandoned-carts", requireAuth, requirePermission("sales", "view"), async (req, res) => {
   try {
     const { abandonedCarts: abandonedCarts2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
-    const list = await db.select().from(abandonedCarts2).where(eq39(abandonedCarts2.status, "PENDING")).orderBy(desc22(abandonedCarts2.updatedAt));
+    const list = await db.select().from(abandonedCarts2).where(eq40(abandonedCarts2.status, "PENDING")).orderBy(desc22(abandonedCarts2.updatedAt));
     return res.json(list);
   } catch (err) {
     res.status(500).json({ error: "Internal error" });
   }
 });
-router36.post("/shipping/calculate", async (req, res) => {
+router37.post("/shipping/calculate", async (req, res) => {
   try {
     const { cep, items } = req.body;
     if (!cep || !items || !items.length) {
@@ -13391,24 +13596,37 @@ router36.post("/shipping/calculate", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-router36.post("/orders", requireCustomerAuth, async (req, res) => {
+router37.post("/orders", requireCustomerAuth, async (req, res) => {
   try {
     const ip = clientIp2(req);
     if (!rateLimit2(`order:${ip}`, 5, 10 * 60 * 1e3)) {
       return res.status(429).json({ error: "Muitos pedidos deste dispositivo. Tente novamente em alguns minutos." });
     }
-    const { deliveryType, address, cep, street, number: number2, neighborhood, city, state, shippingMethod, shippingFeeBrl, notes, items, couponCode, shippingZoneId, acceptedTerms } = req.body || {};
+    const { deliveryType, address, addressId, cep, street, number: number2, neighborhood, city, state, shippingMethod, notes, items, couponCode, shippingZoneId, acceptedTerms } = req.body || {};
     if (!acceptedTerms) return res.status(400).json({ error: "\xC9 preciso aceitar os termos do pedido para continuar." });
-    const [buyer] = await db.select().from(customers).where(eq39(customers.id, req.customer.customerId)).limit(1);
+    const paymentMethod = String(req.body?.paymentMethod || "PIX").toUpperCase();
+    if (!["PIX", "USDT"].includes(paymentMethod)) {
+      return res.status(400).json({ error: "Forma de pagamento inv\xE1lida." });
+    }
+    const storeConfig = await getStoreConfig();
+    if (paymentMethod === "USDT" && !onlyDigits(storeConfig.whatsapp)) {
+      return res.status(400).json({ error: "Pagamento em USDT indispon\xEDvel: configure o WhatsApp da loja." });
+    }
+    const baseCurrency = storeBaseCurrency(storeConfig.defaultCurrency);
+    const brlRate = paymentMethod === "PIX" ? storeConfig.pixExchangeRate : storeConfig.brlExchangeRate;
+    if (baseCurrency === "USD" && !(brlRate > 0)) {
+      return res.status(400).json({ error: "Cota\xE7\xE3o para convers\xE3o em Real n\xE3o configurada." });
+    }
+    const [buyer] = await db.select().from(customers).where(eq40(customers.id, req.customer.customerId)).limit(1);
     if (!buyer) return res.status(401).json({ error: "Conta n\xE3o encontrada. Fa\xE7a login novamente." });
     const name = buyer.name;
     const phone = onlyDigits(buyer.phone || "");
     const cpf = onlyDigits(buyer.document || "");
     if (!isValidCpf(cpf)) return res.status(400).json({ error: "O CPF da sua conta est\xE1 inv\xE1lido \u2014 atualize em Meus dados antes de comprar." });
-    const payerIsBuyer = req.body?.payerIsBuyer !== false;
+    const payerIsBuyer = paymentMethod === "PIX" ? req.body?.payerIsBuyer !== false : true;
     let payerName2 = null;
     let payerCpf = null;
-    if (!payerIsBuyer) {
+    if (paymentMethod === "PIX" && !payerIsBuyer) {
       payerName2 = String(req.body?.payerDeclaredName || "").trim().replace(/\s+/g, " ");
       payerCpf = onlyDigits(req.body?.payerDeclaredCpf);
       if (!isFullName(payerName2)) return res.status(400).json({ error: "Informe o nome completo de quem vai pagar." });
@@ -13418,19 +13636,25 @@ router36.post("/orders", requireCustomerAuth, async (req, res) => {
     if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: "Carrinho vazio." });
     if (items.length > MAX_ITEMS) return res.status(400).json({ error: "Pedido muito grande. Fale conosco pelo WhatsApp." });
     const delivery = deliveryType === "DELIVERY" ? "DELIVERY" : "PICKUP";
-    if (delivery === "DELIVERY" && String(address || "").trim().length < 8) {
-      return res.status(400).json({ error: "Informe o endere\xE7o de entrega." });
+    let deliveryAddress = { address, cep, street, number: number2, neighborhood, city, state };
+    if (delivery === "DELIVERY" && addressId) {
+      const [savedAddress] = await db.select().from(customerAddresses).where(and33(eq40(customerAddresses.id, String(addressId)), eq40(customerAddresses.customerId, buyer.id))).limit(1);
+      if (!savedAddress) return res.status(400).json({ error: "Endere\xE7o salvo n\xE3o encontrado. Selecione novamente." });
+      deliveryAddress = { ...savedAddress, address: formatOrderAddress(savedAddress) };
+    }
+    if (delivery === "DELIVERY" && String(deliveryAddress.address || formatOrderAddress(deliveryAddress)).trim().length < 8) {
+      return res.status(400).json({ error: "Selecione ou cadastre um endere\xE7o de entrega completo." });
     }
     const terms = await getStoreVitrineConfig();
     const result = await db.transaction(async (tx) => {
-      const [owner] = await tx.select({ id: users.id }).from(users).leftJoin(roles, eq39(users.roleId, roles.id)).where(and33(eq39(users.isActive, true), sql25`lower(coalesce(${roles.name}, '')) in ('master','admin','administrador','administrator')`)).limit(1);
+      const [owner] = await tx.select({ id: users.id }).from(users).leftJoin(roles, eq40(users.roleId, roles.id)).where(and33(eq40(users.isActive, true), sql25`lower(coalesce(${roles.name}, '')) in ('master','admin','administrador','administrator')`)).limit(1);
       if (!owner) throw new Error("Loja sem operador configurado.");
       const customerId = buyer.id;
       const patch = {};
       if (!buyer.phone && phone) patch.phone = phone;
-      if (!buyer.address && delivery === "DELIVERY" && address) patch.address = String(address).trim();
+      if (!buyer.address && delivery === "DELIVERY" && deliveryAddress.address) patch.address = String(deliveryAddress.address).trim();
       if (Object.keys(patch).length > 0) {
-        await tx.update(customers).set({ ...patch, updatedAt: /* @__PURE__ */ new Date() }).where(eq39(customers.id, customerId));
+        await tx.update(customers).set({ ...patch, updatedAt: /* @__PURE__ */ new Date() }).where(eq40(customers.id, customerId));
       }
       const ids = [...new Set(items.map((i) => String(i.productId)))];
       const prods = await tx.select({
@@ -13442,10 +13666,11 @@ router36.post("/orders", requireCustomerAuth, async (req, res) => {
         requiresLot: products.requiresLot,
         physical: stockBalances.physicalStock,
         reserved: stockBalances.reservedStock
-      }).from(products).innerJoin(stockBalances, eq39(products.id, stockBalances.productId)).where(inArray15(products.id, ids)).for("update");
+      }).from(products).innerJoin(stockBalances, eq40(products.id, stockBalances.productId)).where(inArray15(products.id, ids)).for("update");
       const map = new Map(prods.map((p) => [p.id, p]));
       let subtotal = 0;
       const toInsert = [];
+      const orderItems = [];
       const saleId = uuidv417();
       for (const raw of items) {
         const p = map.get(String(raw.productId));
@@ -13467,13 +13692,20 @@ router36.post("/orders", requireCustomerAuth, async (req, res) => {
           discountAmount: "0",
           ivaAmount: "0"
         });
+        orderItems.push({
+          name: p.name,
+          quantity: qty,
+          totalBrl: round23(baseCurrency === "USD" ? total * brlRate : total)
+        });
       }
+      const subtotalBrl = round23(baseCurrency === "USD" ? subtotal * brlRate : subtotal);
+      const fromBrlToBase = (value) => round23(baseCurrency === "USD" ? value / brlRate : value);
       let shippingFee = 0;
       let zoneName = null;
       if (delivery === "DELIVERY") {
         if (!shippingZoneId) throw new Error("Op\xE7\xE3o de frete inv\xE1lida.");
         const { storeShippingZones: storeShippingZones2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
-        const [zone] = await tx.select().from(storeShippingZones2).where(and33(eq39(storeShippingZones2.id, String(shippingZoneId)), eq39(storeShippingZones2.isActive, true))).limit(1);
+        const [zone] = await tx.select().from(storeShippingZones2).where(and33(eq40(storeShippingZones2.id, String(shippingZoneId)), eq40(storeShippingZones2.isActive, true))).limit(1);
         if (!zone) throw new Error("Regi\xE3o de entrega inv\xE1lida. Escolha de novo.");
         shippingFee = round23(Number(zone.feeBrl));
         zoneName = zone.name;
@@ -13483,41 +13715,44 @@ router36.post("/orders", requireCustomerAuth, async (req, res) => {
       if (couponCode && String(couponCode).trim()) {
         const { storeCoupons: storeCoupons2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
         const codeUp = String(couponCode).trim().toUpperCase();
-        const [c] = await tx.select().from(storeCoupons2).where(eq39(storeCoupons2.code, codeUp)).for("update").limit(1);
+        const [c] = await tx.select().from(storeCoupons2).where(eq40(storeCoupons2.code, codeUp)).for("update").limit(1);
         if (!c || !c.isActive) throw new Error("Cupom n\xE3o encontrado ou inativo.");
         const nowD = /* @__PURE__ */ new Date();
         if (c.validFrom && nowD < new Date(c.validFrom)) throw new Error("Cupom ainda n\xE3o est\xE1 valendo.");
         if (c.validUntil && nowD > new Date(c.validUntil)) throw new Error("Cupom expirado.");
         if (c.maxUses != null && Number(c.usedCount) >= Number(c.maxUses)) throw new Error("Cupom esgotado.");
         const min = c.minOrderBrl != null ? Number(c.minOrderBrl) : 0;
-        if (subtotal < min) throw new Error(`Pedido m\xEDnimo de R$ ${min.toFixed(2).replace(".", ",")} pra usar esse cupom.`);
-        discount = c.type === "FIXED" ? Math.min(round23(Number(c.value)), subtotal) : round23(subtotal * Number(c.value) / 100);
+        if (subtotalBrl < min) throw new Error(`Pedido m\xEDnimo de R$ ${min.toFixed(2).replace(".", ",")} pra usar esse cupom.`);
+        discount = c.type === "FIXED" ? Math.min(round23(Number(c.value)), subtotalBrl) : round23(subtotalBrl * Number(c.value) / 100);
         appliedCoupon = codeUp;
-        await tx.update(storeCoupons2).set({ usedCount: Number(c.usedCount) + 1, updatedAt: /* @__PURE__ */ new Date() }).where(eq39(storeCoupons2.id, c.id));
+        await tx.update(storeCoupons2).set({ usedCount: Number(c.usedCount) + 1, updatedAt: /* @__PURE__ */ new Date() }).where(eq40(storeCoupons2.id, c.id));
       }
-      const grandTotal = calcOrderTotal(subtotal, discount, shippingFee);
+      const grandTotal = calcOrderTotal(subtotalBrl, discount, shippingFee);
+      const saleSubtotal = round23(subtotal + fromBrlToBase(shippingFee));
+      const saleDiscount = fromBrlToBase(discount);
+      const saleTotal = fromBrlToBase(grandTotal);
       await tx.insert(sales).values({
         id: saleId,
         series: "LOJ",
         userId: owner.id,
         customerId,
         priceTable: "A",
-        subtotalAmount: round23(subtotal + shippingFee).toFixed(2),
-        discountAmount: discount.toFixed(2),
+        subtotalAmount: saleSubtotal.toFixed(2),
+        discountAmount: saleDiscount.toFixed(2),
         ivaAmount: "0",
-        totalAmount: grandTotal.toFixed(2),
-        currency: "BRL",
+        totalAmount: saleTotal.toFixed(2),
+        currency: baseCurrency,
         orderStatus: "CONFIRMED",
         paymentStatus: "PENDING",
         fulfillmentStatus: "PENDING",
-        observations: `PEDIDO ONLINE - ${name} - ${phone}${delivery === "DELIVERY" ? ` - ENTREGA: ${String(address).trim()}` : " - RETIRADA"}${zoneName ? ` - REGIAO: ${zoneName} (FRETE R$ ${shippingFee.toFixed(2)})` : ""}${appliedCoupon ? ` - CUPOM: ${appliedCoupon} (-R$ ${discount.toFixed(2)})` : ""}${notes ? ` - OBS: ${String(notes).trim()}` : ""}`.toUpperCase()
+        observations: `PEDIDO ONLINE - ${name} - ${phone} - PAGAMENTO ${paymentMethod}${delivery === "DELIVERY" ? ` - ENTREGA: ${String(deliveryAddress.address).trim()}` : " - RETIRADA"}${zoneName ? ` - REGIAO: ${zoneName} (FRETE R$ ${shippingFee.toFixed(2)})` : ""}${appliedCoupon ? ` - CUPOM: ${appliedCoupon} (-R$ ${discount.toFixed(2)})` : ""}${notes ? ` - OBS: ${String(notes).trim()}` : ""}`.toUpperCase()
       });
       await tx.insert(saleItems).values(toInsert);
       for (const it of toInsert) {
         const p = map.get(it.productId);
         const beforeRes = Number(p.reserved);
         const newRes = beforeRes + Number(it.quantity);
-        await tx.update(stockBalances).set({ reservedStock: newRes, updatedAt: /* @__PURE__ */ new Date() }).where(eq39(stockBalances.productId, it.productId));
+        await tx.update(stockBalances).set({ reservedStock: newRes, updatedAt: /* @__PURE__ */ new Date() }).where(eq40(stockBalances.productId, it.productId));
         await tx.insert(stockReservations).values({ id: uuidv417(), saleId, productId: it.productId, quantity: it.quantity, status: "ACTIVE" });
         await tx.insert(stockMovements).values({
           id: uuidv417(),
@@ -13536,7 +13771,7 @@ router36.post("/orders", requireCustomerAuth, async (req, res) => {
       }
       let code = makeOrderCode();
       for (let i = 0; i < 5; i++) {
-        const exists = await tx.select({ id: storeOrders.id }).from(storeOrders).where(eq39(storeOrders.code, code)).limit(1);
+        const exists = await tx.select({ id: storeOrders.id }).from(storeOrders).where(eq40(storeOrders.code, code)).limit(1);
         if (!exists.length) break;
         code = makeOrderCode();
       }
@@ -13546,6 +13781,7 @@ router36.post("/orders", requireCustomerAuth, async (req, res) => {
         customerName: name,
         customerPhone: phone,
         customerDocument: cpf,
+        paymentMethod,
         customerId,
         // Prova de aceite: texto exato, versão, quando, de onde e de qual aparelho.
         clientUserAgent: String(req.headers["user-agent"] || "").slice(0, 400),
@@ -13560,17 +13796,17 @@ Declara\xE7\xE3o adicional: autorizo que o pagamento deste pedido seja feito por
         payerDeclaredName: payerName2,
         payerDeclaredCpf: payerCpf,
         deliveryType: delivery,
-        address: delivery === "DELIVERY" ? String(address).trim() : null,
-        cep: delivery === "DELIVERY" && cep ? String(cep).trim() : null,
-        street: delivery === "DELIVERY" && street ? String(street).trim() : null,
-        number: delivery === "DELIVERY" && number2 ? String(number2).trim() : null,
-        neighborhood: delivery === "DELIVERY" && neighborhood ? String(neighborhood).trim() : null,
-        city: delivery === "DELIVERY" && city ? String(city).trim() : null,
-        state: delivery === "DELIVERY" && state ? String(state).trim() : null,
+        address: delivery === "DELIVERY" ? String(deliveryAddress.address || formatOrderAddress(deliveryAddress)).trim() : null,
+        cep: delivery === "DELIVERY" && deliveryAddress.cep ? String(deliveryAddress.cep).trim() : null,
+        street: delivery === "DELIVERY" && deliveryAddress.street ? String(deliveryAddress.street).trim() : null,
+        number: delivery === "DELIVERY" && deliveryAddress.number ? String(deliveryAddress.number).trim() : null,
+        neighborhood: delivery === "DELIVERY" && deliveryAddress.neighborhood ? String(deliveryAddress.neighborhood).trim() : null,
+        city: delivery === "DELIVERY" && deliveryAddress.city ? String(deliveryAddress.city).trim() : null,
+        state: delivery === "DELIVERY" && deliveryAddress.state ? String(deliveryAddress.state).trim() : null,
         shippingMethod: delivery === "DELIVERY" && shippingMethod ? String(shippingMethod).trim() : null,
         notes: notes ? String(notes).trim() : null,
         totalAmount: grandTotal.toFixed(2),
-        subtotalBrl: subtotal.toFixed(2),
+        subtotalBrl: subtotalBrl.toFixed(2),
         couponCode: appliedCoupon,
         discountBrl: discount > 0 ? discount.toFixed(2) : null,
         shippingZone: zoneName,
@@ -13581,7 +13817,7 @@ Declara\xE7\xE3o adicional: autorizo que o pagamento deste pedido seja feito por
       const phoneClean = phone.replace(/\D/g, "");
       if (phoneClean.length >= 10) {
         const { abandonedCarts: abandonedCarts2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
-        await tx.update(abandonedCarts2).set({ status: "RECOVERED", updatedAt: /* @__PURE__ */ new Date() }).where(eq39(abandonedCarts2.customerPhone, phone));
+        await tx.update(abandonedCarts2).set({ status: "RECOVERED", updatedAt: /* @__PURE__ */ new Date() }).where(eq40(abandonedCarts2.customerPhone, phone));
       }
       await tx.insert(auditLogs).values({
         id: uuidv417(),
@@ -13589,9 +13825,19 @@ Declara\xE7\xE3o adicional: autorizo que o pagamento deste pedido seja feito por
         action: "STORE_ORDER_CREATED",
         tableName: "store_orders",
         recordId: order.id,
-        newValues: JSON.stringify({ code, total: grandTotal, subtotal, discount, shippingFee, coupon: appliedCoupon, items: toInsert.length })
+        newValues: JSON.stringify({ code, paymentMethod, totalBrl: grandTotal, subtotalBrl, subtotalBase: subtotal, baseCurrency, brlRate, discount, shippingFee, coupon: appliedCoupon, items: toInsert.length })
       });
-      return { code: order.code, total: grandTotal, customerName: order.customerName };
+      return {
+        code: order.code,
+        total: grandTotal,
+        customerName: order.customerName,
+        paymentMethod,
+        subtotalBrl,
+        discountBrl: discount,
+        shippingFeeBrl: shippingFee,
+        orderItems,
+        deliveryLabel: delivery === "DELIVERY" ? String(order.address || "Entrega") : "Retirada na loja"
+      };
     });
     await createNotification(db, {
       type: "ORDER_NEW",
@@ -13599,21 +13845,38 @@ Declara\xE7\xE3o adicional: autorizo que o pagamento deste pedido seja feito por
       message: `${result.customerName} fez o pedido ${result.code} no valor de ${formatBrl(result.total)}.`,
       link: "/store-orders"
     });
-    res.status(201).json({ success: true, ...result });
+    const whatsappUrl = result.paymentMethod === "USDT" ? buildUsdtWhatsappUrl(storeConfig, {
+      code: result.code,
+      customerName: result.customerName,
+      items: result.orderItems,
+      subtotalBrl: result.subtotalBrl,
+      discountBrl: result.discountBrl,
+      shippingFeeBrl: result.shippingFeeBrl,
+      totalBrl: result.total,
+      deliveryLabel: result.deliveryLabel
+    }) : "";
+    res.status(201).json({ success: true, code: result.code, total: result.total, paymentMethod: result.paymentMethod, whatsappUrl });
   } catch (err) {
     res.status(400).json({ error: err.message || "N\xE3o foi poss\xEDvel criar o pedido." });
   }
 });
-router36.get("/orders/:code", async (req, res) => {
+router37.get("/orders/:code", async (req, res) => {
   try {
     const ip = clientIp2(req);
     if (!rateLimit2(`order_lookup:${ip}`, 30, 10 * 60 * 1e3)) {
       return res.status(429).json({ error: "Muitas tentativas. Aguarde alguns minutos." });
     }
     const code = String(req.params.code || "").toUpperCase().trim();
-    const [order] = await db.select().from(storeOrders).where(eq39(storeOrders.code, code)).limit(1);
+    const [order] = await db.select().from(storeOrders).where(eq40(storeOrders.code, code)).limit(1);
     if (!order) return res.status(404).json({ error: "Pedido n\xE3o encontrado." });
-    const items = order.saleId ? await db.select({ name: products.name, quantity: saleItems.quantity, unitPrice: saleItems.unitPrice, totalPrice: saleItems.totalPrice }).from(saleItems).leftJoin(products, eq39(saleItems.productId, products.id)).where(eq39(saleItems.saleId, order.saleId)) : [];
+    const rawItems = order.saleId ? await db.select({ name: products.name, quantity: saleItems.quantity, unitPrice: saleItems.unitPrice, totalPrice: saleItems.totalPrice }).from(saleItems).leftJoin(products, eq40(saleItems.productId, products.id)).where(eq40(saleItems.saleId, order.saleId)) : [];
+    const rawItemsTotal = rawItems.reduce((sum, item) => sum + Number(item.totalPrice || 0), 0);
+    const itemBrlFactor = rawItemsTotal > 0 && order.subtotalBrl != null ? Number(order.subtotalBrl) / rawItemsTotal : 1;
+    const items = rawItems.map((item) => ({
+      ...item,
+      unitPrice: round23(Number(item.unitPrice || 0) * itemBrlFactor),
+      totalPrice: round23(Number(item.totalPrice || 0) * itemBrlFactor)
+    }));
     const cfg = await getStoreConfig();
     const makePix = async (amount, txid) => {
       if (!cfg.pixKey) return "";
@@ -13630,10 +13893,11 @@ router36.get("/orders/:code", async (req, res) => {
         return "";
       }
     };
-    const openForPayment = order.status === "AWAITING_PAYMENT" || order.status === "PROOF_SENT";
-    const pixPayload = order.status === "AWAITING_PAYMENT" ? await makePix(Number(order.totalAmount), order.code.replace("-", "")) : "";
+    const paymentMethod = String(order.paymentMethod || "PIX").toUpperCase() === "USDT" ? "USDT" : "PIX";
+    const openForPayment = paymentMethod === "PIX" && (order.status === "AWAITING_PAYMENT" || order.status === "PROOF_SENT");
+    const pixPayload = paymentMethod === "PIX" && order.status === "AWAITING_PAYMENT" ? await makePix(Number(order.totalAmount), order.code.replace("-", "")) : "";
     const { storeOrderPayments: storeOrderPayments2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
-    const parts = await db.select().from(storeOrderPayments2).where(eq39(storeOrderPayments2.orderId, order.id)).orderBy(storeOrderPayments2.seq);
+    const parts = await db.select().from(storeOrderPayments2).where(eq40(storeOrderPayments2.orderId, order.id)).orderBy(storeOrderPayments2.seq);
     const payments2 = [];
     for (const p of parts) {
       payments2.push({
@@ -13646,8 +13910,19 @@ router36.get("/orders/:code", async (req, res) => {
       });
     }
     const paidSent = payments2.filter((p) => p.hasProof).reduce((s, p) => s + p.amount, 0);
+    const usdtWhatsappUrl = paymentMethod === "USDT" && order.status !== "CANCELED" ? buildUsdtWhatsappUrl(cfg, {
+      code: order.code,
+      customerName: order.customerName,
+      items: items.map((item) => ({ name: item.name || "Produto", quantity: Number(item.quantity), totalBrl: Number(item.totalPrice) })),
+      subtotalBrl: order.subtotalBrl != null ? Number(order.subtotalBrl) : Number(order.totalAmount),
+      discountBrl: order.discountBrl != null ? Number(order.discountBrl) : 0,
+      shippingFeeBrl: order.shippingFeeBrl != null ? Number(order.shippingFeeBrl) : 0,
+      totalBrl: Number(order.totalAmount),
+      deliveryLabel: order.deliveryType === "DELIVERY" ? String(order.address || "Entrega") : "Retirada na loja"
+    }) : "";
     res.json({
-      pixConfigured: !!cfg.pixKey,
+      paymentMethod,
+      pixConfigured: paymentMethod === "PIX" && !!cfg.pixKey,
       payments: payments2,
       paidSent: round23(paidSent),
       remaining: round23(Math.max(0, Number(order.totalAmount) - paidSent)),
@@ -13667,7 +13942,8 @@ router36.get("/orders/:code", async (req, res) => {
       deliveryConfirmedAt: order.deliveryConfirmedAt,
       items,
       pixPayload,
-      pixKey: order.status === "AWAITING_PAYMENT" ? cfg.pixKey : "",
+      pixKey: paymentMethod === "PIX" && order.status === "AWAITING_PAYMENT" ? cfg.pixKey : "",
+      usdtWhatsappUrl,
       storeName: cfg.storeName,
       whatsapp: cfg.whatsapp
     });
@@ -13675,7 +13951,7 @@ router36.get("/orders/:code", async (req, res) => {
     res.status(500).json({ error: "Erro ao consultar pedido." });
   }
 });
-router36.post("/orders/:code/proof", async (req, res) => {
+router37.post("/orders/:code/proof", async (req, res) => {
   try {
     const ip = clientIp2(req);
     if (!rateLimit2(`proof:${ip}`, 10, 10 * 60 * 1e3)) return res.status(429).json({ error: "Muitas tentativas. Aguarde alguns minutos." });
@@ -13686,9 +13962,10 @@ router36.post("/orders/:code/proof", async (req, res) => {
     if (!okType) return res.status(400).json({ error: "Formato inv\xE1lido. Envie imagem (JPG/PNG) ou PDF." });
     const approxBytes = Math.floor(data.length * 3 / 4);
     if (approxBytes > MAX_PROOF_BYTES) return res.status(400).json({ error: "Arquivo muito grande (m\xE1x. 3 MB)." });
-    const [order] = await db.select().from(storeOrders).where(eq39(storeOrders.code, code)).limit(1);
+    const [order] = await db.select().from(storeOrders).where(eq40(storeOrders.code, code)).limit(1);
     if (!order) return res.status(404).json({ error: "Pedido n\xE3o encontrado." });
     if (order.status === "CANCELED") return res.status(400).json({ error: "Este pedido foi cancelado." });
+    if (String(order.paymentMethod || "PIX") !== "PIX") return res.status(400).json({ error: "Este pedido n\xE3o usa pagamento por PIX." });
     await db.update(storeOrders).set({
       proofFileName: String(fileName || "comprovante").slice(0, 120),
       proofFileType: String(fileType),
@@ -13697,7 +13974,7 @@ router36.post("/orders/:code/proof", async (req, res) => {
       proofSentAt: /* @__PURE__ */ new Date(),
       status: order.status === "AWAITING_PAYMENT" ? "PROOF_SENT" : order.status,
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq39(storeOrders.id, order.id));
+    }).where(eq40(storeOrders.id, order.id));
     await createNotification(db, {
       type: "PAYMENT_PROOF",
       title: "Comprovante recebido",
@@ -13709,12 +13986,12 @@ router36.post("/orders/:code/proof", async (req, res) => {
     res.status(400).json({ error: "N\xE3o foi poss\xEDvel enviar o comprovante." });
   }
 });
-router36.post("/orders/:code/received", async (req, res) => {
+router37.post("/orders/:code/received", async (req, res) => {
   try {
     const ip = clientIp2(req);
     if (!rateLimit2(`received:${ip}`, 20, 10 * 60 * 1e3)) return res.status(429).json({ error: "Muitas tentativas. Aguarde alguns minutos." });
     const code = String(req.params.code || "").toUpperCase().trim();
-    const [order] = await db.select().from(storeOrders).where(eq39(storeOrders.code, code)).limit(1);
+    const [order] = await db.select().from(storeOrders).where(eq40(storeOrders.code, code)).limit(1);
     if (!order) return res.status(404).json({ error: "Pedido n\xE3o encontrado." });
     if (order.status === "CANCELED") return res.status(400).json({ error: "Este pedido foi cancelado." });
     if (order.status !== "CONFIRMED") return res.status(400).json({ error: "O pagamento ainda n\xE3o foi confirmado pela loja." });
@@ -13724,7 +14001,7 @@ router36.post("/orders/:code/received", async (req, res) => {
       deliveryConfirmedIp: ip,
       deliveryConfirmedUserAgent: String(req.headers["user-agent"] || "").slice(0, 400),
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq39(storeOrders.id, order.id));
+    }).where(eq40(storeOrders.id, order.id));
     res.json({ success: true });
   } catch (err) {
     res.status(400).json({ error: "N\xE3o foi poss\xEDvel registrar o recebimento." });
@@ -13737,23 +14014,24 @@ function splitAmount(total, parts) {
   values[parts - 1] = round23(total - base * (parts - 1));
   return values;
 }
-router36.post("/orders/:code/split", async (req, res) => {
+router37.post("/orders/:code/split", async (req, res) => {
   try {
     const ip = clientIp2(req);
     if (!rateLimit2(`split:${ip}`, 20, 10 * 60 * 1e3)) return res.status(429).json({ error: "Muitas tentativas. Aguarde alguns minutos." });
     const parts = Math.floor(Number(req.body?.parts) || 0);
     if (!(parts >= 1 && parts <= MAX_PARTS)) return res.status(400).json({ error: `Escolha de 1 a ${MAX_PARTS} pagamentos.` });
     const code = String(req.params.code || "").toUpperCase().trim();
-    const [order] = await db.select().from(storeOrders).where(eq39(storeOrders.code, code)).limit(1);
+    const [order] = await db.select().from(storeOrders).where(eq40(storeOrders.code, code)).limit(1);
     if (!order) return res.status(404).json({ error: "Pedido n\xE3o encontrado." });
     if (order.status === "CANCELED") return res.status(400).json({ error: "Este pedido foi cancelado." });
     if (order.status === "CONFIRMED") return res.status(400).json({ error: "Este pedido j\xE1 est\xE1 pago." });
+    if (String(order.paymentMethod || "PIX") !== "PIX") return res.status(400).json({ error: "Divis\xE3o dispon\xEDvel somente para PIX." });
     const { storeOrderPayments: storeOrderPayments2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
-    const existing = await db.select().from(storeOrderPayments2).where(eq39(storeOrderPayments2.orderId, order.id));
+    const existing = await db.select().from(storeOrderPayments2).where(eq40(storeOrderPayments2.orderId, order.id));
     if (existing.some((p) => !!p.proofData)) {
       return res.status(400).json({ error: "J\xE1 existe comprovante enviado. Fale com a loja pelo WhatsApp para ajustar a divis\xE3o." });
     }
-    await db.delete(storeOrderPayments2).where(eq39(storeOrderPayments2.orderId, order.id));
+    await db.delete(storeOrderPayments2).where(eq40(storeOrderPayments2.orderId, order.id));
     if (parts > 1) {
       const values = splitAmount(Number(order.totalAmount), parts);
       await db.insert(storeOrderPayments2).values(values.map((amount, i) => ({
@@ -13767,7 +14045,7 @@ router36.post("/orders/:code/split", async (req, res) => {
     res.status(400).json({ error: "N\xE3o foi poss\xEDvel dividir o pagamento." });
   }
 });
-router36.post("/orders/:code/payments/:paymentId/proof", async (req, res) => {
+router37.post("/orders/:code/payments/:paymentId/proof", async (req, res) => {
   try {
     const ip = clientIp2(req);
     if (!rateLimit2(`proof:${ip}`, 15, 10 * 60 * 1e3)) return res.status(429).json({ error: "Muitas tentativas. Aguarde alguns minutos." });
@@ -13778,11 +14056,12 @@ router36.post("/orders/:code/payments/:paymentId/proof", async (req, res) => {
     const approxBytes = Math.floor(data.length * 3 / 4);
     if (approxBytes > MAX_PROOF_BYTES) return res.status(400).json({ error: "Arquivo muito grande (m\xE1x. 3 MB)." });
     const code = String(req.params.code || "").toUpperCase().trim();
-    const [order] = await db.select().from(storeOrders).where(eq39(storeOrders.code, code)).limit(1);
+    const [order] = await db.select().from(storeOrders).where(eq40(storeOrders.code, code)).limit(1);
     if (!order) return res.status(404).json({ error: "Pedido n\xE3o encontrado." });
     if (order.status === "CANCELED") return res.status(400).json({ error: "Este pedido foi cancelado." });
+    if (String(order.paymentMethod || "PIX") !== "PIX") return res.status(400).json({ error: "Este pedido n\xE3o usa pagamento por PIX." });
     const { storeOrderPayments: storeOrderPayments2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
-    const [part] = await db.select().from(storeOrderPayments2).where(and33(eq39(storeOrderPayments2.id, String(req.params.paymentId)), eq39(storeOrderPayments2.orderId, order.id))).limit(1);
+    const [part] = await db.select().from(storeOrderPayments2).where(and33(eq40(storeOrderPayments2.id, String(req.params.paymentId)), eq40(storeOrderPayments2.orderId, order.id))).limit(1);
     if (!part) return res.status(404).json({ error: "Pagamento n\xE3o encontrado neste pedido." });
     await db.update(storeOrderPayments2).set({
       proofFileName: String(fileName || "comprovante").slice(0, 120),
@@ -13792,18 +14071,18 @@ router36.post("/orders/:code/payments/:paymentId/proof", async (req, res) => {
       proofSentAt: /* @__PURE__ */ new Date(),
       status: part.status === "CONFIRMED" ? "CONFIRMED" : "PROOF_SENT",
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq39(storeOrderPayments2.id, part.id));
-    const all = await db.select().from(storeOrderPayments2).where(eq39(storeOrderPayments2.orderId, order.id));
+    }).where(eq40(storeOrderPayments2.id, part.id));
+    const all = await db.select().from(storeOrderPayments2).where(eq40(storeOrderPayments2.orderId, order.id));
     const allSent = all.every((p) => !!p.proofData);
     if (allSent && order.status === "AWAITING_PAYMENT") {
-      await db.update(storeOrders).set({ status: "PROOF_SENT", proofSentAt: /* @__PURE__ */ new Date(), updatedAt: /* @__PURE__ */ new Date() }).where(eq39(storeOrders.id, order.id));
+      await db.update(storeOrders).set({ status: "PROOF_SENT", proofSentAt: /* @__PURE__ */ new Date(), updatedAt: /* @__PURE__ */ new Date() }).where(eq40(storeOrders.id, order.id));
     }
     res.json({ success: true, allSent });
   } catch (err) {
     res.status(400).json({ error: "N\xE3o foi poss\xEDvel enviar o comprovante." });
   }
 });
-router36.get("/admin/orders", requireAuth, requirePermission("sales", "view"), async (req, res) => {
+router37.get("/admin/orders", requireAuth, requirePermission("sales", "view"), async (req, res) => {
   try {
     const status = String(req.query.status || "").trim();
     const rows = await db.select({
@@ -13824,8 +14103,16 @@ router36.get("/admin/orders", requireAuth, requirePermission("sales", "view"), a
       payerDeclaredName: storeOrders.payerDeclaredName,
       payerDeclaredCpf: storeOrders.payerDeclaredCpf,
       deliveryConfirmedAt: storeOrders.deliveryConfirmedAt,
+      paymentMethod: storeOrders.paymentMethod,
       deliveryType: storeOrders.deliveryType,
       address: storeOrders.address,
+      cep: storeOrders.cep,
+      street: storeOrders.street,
+      number: storeOrders.number,
+      neighborhood: storeOrders.neighborhood,
+      city: storeOrders.city,
+      state: storeOrders.state,
+      shippingMethod: storeOrders.shippingMethod,
       notes: storeOrders.notes,
       totalAmount: storeOrders.totalAmount,
       status: storeOrders.status,
@@ -13839,7 +14126,7 @@ router36.get("/admin/orders", requireAuth, requirePermission("sales", "view"), a
       // Pedido pago em partes: quantas partes existem e quantas já têm comprovante.
       partsTotal: sql25`(select count(*) from store_order_payments p where p.order_id = ${storeOrders.id})`,
       partsWithProof: sql25`(select count(*) from store_order_payments p where p.order_id = ${storeOrders.id} and p.proof_data is not null)`
-    }).from(storeOrders).leftJoin(sales, eq39(storeOrders.saleId, sales.id)).where(status ? eq39(storeOrders.status, status) : void 0).orderBy(desc22(storeOrders.createdAt)).limit(200);
+    }).from(storeOrders).leftJoin(sales, eq40(storeOrders.saleId, sales.id)).where(status ? eq40(storeOrders.status, status) : void 0).orderBy(desc22(storeOrders.createdAt)).limit(200);
     const counts = await db.select({ status: storeOrders.status, n: sql25`count(*)` }).from(storeOrders).groupBy(storeOrders.status);
     res.json({
       data: rows.map((r) => ({ ...r, partsTotal: Number(r.partsTotal), partsWithProof: Number(r.partsWithProof) })),
@@ -13849,16 +14136,16 @@ router36.get("/admin/orders", requireAuth, requirePermission("sales", "view"), a
     res.status(500).json({ error: err.message });
   }
 });
-router36.get("/admin/orders/:id/proof", requireAuth, requirePermission("sales", "view"), async (req, res) => {
+router37.get("/admin/orders/:id/proof", requireAuth, requirePermission("sales", "view"), async (req, res) => {
   try {
-    const [o] = await db.select({ data: storeOrders.proofData, type: storeOrders.proofFileType, name: storeOrders.proofFileName }).from(storeOrders).where(eq39(storeOrders.id, req.params.id)).limit(1);
+    const [o] = await db.select({ data: storeOrders.proofData, type: storeOrders.proofFileType, name: storeOrders.proofFileName }).from(storeOrders).where(eq40(storeOrders.id, req.params.id)).limit(1);
     if (!o?.data) return res.status(404).json({ error: "Sem comprovante." });
     res.json({ data: o.data, fileType: o.type, fileName: o.name });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-router36.get("/admin/orders/:id/payments", requireAuth, requirePermission("sales", "view"), async (req, res) => {
+router37.get("/admin/orders/:id/payments", requireAuth, requirePermission("sales", "view"), async (req, res) => {
   try {
     const { storeOrderPayments: storeOrderPayments2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
     const rows = await db.select({
@@ -13870,34 +14157,35 @@ router36.get("/admin/orders/:id/payments", requireAuth, requirePermission("sales
       fileType: storeOrderPayments2.proofFileType,
       sentAt: storeOrderPayments2.proofSentAt,
       hasProof: sql25`${storeOrderPayments2.proofData} is not null`
-    }).from(storeOrderPayments2).where(eq39(storeOrderPayments2.orderId, req.params.id)).orderBy(storeOrderPayments2.seq);
+    }).from(storeOrderPayments2).where(eq40(storeOrderPayments2.orderId, req.params.id)).orderBy(storeOrderPayments2.seq);
     res.json({ data: rows.map((r) => ({ ...r, amount: Number(r.amountBrl) })) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-router36.get("/admin/orders/:id/payments/:paymentId/proof", requireAuth, requirePermission("sales", "view"), async (req, res) => {
+router37.get("/admin/orders/:id/payments/:paymentId/proof", requireAuth, requirePermission("sales", "view"), async (req, res) => {
   try {
     const { storeOrderPayments: storeOrderPayments2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
-    const [p] = await db.select().from(storeOrderPayments2).where(and33(eq39(storeOrderPayments2.id, req.params.paymentId), eq39(storeOrderPayments2.orderId, req.params.id))).limit(1);
+    const [p] = await db.select().from(storeOrderPayments2).where(and33(eq40(storeOrderPayments2.id, req.params.paymentId), eq40(storeOrderPayments2.orderId, req.params.id))).limit(1);
     if (!p?.proofData) return res.status(404).json({ error: "Sem comprovante nesta parte." });
     res.json({ data: p.proofData, fileType: p.proofFileType, fileName: p.proofFileName, amount: Number(p.amountBrl), seq: p.seq });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-router36.post("/admin/orders/:id/confirm", requireAuth, requirePermission("cash", "receive_payment"), async (req, res) => {
+router37.post("/admin/orders/:id/confirm", requireAuth, requirePermission("cash", "receive_payment"), async (req, res) => {
   try {
-    const [o] = await db.select().from(storeOrders).where(eq39(storeOrders.id, req.params.id)).limit(1);
+    const [o] = await db.select().from(storeOrders).where(eq40(storeOrders.id, req.params.id)).limit(1);
     if (!o) return res.status(404).json({ error: "Pedido n\xE3o encontrado." });
     if (o.status === "CANCELED") return res.status(400).json({ error: "Pedido cancelado." });
     if (o.saleId) {
-      const [linkedSale] = await db.select().from(sales).where(eq39(sales.id, o.saleId)).limit(1);
+      const [linkedSale] = await db.select().from(sales).where(eq40(sales.id, o.saleId)).limit(1);
       if (linkedSale && (["CANCELED", "CANCELLED", "RETURNED"].includes(String(linkedSale.orderStatus)) || linkedSale.paymentStatus === "REFUNDED")) {
         return res.status(400).json({ error: "A venda deste pedido j\xE1 foi cancelada/estornada no Caixa." });
       }
     }
     const total = round23(Number(o.totalAmount));
+    const paymentMethod = String(o.paymentMethod || "PIX").toUpperCase() === "USDT" ? "USDT" : "PIX";
     const informed = req.body?.receivedAmount;
     const received = informed == null || informed === "" ? total : round23(Number(informed));
     if (!(received >= 0)) return res.status(400).json({ error: "Valor recebido inv\xE1lido." });
@@ -13929,24 +14217,25 @@ router36.post("/admin/orders/:id/confirm", requireAuth, requirePermission("cash"
         payerName: req.body?.payerName ? String(req.body.payerName).trim().slice(0, 160) : null,
         receiptCheckedAt: /* @__PURE__ */ new Date(),
         updatedAt: /* @__PURE__ */ new Date()
-      }).where(eq39(storeOrders.id, o.id));
-      await tx.update(storeOrderPayments2).set({ status: "CONFIRMED", confirmedAt: /* @__PURE__ */ new Date(), updatedAt: /* @__PURE__ */ new Date() }).where(eq39(storeOrderPayments2.orderId, o.id));
+      }).where(eq40(storeOrders.id, o.id));
+      await tx.update(storeOrderPayments2).set({ status: "CONFIRMED", confirmedAt: /* @__PURE__ */ new Date(), updatedAt: /* @__PURE__ */ new Date() }).where(eq40(storeOrderPayments2.orderId, o.id));
       if (o.saleId) {
-        await routePayment(tx, "PIX", received, {
+        await routePayment(tx, paymentMethod, received, {
           saleId: o.saleId,
           saleLabel: `Pedido ${o.code}`,
           userId: req.user.userId,
           sourceCurrency: "BRL"
         });
-        const [sale] = await tx.select().from(sales).where(eq39(sales.id, o.saleId)).limit(1).for("update");
+        const [sale] = await tx.select().from(sales).where(eq40(sales.id, o.saleId)).limit(1).for("update");
         if (sale) {
           const newStatus = received >= total - MONEY_EPSILON ? "PAID" : "PARTIAL";
           const orderStatusUpdate = newStatus === "PAID" && sale.fulfillmentStatus === "DELIVERED" ? { orderStatus: "COMPLETED" } : {};
-          await tx.update(sales).set({ paymentStatus: newStatus, ...orderStatusUpdate }).where(eq39(sales.id, o.saleId));
+          await tx.update(sales).set({ paymentStatus: newStatus, ...orderStatusUpdate }).where(eq40(sales.id, o.saleId));
         }
       }
       await logAction(req.user.userId, "STORE_ORDER_CONFIRM", "store_orders", o.id, null, {
         code: o.code,
+        paymentMethod,
         total,
         received,
         missing: missing > 0 ? missing : 0,
@@ -13956,7 +14245,7 @@ router36.post("/admin/orders/:id/confirm", requireAuth, requirePermission("cash"
     await createNotification(db, {
       type: "PAYMENT_CONFIRMED",
       title: "Pagamento confirmado",
-      message: `Pagamento de ${formatBrl(received)} do pedido ${o.code} (${o.customerName}) confirmado.`,
+      message: `Pagamento ${paymentMethod} de ${formatBrl(received)} do pedido ${o.code} (${o.customerName}) confirmado.`,
       link: "/store-orders"
     });
     res.json({ success: true, received, missing: missing > 0 ? missing : 0 });
@@ -13964,14 +14253,14 @@ router36.post("/admin/orders/:id/confirm", requireAuth, requirePermission("cash"
     res.status(400).json({ error: err.message });
   }
 });
-router36.post("/admin/orders/:id/cancel", requireAuth, requirePermission("sales", "cancel"), async (req, res) => {
+router37.post("/admin/orders/:id/cancel", requireAuth, requirePermission("sales", "cancel"), async (req, res) => {
   try {
     const reason = String(req.body?.reason || "").trim() || "Cancelado pela loja";
     await db.transaction(async (tx) => {
-      const [o] = await tx.select().from(storeOrders).where(eq39(storeOrders.id, req.params.id)).limit(1);
+      const [o] = await tx.select().from(storeOrders).where(eq40(storeOrders.id, req.params.id)).limit(1);
       if (!o) throw new Error("Pedido n\xE3o encontrado.");
       if (o.status === "CANCELED") throw new Error("Pedido j\xE1 cancelado.");
-      const [sale] = o.saleId ? await tx.select().from(sales).where(eq39(sales.id, o.saleId)).limit(1) : [void 0];
+      const [sale] = o.saleId ? await tx.select().from(sales).where(eq40(sales.id, o.saleId)).limit(1) : [void 0];
       const saleAlreadyDead = sale && (["CANCELED", "CANCELLED", "RETURNED"].includes(String(sale.orderStatus)) || sale.paymentStatus === "REFUNDED");
       if (sale && !saleAlreadyDead) {
         await cancelSaleTx(tx, sale, reason, req.user.userId);
@@ -13979,9 +14268,9 @@ router36.post("/admin/orders/:id/cancel", requireAuth, requirePermission("sales"
       }
       if (o.couponCode) {
         const { storeCoupons: storeCoupons2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
-        await tx.update(storeCoupons2).set({ usedCount: sql25`greatest(${storeCoupons2.usedCount} - 1, 0)`, updatedAt: /* @__PURE__ */ new Date() }).where(eq39(storeCoupons2.code, o.couponCode));
+        await tx.update(storeCoupons2).set({ usedCount: sql25`greatest(${storeCoupons2.usedCount} - 1, 0)`, updatedAt: /* @__PURE__ */ new Date() }).where(eq40(storeCoupons2.code, o.couponCode));
       }
-      await tx.update(storeOrders).set({ status: "CANCELED", canceledReason: reason, updatedAt: /* @__PURE__ */ new Date() }).where(eq39(storeOrders.id, o.id));
+      await tx.update(storeOrders).set({ status: "CANCELED", canceledReason: reason, updatedAt: /* @__PURE__ */ new Date() }).where(eq40(storeOrders.id, o.id));
     });
     await logAction(req.user.userId, "STORE_ORDER_CANCEL", "store_orders", req.params.id, null, { reason });
     res.json({ success: true });
@@ -13989,38 +14278,38 @@ router36.post("/admin/orders/:id/cancel", requireAuth, requirePermission("sales"
     res.status(400).json({ error: err.message });
   }
 });
-router36.post("/admin/orders/:id/purge", requireAuth, requirePermission("admin", "manage"), async (req, res) => {
+router37.post("/admin/orders/:id/purge", requireAuth, requirePermission("admin", "manage"), async (req, res) => {
   try {
     const { masterPassword } = req.body || {};
     if (!masterPassword) return res.status(400).json({ error: "Senha do Master \xE9 obrigat\xF3ria." });
     const master = await findMasterByPassword(String(masterPassword));
     if (!master) return res.status(403).json({ error: "Senha inv\xE1lida \u2014 s\xF3 o perfil Master pode excluir um pedido." });
     const result = await db.transaction(async (tx) => {
-      const [o] = await tx.select().from(storeOrders).where(eq39(storeOrders.id, req.params.id)).limit(1).for("update");
+      const [o] = await tx.select().from(storeOrders).where(eq40(storeOrders.id, req.params.id)).limit(1).for("update");
       if (!o) throw new Error("Pedido n\xE3o encontrado.");
       if (o.status !== "CANCELED") throw new Error("S\xF3 \xE9 poss\xEDvel excluir pedidos cancelados.");
       let reversedAmount = 0;
       if (o.saleId) {
-        const [sale] = await tx.select().from(sales).where(eq39(sales.id, o.saleId)).limit(1).for("update");
+        const [sale] = await tx.select().from(sales).where(eq40(sales.id, o.saleId)).limit(1).for("update");
         if (sale) {
           if (!["CANCELED", "CANCELLED", "RETURNED"].includes(String(sale.orderStatus))) {
             throw new Error("A venda ligada a este pedido n\xE3o est\xE1 cancelada \u2014 cancele ou devolva pelo Caixa antes de excluir.");
           }
-          const before = await tx.select({ amt: accountMovements.amountUsd }).from(accountMovements).where(eq39(accountMovements.referenceId, sale.id));
+          const before = await tx.select({ amt: accountMovements.amountUsd }).from(accountMovements).where(eq40(accountMovements.referenceId, sale.id));
           reversedAmount = before.reduce((s, r) => s + Number(r.amt), 0);
           if (Math.abs(reversedAmount) > MONEY_EPSILON) {
             await reverseSaleMovements(tx, sale.id, req.user.userId, `pedido da loja ${o.code} exclu\xEDdo por Master`);
           }
         }
         const { storeOrderPayments: storeOrderPayments2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
-        await tx.delete(storeOrderPayments2).where(eq39(storeOrderPayments2.orderId, o.id));
+        await tx.delete(storeOrderPayments2).where(eq40(storeOrderPayments2.orderId, o.id));
       }
       await logAction(master.id, "MASTER_PURGE_STORE_ORDER", "store_orders", o.id, o, {
         code: o.code,
         reversedAmount,
         executedBy: req.user.userId
       });
-      await tx.delete(storeOrders).where(eq39(storeOrders.id, o.id));
+      await tx.delete(storeOrders).where(eq40(storeOrders.id, o.id));
       if (o.saleId) await deleteDeadSaleRecords(tx, o.saleId);
       return { code: o.code, reversedAmount };
     });
@@ -14035,28 +14324,28 @@ router36.post("/admin/orders/:id/purge", requireAuth, requirePermission("admin",
     res.status(400).json({ error: err.message });
   }
 });
-router36.put("/admin/products/:id/visibility", requireAuth, requirePermission("product", "manage"), async (req, res) => {
+router37.put("/admin/products/:id/visibility", requireAuth, requirePermission("product", "manage"), async (req, res) => {
   try {
     const { storeVisible, storeDescription } = req.body || {};
     const updates = { updatedAt: /* @__PURE__ */ new Date() };
     if (storeVisible !== void 0) updates.storeVisible = !!storeVisible;
     if (storeDescription !== void 0) updates.storeDescription = String(storeDescription || "").slice(0, 400) || null;
-    await db.update(products).set(updates).where(eq39(products.id, req.params.id));
+    await db.update(products).set(updates).where(eq40(products.id, req.params.id));
     res.json({ success: true });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
-router36.get("/admin/orders/:id/dossier", requireAuth, requirePermission("sales", "view"), async (req, res) => {
+router37.get("/admin/orders/:id/dossier", requireAuth, requirePermission("sales", "view"), async (req, res) => {
   try {
-    const [o] = await db.select().from(storeOrders).where(eq39(storeOrders.id, req.params.id)).limit(1);
+    const [o] = await db.select().from(storeOrders).where(eq40(storeOrders.id, req.params.id)).limit(1);
     if (!o) return res.status(404).json({ error: "Pedido n\xE3o encontrado." });
     const [cs] = await db.select().from(companySettings).limit(1);
-    const [sale] = o.saleId ? await db.select().from(sales).where(eq39(sales.id, o.saleId)).limit(1) : [void 0];
+    const [sale] = o.saleId ? await db.select().from(sales).where(eq40(sales.id, o.saleId)).limit(1) : [void 0];
     const { storeOrderPayments: storeOrderPayments2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
-    const parts = await db.select().from(storeOrderPayments2).where(eq39(storeOrderPayments2.orderId, o.id)).orderBy(storeOrderPayments2.seq);
-    const [cust] = o.customerId ? await db.select().from(customers).where(eq39(customers.id, o.customerId)).limit(1) : [void 0];
-    const [who] = await db.select({ name: users.name }).from(users).where(eq39(users.id, req.user.userId)).limit(1);
+    const parts = await db.select().from(storeOrderPayments2).where(eq40(storeOrderPayments2.orderId, o.id)).orderBy(storeOrderPayments2.seq);
+    const [cust] = o.customerId ? await db.select().from(customers).where(eq40(customers.id, o.customerId)).limit(1) : [void 0];
+    const [who] = await db.select({ name: users.name }).from(users).where(eq40(users.id, req.user.userId)).limit(1);
     const PDFDocument4 = (await import("pdfkit")).default;
     const doc = new PDFDocument4({ size: "A4", margin: 0, bufferPages: true });
     res.setHeader("Content-Type", "application/pdf");
@@ -14107,7 +14396,7 @@ router36.get("/admin/orders/:id/dossier", requireAuth, requirePermission("sales"
     const statusTxt = o.status === "CONFIRMED" ? "Pagamento confirmado" : o.status === "PROOF_SENT" ? "Comprovante enviado" : o.status === "CANCELED" ? "Cancelado" : "Aguardando pagamento";
     const statusCor = o.status === "CONFIRMED" ? OK : o.status === "CANCELED" ? BAD : WARN;
     doc.roundedRect(M, y, W, 52, 4).fillAndStroke(SOFT, LINE);
-    doc.fontSize(6).font("Helvetica").fillColor(MUTED).text("VALOR PAGO POR PIX", M + 14, y + 9, { characterSpacing: 0.5, width: 200 });
+    doc.fontSize(6).font("Helvetica").fillColor(MUTED).text("VALOR DO PEDIDO", M + 14, y + 9, { characterSpacing: 0.5, width: 200 });
     doc.fontSize(19).font("Helvetica-Bold").fillColor(INK).text(brl(o.totalAmount), M + 14, y + 20, { width: 200 });
     const info = [
       ["Pedido feito em", dt(o.createdAt), INK],
@@ -14130,15 +14419,16 @@ router36.get("/admin/orders/:id/dossier", requireAuth, requirePermission("sales"
     if (cust) yL = kv(M, yL, COL, "Cadastro no sistema", `${cust.name} \xB7 desde ${dt(cust.createdAt).slice(0, 10)}`);
     const recebido = o.receivedAmountBrl != null ? Number(o.receivedAmountBrl) : null;
     const falta = recebido != null ? round23(Number(o.totalAmount) - recebido) : 0;
-    yR = kv(COL2, yR, COL, "Forma", parts.length > 0 ? `PIX em ${parts.length} pagamentos` : "PIX \xE0 vista");
+    const orderPaymentMethod = String(o.paymentMethod || "PIX").toUpperCase() === "USDT" ? "USDT" : "PIX";
+    yR = kv(COL2, yR, COL, "Forma", orderPaymentMethod === "USDT" ? "USDT \xB7 combinado pelo WhatsApp" : parts.length > 0 ? `PIX em ${parts.length} pagamentos` : "PIX \xE0 vista");
     yR = kv(
       COL2,
       yR,
       COL,
       "Quem paga (declarado no pedido)",
-      o.payerIsBuyer === false ? `${o.payerDeclaredName || "\u2014"} \xB7 CPF ${cpfFmt(o.payerDeclaredCpf)} (autorizado)` : "o pr\xF3prio comprador"
+      orderPaymentMethod === "USDT" ? "comprador \xB7 negocia\xE7\xE3o pelo WhatsApp" : o.payerIsBuyer === false ? `${o.payerDeclaredName || "\u2014"} \xB7 CPF ${cpfFmt(o.payerDeclaredCpf)} (autorizado)` : "o pr\xF3prio comprador"
     );
-    yR = kv(COL2, yR, COL, "Titular do comprovante", o.payerName || "n\xE3o informado");
+    yR = kv(COL2, yR, COL, "Titular do pagamento", o.payerName || "n\xE3o informado");
     yR = kv(
       COL2,
       yR,
@@ -14418,7 +14708,7 @@ function normalizeHeroCtaOrder(v) {
   return String(v || "") === "invertida" ? "invertida" : "";
 }
 async function getStoreVitrineConfig() {
-  const rows = await db.select().from(systemSettings).where(eq39(systemSettings.key, STORE_CONFIG_KEY)).limit(1);
+  const rows = await db.select().from(systemSettings).where(eq40(systemSettings.key, STORE_CONFIG_KEY)).limit(1);
   const v = rows[0]?.value || {};
   return {
     heroTitle: String(v.heroTitle || ""),
@@ -14464,17 +14754,17 @@ async function getStoreVitrineConfig() {
     termsVersion: String(v.termsVersion || "1")
   };
 }
-router36.get("/config", async (_req, res) => {
+router37.get("/config", async (_req, res) => {
   try {
     res.json(await getStoreVitrineConfig());
   } catch {
     res.json({ heroTitle: "", heroSubtitle: "", announcement: "", featuredProductIds: [] });
   }
 });
-router36.get("/shipping-zones", async (_req, res) => {
+router37.get("/shipping-zones", async (_req, res) => {
   try {
     const { storeShippingZones: storeShippingZones2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
-    const rows = await db.select().from(storeShippingZones2).where(eq39(storeShippingZones2.isActive, true)).orderBy(storeShippingZones2.sortOrder, storeShippingZones2.name);
+    const rows = await db.select().from(storeShippingZones2).where(eq40(storeShippingZones2.isActive, true)).orderBy(storeShippingZones2.sortOrder, storeShippingZones2.name);
     res.json({ data: rows.map((z) => ({ id: z.id, name: z.name, feeBrl: Number(z.feeBrl) })) });
   } catch (err) {
     res.status(500).json({ error: "Erro ao carregar regi\xF5es." });
@@ -14484,7 +14774,7 @@ async function evaluateCoupon(codeRaw, subtotal) {
   const code = String(codeRaw || "").trim().toUpperCase();
   if (!code) return { ok: false, reason: "Informe o c\xF3digo do cupom." };
   const { storeCoupons: storeCoupons2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
-  const [c] = await db.select().from(storeCoupons2).where(eq39(storeCoupons2.code, code)).limit(1);
+  const [c] = await db.select().from(storeCoupons2).where(eq40(storeCoupons2.code, code)).limit(1);
   if (!c || !c.isActive) return { ok: false, reason: "Cupom n\xE3o encontrado ou inativo." };
   const now = /* @__PURE__ */ new Date();
   if (c.validFrom && now < new Date(c.validFrom)) return { ok: false, reason: "Cupom ainda n\xE3o est\xE1 valendo." };
@@ -14496,7 +14786,7 @@ async function evaluateCoupon(codeRaw, subtotal) {
   const discount = c.type === "FIXED" ? Math.min(round23(value), round23(subtotal)) : round23(subtotal * value / 100);
   return { ok: true, coupon: c, discount: round23(discount) };
 }
-router36.post("/coupon/preview", async (req, res) => {
+router37.post("/coupon/preview", async (req, res) => {
   try {
     const ip = clientIp2(req);
     if (!rateLimit2(`coupon:${ip}`, 20, 10 * 60 * 1e3)) return res.status(429).json({ error: "Muitas tentativas. Aguarde uns minutos." });
@@ -14508,7 +14798,7 @@ router36.post("/coupon/preview", async (req, res) => {
     res.status(500).json({ error: "Erro ao validar cupom." });
   }
 });
-router36.get("/admin/pix-test", requireAuth, requirePermission("settings", "manage"), async (_req, res) => {
+router37.get("/admin/pix-test", requireAuth, requirePermission("settings", "manage"), async (_req, res) => {
   try {
     const cfg = await getStoreConfig();
     if (!cfg.pixKey) {
@@ -14528,14 +14818,14 @@ router36.get("/admin/pix-test", requireAuth, requirePermission("settings", "mana
     res.status(400).json({ error: err.message || "N\xE3o foi poss\xEDvel gerar o teste." });
   }
 });
-router36.get("/admin/config", requireAuth, requirePermission("settings", "manage"), async (_req, res) => {
+router37.get("/admin/config", requireAuth, requirePermission("settings", "manage"), async (_req, res) => {
   try {
     res.json(await getStoreVitrineConfig());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-router36.put("/admin/config", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
+router37.put("/admin/config", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
   try {
     const b = req.body || {};
     const current = await getStoreVitrineConfig();
@@ -14583,8 +14873,8 @@ router36.put("/admin/config", requireAuth, requirePermission("settings", "manage
       termsText,
       termsVersion
     };
-    const rows = await db.select().from(systemSettings).where(eq39(systemSettings.key, STORE_CONFIG_KEY)).limit(1);
-    if (rows.length > 0) await db.update(systemSettings).set({ value: payload, updatedAt: /* @__PURE__ */ new Date() }).where(eq39(systemSettings.key, STORE_CONFIG_KEY));
+    const rows = await db.select().from(systemSettings).where(eq40(systemSettings.key, STORE_CONFIG_KEY)).limit(1);
+    if (rows.length > 0) await db.update(systemSettings).set({ value: payload, updatedAt: /* @__PURE__ */ new Date() }).where(eq40(systemSettings.key, STORE_CONFIG_KEY));
     else await db.insert(systemSettings).values({ key: STORE_CONFIG_KEY, value: payload });
     const auditPayload = {
       ...payload,
@@ -14604,21 +14894,21 @@ router36.put("/admin/config", requireAuth, requirePermission("settings", "manage
 });
 var STORE_CONFIG_DRAFT_KEY = "store_config_draft";
 async function getStoreConfigDraft() {
-  const rows = await db.select().from(systemSettings).where(eq39(systemSettings.key, STORE_CONFIG_DRAFT_KEY)).limit(1);
+  const rows = await db.select().from(systemSettings).where(eq40(systemSettings.key, STORE_CONFIG_DRAFT_KEY)).limit(1);
   if (rows.length > 0) return rows[0].value;
   const published = await getStoreVitrineConfig();
   await db.insert(systemSettings).values({ key: STORE_CONFIG_DRAFT_KEY, value: published }).onConflictDoNothing({ target: systemSettings.key });
-  const [row] = await db.select().from(systemSettings).where(eq39(systemSettings.key, STORE_CONFIG_DRAFT_KEY)).limit(1);
+  const [row] = await db.select().from(systemSettings).where(eq40(systemSettings.key, STORE_CONFIG_DRAFT_KEY)).limit(1);
   return row.value;
 }
-router36.get("/admin/config/draft", requireAuth, requirePermission("settings", "manage"), async (_req, res) => {
+router37.get("/admin/config/draft", requireAuth, requirePermission("settings", "manage"), async (_req, res) => {
   try {
     res.json(await getStoreConfigDraft());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-router36.patch("/admin/config/draft", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
+router37.patch("/admin/config/draft", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
   try {
     const current = await getStoreConfigDraft();
     const patch = req.body || {};
@@ -14648,15 +14938,15 @@ router36.patch("/admin/config/draft", requireAuth, requirePermission("settings",
     if (patch.theme?.colors) merged.theme.colors = normalizeStoreThemeColors(merged.theme.colors);
     merged.heroCtaSize = normalizeHeroCtaSize(merged.heroCtaSize);
     merged.heroCtaOrder = normalizeHeroCtaOrder(merged.heroCtaOrder);
-    await db.update(systemSettings).set({ value: merged, updatedAt: /* @__PURE__ */ new Date() }).where(eq39(systemSettings.key, STORE_CONFIG_DRAFT_KEY));
+    await db.update(systemSettings).set({ value: merged, updatedAt: /* @__PURE__ */ new Date() }).where(eq40(systemSettings.key, STORE_CONFIG_DRAFT_KEY));
     res.json(merged);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
-router36.post("/admin/config/discard-draft", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
+router37.post("/admin/config/discard-draft", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
   try {
-    await db.delete(systemSettings).where(eq39(systemSettings.key, STORE_CONFIG_DRAFT_KEY));
+    await db.delete(systemSettings).where(eq40(systemSettings.key, STORE_CONFIG_DRAFT_KEY));
     await db.delete(productGroupsDraft);
     await logAction(req.user.userId, "STORE_DRAFT_DISCARD", "system_settings", STORE_CONFIG_DRAFT_KEY, null, null);
     res.json({ success: true });
@@ -14664,10 +14954,10 @@ router36.post("/admin/config/discard-draft", requireAuth, requirePermission("set
     res.status(500).json({ error: err.message });
   }
 });
-router36.get("/admin/categories/draft", requireAuth, requirePermission("settings", "manage"), async (_req, res) => {
+router37.get("/admin/categories/draft", requireAuth, requirePermission("settings", "manage"), async (_req, res) => {
   try {
     const [real2, drafts] = await Promise.all([
-      db.select().from(productGroups).where(and33(eq39(productGroups.isActive, true), isNull10(productGroups.deletedAt))),
+      db.select().from(productGroups).where(and33(eq40(productGroups.isActive, true), isNull10(productGroups.deletedAt))),
       db.select().from(productGroupsDraft)
     ]);
     const draftBySource = new Map(drafts.filter((d) => d.sourceGroupId).map((d) => [d.sourceGroupId, d]));
@@ -14701,7 +14991,7 @@ router36.get("/admin/categories/draft", requireAuth, requirePermission("settings
     res.status(500).json({ error: err.message });
   }
 });
-router36.post("/admin/categories/draft", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
+router37.post("/admin/categories/draft", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
   try {
     const name = String(req.body?.name || "").trim();
     if (!name) return res.status(400).json({ error: "Nome da categoria \xE9 obrigat\xF3rio." });
@@ -14717,7 +15007,7 @@ router36.post("/admin/categories/draft", requireAuth, requirePermission("setting
     res.status(400).json({ error: err.message });
   }
 });
-router36.put("/admin/categories/draft/:id", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
+router37.put("/admin/categories/draft/:id", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
   try {
     const { id } = req.params;
     const name = String(req.body?.name || "").trim();
@@ -14728,9 +15018,9 @@ router36.put("/admin/categories/draft/:id", requireAuth, requirePermission("sett
       storeVisible: req.body?.storeVisible !== false,
       sortOrder: Number(req.body?.sortOrder) || 0
     };
-    const [byId] = await db.select().from(productGroupsDraft).where(eq39(productGroupsDraft.id, id)).limit(1);
+    const [byId] = await db.select().from(productGroupsDraft).where(eq40(productGroupsDraft.id, id)).limit(1);
     if (byId) {
-      const [updated] = await db.update(productGroupsDraft).set({ ...patch, updatedAt: /* @__PURE__ */ new Date() }).where(eq39(productGroupsDraft.id, id)).returning();
+      const [updated] = await db.update(productGroupsDraft).set({ ...patch, updatedAt: /* @__PURE__ */ new Date() }).where(eq40(productGroupsDraft.id, id)).returning();
       return res.json(updated);
     }
     const [upserted] = await db.insert(productGroupsDraft).values({ sourceGroupId: id, ...patch }).onConflictDoUpdate({
@@ -14743,17 +15033,17 @@ router36.put("/admin/categories/draft/:id", requireAuth, requirePermission("sett
     res.status(400).json({ error: err.message });
   }
 });
-router36.delete("/admin/categories/draft/:id", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
+router37.delete("/admin/categories/draft/:id", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
   try {
     const { id } = req.params;
-    const [byId] = await db.select().from(productGroupsDraft).where(eq39(productGroupsDraft.id, id)).limit(1);
+    const [byId] = await db.select().from(productGroupsDraft).where(eq40(productGroupsDraft.id, id)).limit(1);
     if (byId && !byId.sourceGroupId) {
-      await db.delete(productGroupsDraft).where(eq39(productGroupsDraft.id, id));
+      await db.delete(productGroupsDraft).where(eq40(productGroupsDraft.id, id));
       return res.json({ success: true });
     }
-    const [bySource] = byId ? [byId] : await db.select().from(productGroupsDraft).where(eq39(productGroupsDraft.sourceGroupId, id)).limit(1);
+    const [bySource] = byId ? [byId] : await db.select().from(productGroupsDraft).where(eq40(productGroupsDraft.sourceGroupId, id)).limit(1);
     if (bySource) {
-      await db.update(productGroupsDraft).set({ deleted: true, updatedAt: /* @__PURE__ */ new Date() }).where(eq39(productGroupsDraft.id, bySource.id));
+      await db.update(productGroupsDraft).set({ deleted: true, updatedAt: /* @__PURE__ */ new Date() }).where(eq40(productGroupsDraft.id, bySource.id));
     } else {
       await db.insert(productGroupsDraft).values({ sourceGroupId: id, name: "(apagada)", deleted: true });
     }
@@ -14762,7 +15052,7 @@ router36.delete("/admin/categories/draft/:id", requireAuth, requirePermission("s
     res.status(400).json({ error: err.message });
   }
 });
-router36.post("/admin/config/publish", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
+router37.post("/admin/config/publish", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
   try {
     const blockedNames = [];
     await db.transaction(async (tx) => {
@@ -14770,13 +15060,13 @@ router36.post("/admin/config/publish", requireAuth, requirePermission("settings"
       const drafts = await tx.select().from(productGroupsDraft);
       for (const d of drafts) {
         if (d.sourceGroupId && d.deleted) {
-          const [hasProducts] = await tx.select({ count: sql25`count(*)` }).from(products).where(eq39(products.groupId, d.sourceGroupId));
+          const [hasProducts] = await tx.select({ count: sql25`count(*)` }).from(products).where(eq40(products.groupId, d.sourceGroupId));
           if (Number(hasProducts.count) > 0) {
-            const [g] = await tx.select({ name: productGroups.name }).from(productGroups).where(eq39(productGroups.id, d.sourceGroupId)).limit(1);
+            const [g] = await tx.select({ name: productGroups.name }).from(productGroups).where(eq40(productGroups.id, d.sourceGroupId)).limit(1);
             blockedNames.push(g?.name || "categoria");
             continue;
           }
-          await tx.update(productGroups).set({ isActive: false, deletedAt: /* @__PURE__ */ new Date(), updatedAt: /* @__PURE__ */ new Date() }).where(eq39(productGroups.id, d.sourceGroupId));
+          await tx.update(productGroups).set({ isActive: false, deletedAt: /* @__PURE__ */ new Date(), updatedAt: /* @__PURE__ */ new Date() }).where(eq40(productGroups.id, d.sourceGroupId));
         } else if (d.sourceGroupId && !d.deleted) {
           await tx.update(productGroups).set({
             name: d.name,
@@ -14784,7 +15074,7 @@ router36.post("/admin/config/publish", requireAuth, requirePermission("settings"
             storeVisible: d.storeVisible,
             sortOrder: d.sortOrder,
             updatedAt: /* @__PURE__ */ new Date()
-          }).where(eq39(productGroups.id, d.sourceGroupId));
+          }).where(eq40(productGroups.id, d.sourceGroupId));
         } else if (!d.sourceGroupId && !d.deleted) {
           await tx.insert(productGroups).values({
             name: d.name,
@@ -14798,14 +15088,14 @@ router36.post("/admin/config/publish", requireAuth, requirePermission("settings"
         throw Object.assign(new Error(`N\xE3o \xE9 poss\xEDvel apagar: ${blockedNames.join(", ")} \u2014 ainda tem produto vinculado. Use Arquivar em Grupos/Categorias.`), { statusCode: 400 });
       }
       await tx.delete(productGroupsDraft);
-      const draftConfig = await tx.select().from(systemSettings).where(eq39(systemSettings.key, STORE_CONFIG_DRAFT_KEY)).limit(1);
+      const draftConfig = await tx.select().from(systemSettings).where(eq40(systemSettings.key, STORE_CONFIG_DRAFT_KEY)).limit(1);
       if (draftConfig.length > 0) {
-        const publishedRows = await tx.select().from(systemSettings).where(eq39(systemSettings.key, STORE_CONFIG_KEY)).limit(1);
+        const publishedRows = await tx.select().from(systemSettings).where(eq40(systemSettings.key, STORE_CONFIG_KEY)).limit(1);
         const publishedValue = publishedRows[0]?.value;
         const value = publishedValue ? { ...draftConfig[0].value, termsText: publishedValue.termsText, termsVersion: publishedValue.termsVersion } : draftConfig[0].value;
-        if (publishedRows.length > 0) await tx.update(systemSettings).set({ value, updatedAt: /* @__PURE__ */ new Date() }).where(eq39(systemSettings.key, STORE_CONFIG_KEY));
+        if (publishedRows.length > 0) await tx.update(systemSettings).set({ value, updatedAt: /* @__PURE__ */ new Date() }).where(eq40(systemSettings.key, STORE_CONFIG_KEY));
         else await tx.insert(systemSettings).values({ key: STORE_CONFIG_KEY, value });
-        await tx.delete(systemSettings).where(eq39(systemSettings.key, STORE_CONFIG_DRAFT_KEY));
+        await tx.delete(systemSettings).where(eq40(systemSettings.key, STORE_CONFIG_DRAFT_KEY));
       }
       await tx.insert(auditLogs).values({
         id: uuidv417(),
@@ -14821,7 +15111,7 @@ router36.post("/admin/config/publish", requireAuth, requirePermission("settings"
     res.status(err.statusCode || 500).json({ error: err.message || "Erro ao publicar." });
   }
 });
-router36.get("/admin/coupons", requireAuth, requirePermission("settings", "manage"), async (_req, res) => {
+router37.get("/admin/coupons", requireAuth, requirePermission("settings", "manage"), async (_req, res) => {
   try {
     const { storeCoupons: storeCoupons2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
     const rows = await db.select().from(storeCoupons2).orderBy(desc22(storeCoupons2.createdAt));
@@ -14848,7 +15138,7 @@ function parseCouponBody(b) {
     isActive: b.isActive !== false
   };
 }
-router36.post("/admin/coupons", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
+router37.post("/admin/coupons", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
   try {
     const { storeCoupons: storeCoupons2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
     const data = parseCouponBody(req.body || {});
@@ -14862,11 +15152,11 @@ router36.post("/admin/coupons", requireAuth, requirePermission("settings", "mana
     res.status(400).json({ error: err.message });
   }
 });
-router36.put("/admin/coupons/:id", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
+router37.put("/admin/coupons/:id", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
   try {
     const { storeCoupons: storeCoupons2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
     const data = parseCouponBody(req.body || {});
-    const [updated] = await db.update(storeCoupons2).set({ ...data, updatedAt: /* @__PURE__ */ new Date() }).where(eq39(storeCoupons2.id, req.params.id)).returning();
+    const [updated] = await db.update(storeCoupons2).set({ ...data, updatedAt: /* @__PURE__ */ new Date() }).where(eq40(storeCoupons2.id, req.params.id)).returning();
     if (!updated) return res.status(404).json({ error: "Cupom n\xE3o encontrado." });
     await logAction(req.user.userId, "STORE_COUPON_UPDATE", "store_coupons", updated.id, null, { code: data.code });
     res.json({ data: updated });
@@ -14874,10 +15164,10 @@ router36.put("/admin/coupons/:id", requireAuth, requirePermission("settings", "m
     res.status(400).json({ error: err.message });
   }
 });
-router36.delete("/admin/coupons/:id", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
+router37.delete("/admin/coupons/:id", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
   try {
     const { storeCoupons: storeCoupons2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
-    const [updated] = await db.update(storeCoupons2).set({ isActive: false, updatedAt: /* @__PURE__ */ new Date() }).where(eq39(storeCoupons2.id, req.params.id)).returning();
+    const [updated] = await db.update(storeCoupons2).set({ isActive: false, updatedAt: /* @__PURE__ */ new Date() }).where(eq40(storeCoupons2.id, req.params.id)).returning();
     if (!updated) return res.status(404).json({ error: "Cupom n\xE3o encontrado." });
     await logAction(req.user.userId, "STORE_COUPON_DISABLE", "store_coupons", updated.id, null, { code: updated.code });
     res.json({ success: true });
@@ -14885,7 +15175,7 @@ router36.delete("/admin/coupons/:id", requireAuth, requirePermission("settings",
     res.status(400).json({ error: err.message });
   }
 });
-router36.get("/admin/shipping-zones", requireAuth, requirePermission("settings", "manage"), async (_req, res) => {
+router37.get("/admin/shipping-zones", requireAuth, requirePermission("settings", "manage"), async (_req, res) => {
   try {
     const { storeShippingZones: storeShippingZones2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
     const rows = await db.select().from(storeShippingZones2).orderBy(storeShippingZones2.sortOrder, storeShippingZones2.name);
@@ -14894,7 +15184,7 @@ router36.get("/admin/shipping-zones", requireAuth, requirePermission("settings",
     res.status(500).json({ error: err.message });
   }
 });
-router36.post("/admin/shipping-zones", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
+router37.post("/admin/shipping-zones", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
   try {
     const { storeShippingZones: storeShippingZones2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
     const name = String(req.body?.name || "").trim();
@@ -14913,7 +15203,7 @@ router36.post("/admin/shipping-zones", requireAuth, requirePermission("settings"
     res.status(400).json({ error: err.message });
   }
 });
-router36.put("/admin/shipping-zones/:id", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
+router37.put("/admin/shipping-zones/:id", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
   try {
     const { storeShippingZones: storeShippingZones2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
     const name = String(req.body?.name || "").trim();
@@ -14926,7 +15216,7 @@ router36.put("/admin/shipping-zones/:id", requireAuth, requirePermission("settin
       sortOrder: parseInt(String(req.body?.sortOrder), 10) || 0,
       isActive: req.body?.isActive !== false,
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq39(storeShippingZones2.id, req.params.id)).returning();
+    }).where(eq40(storeShippingZones2.id, req.params.id)).returning();
     if (!updated) return res.status(404).json({ error: "Regi\xE3o n\xE3o encontrada." });
     await logAction(req.user.userId, "STORE_ZONE_UPDATE", "store_shipping_zones", updated.id, null, { name });
     res.json({ data: updated });
@@ -14934,10 +15224,10 @@ router36.put("/admin/shipping-zones/:id", requireAuth, requirePermission("settin
     res.status(400).json({ error: err.message });
   }
 });
-router36.delete("/admin/shipping-zones/:id", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
+router37.delete("/admin/shipping-zones/:id", requireAuth, requirePermission("settings", "manage"), async (req, res) => {
   try {
     const { storeShippingZones: storeShippingZones2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
-    const [updated] = await db.update(storeShippingZones2).set({ isActive: false, updatedAt: /* @__PURE__ */ new Date() }).where(eq39(storeShippingZones2.id, req.params.id)).returning();
+    const [updated] = await db.update(storeShippingZones2).set({ isActive: false, updatedAt: /* @__PURE__ */ new Date() }).where(eq40(storeShippingZones2.id, req.params.id)).returning();
     if (!updated) return res.status(404).json({ error: "Regi\xE3o n\xE3o encontrada." });
     await logAction(req.user.userId, "STORE_ZONE_DISABLE", "store_shipping_zones", updated.id, null, { name: updated.name });
     res.json({ success: true });
@@ -14945,20 +15235,20 @@ router36.delete("/admin/shipping-zones/:id", requireAuth, requirePermission("set
     res.status(400).json({ error: err.message });
   }
 });
-var store_default = router36;
+var store_default = router37;
 
 // src/server/intelligence.ts
 init_db();
 init_schema();
 init_authMiddleware();
 init_fx();
-import { Router as Router37 } from "express";
-import { and as and34, asc as asc4, eq as eq40, gte as gte10, inArray as inArray16, lte as lte10, sql as sql26 } from "drizzle-orm";
-var router37 = Router37();
-router37.use(requireAuth);
+import { Router as Router38 } from "express";
+import { and as and34, asc as asc4, eq as eq41, gte as gte10, inArray as inArray16, lte as lte10, sql as sql26 } from "drizzle-orm";
+var router38 = Router38();
+router38.use(requireAuth);
 var r22 = (n) => Math.round(n * 100) / 100;
 var num2 = (v) => Number(v || 0);
-router37.get("/fx-spread", requirePermission("cash", "view"), async (req, res) => {
+router38.get("/fx-spread", requirePermission("cash", "view"), async (req, res) => {
   try {
     const days = Math.min(Math.max(parseInt(String(req.query.days || "30"), 10) || 30, 7), 180);
     const from = /* @__PURE__ */ new Date();
@@ -15007,7 +15297,7 @@ router37.get("/fx-spread", requirePermission("cash", "view"), async (req, res) =
     res.status(500).json({ error: err.message });
   }
 });
-router37.post("/import-simulator", requirePermission("cash", "view"), async (req, res) => {
+router38.post("/import-simulator", requirePermission("cash", "view"), async (req, res) => {
   try {
     const { currency, fxRate, freightAmount, extraCostAmount, items } = req.body || {};
     const cur = ["BRL", "USD", "PYG"].includes(String(currency)) ? String(currency) : "USD";
@@ -15081,7 +15371,7 @@ router37.post("/import-simulator", requirePermission("cash", "view"), async (req
     res.status(400).json({ error: err.message });
   }
 });
-router37.get("/restock", requirePermission("product", "view"), async (req, res) => {
+router38.get("/restock", requirePermission("product", "view"), async (req, res) => {
   try {
     const days = Math.min(Math.max(parseInt(String(req.query.days || "60"), 10) || 60, 7), 365);
     const from = /* @__PURE__ */ new Date();
@@ -15090,7 +15380,7 @@ router37.get("/restock", requirePermission("product", "view"), async (req, res) 
       productId: saleItems.productId,
       qty: sql26`sum(${saleItems.quantity})`,
       revenue: sql26`sum(cast(${saleItems.totalPrice} as numeric))`
-    }).from(saleItems).innerJoin(sales, eq40(saleItems.saleId, sales.id)).where(and34(gte10(sales.createdAt, from), sql26`"sales"."order_status" NOT IN ('CANCELED','CANCELLED','RETURNED')`)).groupBy(saleItems.productId);
+    }).from(saleItems).innerJoin(sales, eq41(saleItems.saleId, sales.id)).where(and34(gte10(sales.createdAt, from), sql26`"sales"."order_status" NOT IN ('CANCELED','CANCELLED','RETURNED')`)).groupBy(saleItems.productId);
     if (!sold.length) return res.json({ days, data: [] });
     const ids = sold.map((s) => s.productId).filter(Boolean);
     const prods = await db.select({
@@ -15102,7 +15392,7 @@ router37.get("/restock", requirePermission("product", "view"), async (req, res) 
       minStock: products.minStock,
       physical: stockBalances.physicalStock,
       reserved: stockBalances.reservedStock
-    }).from(products).innerJoin(stockBalances, eq40(products.id, stockBalances.productId)).where(and34(inArray16(products.id, ids), eq40(products.isActive, true)));
+    }).from(products).innerJoin(stockBalances, eq41(products.id, stockBalances.productId)).where(and34(inArray16(products.id, ids), eq41(products.isActive, true)));
     const soldMap = new Map(sold.map((s) => [s.productId, s]));
     const data = prods.map((p) => {
       const s = soldMap.get(p.id);
@@ -15134,7 +15424,7 @@ router37.get("/restock", requirePermission("product", "view"), async (req, res) 
     res.status(500).json({ error: err.message });
   }
 });
-router37.get("/currency-report", requirePermission("reports", "financial"), async (req, res) => {
+router38.get("/currency-report", requirePermission("reports", "financial"), async (req, res) => {
   try {
     const dateFrom = req.query.dateFrom ? dayStartUtc(String(req.query.dateFrom)) : new Date(Date.now() - 90 * 864e5);
     const dateTo = req.query.dateTo ? dayEndUtc(String(req.query.dateTo)) : /* @__PURE__ */ new Date();
@@ -15144,7 +15434,7 @@ router37.get("/currency-report", requirePermission("reports", "financial"), asyn
       freight: sql26`sum(cast(coalesce(${purchaseOrders.freightAmount}, '0') as numeric))`,
       avgFx: sql26`avg(cast(${purchaseOrders.fxRateToBrl} as numeric))`,
       count: sql26`count(*)`
-    }).from(purchaseOrders).where(and34(eq40(purchaseOrders.status, "APPROVED"), gte10(purchaseOrders.approvedAt, dateFrom), lte10(purchaseOrders.approvedAt, dateTo))).groupBy(purchaseOrders.currency);
+    }).from(purchaseOrders).where(and34(eq41(purchaseOrders.status, "APPROVED"), gte10(purchaseOrders.approvedAt, dateFrom), lte10(purchaseOrders.approvedAt, dateTo))).groupBy(purchaseOrders.currency);
     const layers = await db.select({
       currency: costLayers.sourceCurrency,
       qty: sql26`sum(${costLayers.qtyOriginal})`,
@@ -15158,14 +15448,14 @@ router37.get("/currency-report", requirePermission("reports", "financial"), asyn
       gte10(sales.createdAt, dateFrom),
       lte10(sales.createdAt, dateTo),
       sql26`"sales"."order_status" NOT IN ('CANCELED','CANCELLED','RETURNED')`,
-      eq40(sales.paymentStatus, "PAID")
+      eq41(sales.paymentStatus, "PAID")
     ));
     const [consAgg] = await db.select({
       cost: sql26`coalesce(sum(${costConsumptions.qty} * cast(${costConsumptions.unitCostBrl} as numeric)), 0)`
     }).from(costConsumptions).where(and34(
       gte10(costConsumptions.createdAt, dateFrom),
       lte10(costConsumptions.createdAt, dateTo),
-      eq40(costConsumptions.reason, "SALE")
+      eq41(costConsumptions.reason, "SALE")
     ));
     const revenue = r22(num2(saleAgg?.revenue));
     const realCost = r22(num2(consAgg?.cost));
@@ -15191,18 +15481,18 @@ router37.get("/currency-report", requirePermission("reports", "financial"), asyn
     res.status(500).json({ error: err.message });
   }
 });
-var intelligence_default = router37;
+var intelligence_default = router38;
 
 // src/server/statements.ts
 init_db();
 init_schema();
 init_authMiddleware();
 init_fx();
-import { Router as Router38 } from "express";
-import { and as and35, eq as eq41, gte as gte11, inArray as inArray17, lte as lte11, notInArray as notInArray4, sql as sql27 } from "drizzle-orm";
-var router38 = Router38();
-router38.use(requireAuth);
-router38.use(requirePermission("reports", "financial"));
+import { Router as Router39 } from "express";
+import { and as and35, eq as eq42, gte as gte11, inArray as inArray17, lte as lte11, notInArray as notInArray4, sql as sql27 } from "drizzle-orm";
+var router39 = Router39();
+router39.use(requireAuth);
+router39.use(requirePermission("reports", "financial"));
 var r23 = (n) => Math.round(n * 100) / 100;
 var num3 = (v) => Number(v || 0);
 var NOT_CANCELED = sql27`"sales"."order_status" NOT IN ('CANCELED','CANCELLED','RETURNED')`;
@@ -15244,11 +15534,11 @@ async function computeDre(fromDate, toDate, rates) {
     if (s.customerId) customers2.add(s.customerId);
   }
   const grossRevenue = grossPos + grossStore;
-  const returnRows = await db.select({ amount: saleReturns.totalAmountUsd, currency: sales.currency }).from(saleReturns).innerJoin(sales, eq41(saleReturns.saleId, sales.id)).where(and35(gte11(saleReturns.createdAt, fromDate), lte11(saleReturns.createdAt, toDate), sql27`${sales.createdAt} < ${fromDate}`));
+  const returnRows = await db.select({ amount: saleReturns.totalAmountUsd, currency: sales.currency }).from(saleReturns).innerJoin(sales, eq42(saleReturns.saleId, sales.id)).where(and35(gte11(saleReturns.createdAt, fromDate), lte11(saleReturns.createdAt, toDate), sql27`${sales.createdAt} < ${fromDate}`));
   const returns = returnRows.reduce((s, r) => s + toBrlSync(rates, num3(r.amount), String(r.currency || "BRL")), 0);
   const returnsCount = returnRows.length;
   const netOperating = grossRevenue + freight - discounts - returns;
-  const miscLogs = await db.select({ newValues: auditLogs.newValues }).from(auditLogs).where(and35(eq41(auditLogs.action, "MISC_RECEIPT"), gte11(auditLogs.createdAt, fromDate), lte11(auditLogs.createdAt, toDate)));
+  const miscLogs = await db.select({ newValues: auditLogs.newValues }).from(auditLogs).where(and35(eq42(auditLogs.action, "MISC_RECEIPT"), gte11(auditLogs.createdAt, fromDate), lte11(auditLogs.createdAt, toDate)));
   const otherItems = /* @__PURE__ */ new Map();
   let otherRevenue = 0;
   for (const l of miscLogs) {
@@ -15271,7 +15561,7 @@ async function computeDre(fromDate, toDate, rates) {
       totalCostAtSale: saleItems.totalCostAtSale,
       quantity: saleItems.quantity,
       unitCost: products.costPrice
-    }).from(saleItems).leftJoin(products, eq41(saleItems.productId, products.id)).where(inArray17(saleItems.saleId, saleIds));
+    }).from(saleItems).leftJoin(products, eq42(saleItems.productId, products.id)).where(inArray17(saleItems.saleId, saleIds));
     for (const i of items) {
       if (i.totalCostAtSale != null) cogs += num3(i.totalCostAtSale);
       else {
@@ -15282,8 +15572,8 @@ async function computeDre(fromDate, toDate, rates) {
   }
   const grossProfit = totalRevenue - cogs;
   const [variableExp, fixedExp, cats] = await Promise.all([
-    db.select({ amountUsd: expenses.amountUsd, categoryId: expenses.categoryId, description: expenses.description }).from(expenses).where(and35(gte11(expenses.expenseDate, fromDate), lte11(expenses.expenseDate, toDate), eq41(expenses.isFixed, false))),
-    db.select({ amountUsd: expenses.amountUsd, categoryId: expenses.categoryId, description: expenses.description }).from(expenses).where(and35(eq41(expenses.isFixed, true), eq41(expenses.isActive, true))),
+    db.select({ amountUsd: expenses.amountUsd, categoryId: expenses.categoryId, description: expenses.description }).from(expenses).where(and35(gte11(expenses.expenseDate, fromDate), lte11(expenses.expenseDate, toDate), eq42(expenses.isFixed, false))),
+    db.select({ amountUsd: expenses.amountUsd, categoryId: expenses.categoryId, description: expenses.description }).from(expenses).where(and35(eq42(expenses.isFixed, true), eq42(expenses.isActive, true))),
     db.select().from(expenseCategories)
   ]);
   const monthsCount = Math.max(1, (toDate.getFullYear() - fromDate.getFullYear()) * 12 + (toDate.getMonth() - fromDate.getMonth()) + 1);
@@ -15344,7 +15634,7 @@ async function computeDre(fromDate, toDate, rates) {
     monthsCount
   };
 }
-router38.get("/dre", async (req, res) => {
+router39.get("/dre", async (req, res) => {
   try {
     const fromDate = req.query.dateFrom ? dayStartUtc(String(req.query.dateFrom)) : new Date((/* @__PURE__ */ new Date()).setDate(1));
     const toDate = req.query.dateTo ? dayEndUtc(String(req.query.dateTo)) : /* @__PURE__ */ new Date();
@@ -15354,9 +15644,9 @@ router38.get("/dre", async (req, res) => {
     const { resolveRates: resolveRates2 } = await Promise.resolve().then(() => (init_fx(), fx_exports));
     const rates = await resolveRates2().catch(() => ({}));
     const [cur, prev] = await Promise.all([computeDre(fromDate, toDate, rates), computeDre(prevFrom, prevTo, rates)]);
-    const cashInRows = await db.select({ amount: payments.amountUsd, currency: sales.currency }).from(payments).innerJoin(sales, eq41(payments.saleId, sales.id)).where(and35(gte11(payments.createdAt, fromDate), lte11(payments.createdAt, toDate), eq41(payments.status, "COMPLETED")));
+    const cashInRows = await db.select({ amount: payments.amountUsd, currency: sales.currency }).from(payments).innerJoin(sales, eq42(payments.saleId, sales.id)).where(and35(gte11(payments.createdAt, fromDate), lte11(payments.createdAt, toDate), eq42(payments.status, "COMPLETED")));
     const cashInTotal = cashInRows.reduce((s, r) => s + toBrlSync(rates, num3(r.amount), String(r.currency || "BRL")), 0);
-    const [realCogsRow] = await db.select({ cost: sql27`coalesce(sum(${costConsumptions.qty} * cast(${costConsumptions.unitCostBrl} as numeric)),0)` }).from(costConsumptions).where(and35(gte11(costConsumptions.createdAt, fromDate), lte11(costConsumptions.createdAt, toDate), eq41(costConsumptions.reason, "SALE")));
+    const [realCogsRow] = await db.select({ cost: sql27`coalesce(sum(${costConsumptions.qty} * cast(${costConsumptions.unitCostBrl} as numeric)),0)` }).from(costConsumptions).where(and35(gte11(costConsumptions.createdAt, fromDate), lte11(costConsumptions.createdAt, toDate), eq42(costConsumptions.reason, "SALE")));
     const [personalRow] = await db.select({ total: sql27`coalesce(sum(cast(${personalExpenses.amountBrl} as numeric)),0)` }).from(personalExpenses).where(and35(gte11(personalExpenses.expenseDate, fromDate), lte11(personalExpenses.expenseDate, toDate)));
     const personalWithdrawals = r23(num3(personalRow?.total));
     const topExpenses = cur.expenseGroups.flatMap((g) => g.items.map((i) => ({ group: g.name, name: i.name, total: i.total }))).sort((a, b) => b.total - a.total).slice(0, 10);
@@ -15376,10 +15666,10 @@ router38.get("/dre", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-router38.get("/balance", async (_req, res) => {
+router39.get("/balance", async (_req, res) => {
   try {
     const now = /* @__PURE__ */ new Date();
-    const accounts = await db.select().from(financialAccounts).where(and35(eq41(financialAccounts.isActive, true), eq41(financialAccounts.scope, "BUSINESS")));
+    const accounts = await db.select().from(financialAccounts).where(and35(eq42(financialAccounts.isActive, true), eq42(financialAccounts.scope, "BUSINESS")));
     const cashAccounts = [];
     const cardAccounts = [];
     let cashBrl = 0, cardBrl = 0, unconverted = 0;
@@ -15404,7 +15694,7 @@ router38.get("/balance", async (_req, res) => {
     const openSales = await db.select({ id: sales.id, total: sales.totalAmount, dueDate: sales.dueDate, currency: sales.currency }).from(sales).where(and35(inArray17(sales.paymentStatus, ["PENDING", "PARTIAL"]), NOT_CANCELED));
     const paidBySale = /* @__PURE__ */ new Map();
     if (openSales.length) {
-      const paidRows = await db.select({ saleId: payments.saleId, paid: sql27`sum(cast(${payments.amountUsd} as numeric))` }).from(payments).where(and35(inArray17(payments.saleId, openSales.map((s) => s.id)), eq41(payments.status, "COMPLETED"))).groupBy(payments.saleId);
+      const paidRows = await db.select({ saleId: payments.saleId, paid: sql27`sum(cast(${payments.amountUsd} as numeric))` }).from(payments).where(and35(inArray17(payments.saleId, openSales.map((s) => s.id)), eq42(payments.status, "COMPLETED"))).groupBy(payments.saleId);
       for (const p of paidRows) if (p.saleId) paidBySale.set(p.saleId, num3(p.paid));
     }
     let receivables = 0, receivablesOverdue = 0;
@@ -15425,7 +15715,7 @@ router38.get("/balance", async (_req, res) => {
     }).from(costLayers).groupBy(costLayers.sourceCurrency);
     const inventoryByCurrency = layerRows.map((l) => ({ currency: l.currency || "BRL", totalBrl: r23(num3(l.total)), qty: Number(l.qty) })).filter((l) => l.totalBrl > 0 || l.qty > 0).sort((a, b) => b.totalBrl - a.totalBrl);
     const inventoryLayers = r23(inventoryByCurrency.reduce((s, l) => s + l.totalBrl, 0));
-    const noLayer = await db.select({ qty: stockBalances.physicalStock, cost: products.costPrice }).from(stockBalances).innerJoin(products, eq41(stockBalances.productId, products.id)).where(and35(
+    const noLayer = await db.select({ qty: stockBalances.physicalStock, cost: products.costPrice }).from(stockBalances).innerJoin(products, eq42(stockBalances.productId, products.id)).where(and35(
       sql27`${stockBalances.physicalStock} > 0`,
       sql27`NOT EXISTS (SELECT 1 FROM cost_layers cl WHERE cl.product_id = ${stockBalances.productId} AND cl.qty_remaining > 0)`
     ));
@@ -15451,7 +15741,7 @@ router38.get("/balance", async (_req, res) => {
       receivablesPercent: r23(receivables / totalAssets * 100),
       inventoryPercent: r23(inventory / totalAssets * 100)
     } : null;
-    const personalAccounts = await db.select().from(financialAccounts).where(and35(eq41(financialAccounts.isActive, true), eq41(financialAccounts.scope, "PERSONAL")));
+    const personalAccounts = await db.select().from(financialAccounts).where(and35(eq42(financialAccounts.isActive, true), eq42(financialAccounts.scope, "PERSONAL")));
     let personalBrl = 0;
     for (const a of personalAccounts) {
       try {
@@ -15479,7 +15769,7 @@ router38.get("/balance", async (_req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-var statements_default = router38;
+var statements_default = router39;
 
 // src/server/performance.ts
 var DEFAULT_SLOW_MS = 800;
@@ -15529,6 +15819,279 @@ function markResponseStart(req, res, next) {
   next();
 }
 
+// src/server/commerceGuards.ts
+init_db();
+init_schema();
+init_authMiddleware();
+import { Router as Router40 } from "express";
+import { and as and36, desc as desc24, eq as eq43, gte as gte12, inArray as inArray18, sql as sql28 } from "drizzle-orm";
+init_audit();
+var COUPON_POLICIES_KEY = "store_coupon_policies";
+var VISIT_WINDOW_MS = 4 * 60 * 60 * 1e3;
+function privileged(roleName) {
+  return ["master", "admin", "administrador", "administrator", "super admin", "super_admin"].includes(String(roleName || "").trim().toLowerCase());
+}
+async function readCouponPolicies() {
+  const [row] = await db.select().from(systemSettings).where(eq43(systemSettings.key, COUPON_POLICIES_KEY)).limit(1);
+  const value = row?.value;
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+async function writeCouponPolicies(value) {
+  const [row] = await db.select().from(systemSettings).where(eq43(systemSettings.key, COUPON_POLICIES_KEY)).limit(1);
+  if (row) {
+    await db.update(systemSettings).set({ value, updatedAt: /* @__PURE__ */ new Date() }).where(eq43(systemSettings.key, COUPON_POLICIES_KEY));
+  } else {
+    await db.insert(systemSettings).values({ key: COUPON_POLICIES_KEY, value });
+  }
+}
+function couponBody(body) {
+  const code = String(body?.code || "").trim().toUpperCase().replace(/\s+/g, "");
+  if (!/^[A-Z0-9_-]{3,30}$/.test(code)) throw new Error("Use um c\xF3digo de 3 a 30 caracteres, sem espa\xE7os.");
+  const type = body?.type === "FIXED" ? "FIXED" : "PERCENT";
+  const value = Number(body?.value);
+  if (!(value > 0)) throw new Error("Informe um desconto maior que zero.");
+  if (type === "PERCENT" && value > 100) throw new Error("O desconto percentual n\xE3o pode passar de 100%.");
+  const minOrder = body?.minOrderBrl === "" || body?.minOrderBrl == null ? null : Number(body.minOrderBrl);
+  const maxUses = body?.maxUses === "" || body?.maxUses == null ? null : Math.max(1, Math.floor(Number(body.maxUses)));
+  return {
+    coupon: {
+      code,
+      type,
+      value: String(value),
+      minOrderBrl: minOrder != null && Number.isFinite(minOrder) ? String(Math.max(0, minOrder)) : null,
+      maxUses: maxUses != null && Number.isFinite(maxUses) ? maxUses : null,
+      validFrom: body?.validFrom ? new Date(String(body.validFrom)) : null,
+      validUntil: body?.validUntil ? /* @__PURE__ */ new Date(`${String(body.validUntil).slice(0, 10)}T23:59:59.999Z`) : null,
+      isActive: body?.isActive !== false
+    },
+    policy: {
+      firstPurchaseOnly: !!body?.firstPurchaseOnly,
+      perCustomerLimit: body?.perCustomerLimit === "" || body?.perCustomerLimit == null ? null : Math.max(1, Math.floor(Number(body.perCustomerLimit) || 1))
+    }
+  };
+}
+async function ensureFirstPurchaseCoupon() {
+  const code = "PRIMEIRA5OFF";
+  const [existing] = await db.select().from(storeCoupons).where(eq43(storeCoupons.code, code)).limit(1);
+  if (!existing) {
+    await db.insert(storeCoupons).values({
+      code,
+      type: "PERCENT",
+      value: "5",
+      minOrderBrl: null,
+      maxUses: null,
+      isActive: true
+    });
+  }
+  const policies = await readCouponPolicies();
+  if (!policies[code]) {
+    policies[code] = { firstPurchaseOnly: true, perCustomerLimit: 1 };
+    await writeCouponPolicies(policies);
+  }
+}
+var operationsGuardRouter = Router40();
+operationsGuardRouter.patch("/sales/:id/fulfillment", requireAuth, async (req, res, next) => {
+  try {
+    const requested = String(req.body?.fulfillmentStatus || "").toUpperCase();
+    if (!["DELIVERING", "DELIVERED"].includes(requested)) return next();
+    const [sale] = await db.select({ paymentStatus: sales.paymentStatus }).from(sales).where(eq43(sales.id, req.params.id)).limit(1);
+    if (!sale || sale.paymentStatus === "PAID") return next();
+    if (!privileged(req.user?.roleName)) {
+      return res.status(409).json({ code: "UNPAID_BLOCKED", error: "Esta venda ainda n\xE3o est\xE1 paga. Somente Admin ou Master pode liberar a entrega." });
+    }
+    if (req.body?.allowUnpaid === true) return next();
+    return res.status(409).json({ code: "UNPAID_CONFIRM_REQUIRED", error: "Esta venda ainda n\xE3o est\xE1 paga. Deseja continuar mesmo assim?" });
+  } catch (error) {
+    next(error);
+  }
+});
+operationsGuardRouter.post("/separation/sales/:saleId/start", requireAuth, async (req, res, next) => {
+  try {
+    const [sale] = await db.select({ paymentStatus: sales.paymentStatus }).from(sales).where(eq43(sales.id, req.params.saleId)).limit(1);
+    if (!sale || sale.paymentStatus === "PAID") return next();
+    if (!privileged(req.user?.roleName)) {
+      return res.status(409).json({ code: "UNPAID_BLOCKED", error: "Esta venda ainda n\xE3o est\xE1 paga. Somente Admin ou Master pode iniciar a separa\xE7\xE3o." });
+    }
+    if (req.body?.allowUnpaid === true) return next();
+    return res.status(409).json({ code: "UNPAID_CONFIRM_REQUIRED", error: "Esta venda ainda n\xE3o est\xE1 paga. Deseja iniciar a separa\xE7\xE3o mesmo assim?" });
+  } catch (error) {
+    next(error);
+  }
+});
+operationsGuardRouter.get("/sales/:id", requireAuth, requirePermission("sales", "view"), async (req, res, next) => {
+  try {
+    const saleId = req.params.id;
+    const [sale] = await db.select({
+      id: sales.id,
+      series: sales.series,
+      number: sales.number,
+      orderStatus: sales.orderStatus,
+      paymentStatus: sales.paymentStatus,
+      fulfillmentStatus: sales.fulfillmentStatus,
+      deliveryScheduledAt: sales.deliveryScheduledAt,
+      deliveryNotes: sales.deliveryNotes,
+      observations: sales.observations,
+      lotStatus: sales.lotStatus,
+      totalAmount: sales.totalAmount,
+      subtotalAmount: sales.subtotalAmount,
+      discountAmount: sales.discountAmount,
+      ivaAmount: sales.ivaAmount,
+      priceTable: sales.priceTable,
+      currency: sales.currency,
+      createdAt: sales.createdAt,
+      customerName: customers.name,
+      customerDocument: customers.document,
+      customerPhone: customers.phone,
+      userName: users.name
+    }).from(sales).leftJoin(customers, eq43(sales.customerId, customers.id)).leftJoin(users, eq43(sales.userId, users.id)).where(eq43(sales.id, saleId)).limit(1);
+    if (!sale) return next();
+    const items = await db.select({
+      id: saleItems.id,
+      quantity: saleItems.quantity,
+      unitPrice: saleItems.unitPrice,
+      totalPrice: saleItems.totalPrice,
+      ivaAmount: saleItems.ivaAmount,
+      discountAmount: saleItems.discountAmount,
+      productName: products.name,
+      productSku: products.sku,
+      productId: products.id,
+      hasSerialNumber: products.hasSerialNumber,
+      requiresLot: products.requiresLot
+    }).from(saleItems).leftJoin(products, eq43(saleItems.productId, products.id)).where(eq43(saleItems.saleId, saleId));
+    const itemIds = items.map((item) => item.id);
+    const [serials, lots, paymentActor, returnInfo] = await Promise.all([
+      itemIds.length ? db.select({ saleItemId: productSerials.saleItemId, serialNumber: productSerials.serialNumber }).from(productSerials).where(inArray18(productSerials.saleItemId, itemIds)).catch(() => []) : Promise.resolve([]),
+      itemIds.length ? db.select({ saleItemId: saleItemLots.saleItemId, lotNumber: saleItemLots.lotNumber, quantity: saleItemLots.quantity }).from(saleItemLots).where(inArray18(saleItemLots.saleItemId, itemIds)).catch(() => []) : Promise.resolve([]),
+      db.select({ userName: users.name, createdAt: payments.createdAt }).from(payments).leftJoin(users, eq43(payments.receivedBy, users.id)).where(and36(eq43(payments.saleId, saleId), eq43(payments.status, "COMPLETED"))).orderBy(desc24(payments.createdAt)).limit(1).catch(() => []),
+      db.select({ id: saleReturns.id, notes: saleReturns.notes, totalAmountUsd: saleReturns.totalAmountUsd, createdAt: saleReturns.createdAt, returnedByName: users.name }).from(saleReturns).leftJoin(users, eq43(saleReturns.returnedBy, users.id)).where(eq43(saleReturns.saleId, saleId)).orderBy(desc24(saleReturns.createdAt)).limit(1).catch(() => [])
+    ]);
+    res.json({
+      ...sale,
+      items: items.map((item) => ({
+        ...item,
+        serials: serials.filter((row) => row.saleItemId === item.id).map((row) => row.serialNumber),
+        lots: lots.filter((row) => row.saleItemId === item.id).map((row) => ({ lotNumber: row.lotNumber, quantity: row.quantity }))
+      })),
+      actors: {
+        order: { userName: sale.userName, at: sale.createdAt },
+        payment: paymentActor[0] ? { userName: paymentActor[0].userName, at: paymentActor[0].createdAt } : null,
+        separation: null,
+        delivery: null
+      },
+      returnInfo: returnInfo[0] || null
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+var publicStoreGuardRouter = Router40();
+publicStoreGuardRouter.post("/pageview", async (req, res, next) => {
+  try {
+    const visitorId = String(req.body?.visitorId || "").trim().slice(0, 64);
+    if (!visitorId) return next();
+    const since = new Date(Date.now() - VISIT_WINDOW_MS);
+    const [recent] = await db.select({ id: storePageviews.id }).from(storePageviews).where(and36(eq43(storePageviews.visitorId, visitorId), gte12(storePageviews.createdAt, since))).orderBy(desc24(storePageviews.createdAt)).limit(1);
+    if (recent) return res.status(204).end();
+    next();
+  } catch {
+    next();
+  }
+});
+publicStoreGuardRouter.post("/coupon/preview", async (req, _res, next) => {
+  try {
+    if (String(req.body?.code || "").trim().toUpperCase() === "PRIMEIRA5OFF") await ensureFirstPurchaseCoupon();
+  } catch {
+  }
+  next();
+});
+publicStoreGuardRouter.post("/orders", async (req, res, next) => {
+  try {
+    const code = String(req.body?.couponCode || "").trim().toUpperCase();
+    if (!code) return next();
+    const policy = (await readCouponPolicies())[code];
+    if (!policy?.firstPurchaseOnly && !policy?.perCustomerLimit) return next();
+    return requireCustomerAuth(req, res, async () => {
+      try {
+        const customerId = req.customer?.customerId;
+        if (!customerId) return res.status(401).json({ error: "Fa\xE7a login para usar este cupom." });
+        if (policy.firstPurchaseOnly) {
+          const [previous] = await db.select({ count: sql28`count(*)` }).from(storeOrders).where(and36(eq43(storeOrders.customerId, customerId), sql28`${storeOrders.status} not in ('CANCELED','CANCELLED')`));
+          if (Number(previous?.count || 0) > 0) {
+            return res.status(400).json({ error: "Este cupom \xE9 exclusivo para a primeira compra." });
+          }
+        }
+        if (policy.perCustomerLimit) {
+          const [used] = await db.select({ count: sql28`count(*)` }).from(storeOrders).where(and36(eq43(storeOrders.customerId, customerId), eq43(storeOrders.couponCode, code), sql28`${storeOrders.status} not in ('CANCELED','CANCELLED')`));
+          if (Number(used?.count || 0) >= Number(policy.perCustomerLimit)) {
+            return res.status(400).json({ error: `Este cupom pode ser usado no m\xE1ximo ${policy.perCustomerLimit}x por cliente.` });
+          }
+        }
+        next();
+      } catch (error) {
+        next(error);
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+var storeCouponsAdminRouter = Router40();
+storeCouponsAdminRouter.use(requireAuth);
+storeCouponsAdminRouter.use(requirePermission("settings", "manage"));
+storeCouponsAdminRouter.get("/", async (_req, res) => {
+  try {
+    await ensureFirstPurchaseCoupon();
+    const [rows, policies] = await Promise.all([
+      db.select().from(storeCoupons).orderBy(desc24(storeCoupons.createdAt)),
+      readCouponPolicies()
+    ]);
+    res.json({ data: rows.map((row) => ({ ...row, ...policies[row.code] || {} })) });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Erro ao carregar cupons." });
+  }
+});
+storeCouponsAdminRouter.post("/", async (req, res) => {
+  try {
+    const parsed = couponBody(req.body);
+    const [created] = await db.insert(storeCoupons).values(parsed.coupon).returning();
+    const policies = await readCouponPolicies();
+    policies[parsed.coupon.code] = parsed.policy;
+    await writeCouponPolicies(policies);
+    await logAction(req.user.userId, "STORE_COUPON_CREATE", "store_coupons", created.id, null, { code: created.code, ...parsed.policy });
+    res.json({ data: { ...created, ...parsed.policy } });
+  } catch (error) {
+    const msg = String(error?.message || "Erro ao criar cupom.");
+    const duplicate = msg.toLowerCase().includes("unique") || msg.toLowerCase().includes("duplicate");
+    res.status(duplicate ? 409 : 400).json({ error: duplicate ? "J\xE1 existe um cupom com esse c\xF3digo." : msg });
+  }
+});
+storeCouponsAdminRouter.put("/:id", async (req, res) => {
+  try {
+    const parsed = couponBody(req.body);
+    const [before] = await db.select().from(storeCoupons).where(eq43(storeCoupons.id, req.params.id)).limit(1);
+    if (!before) return res.status(404).json({ error: "Cupom n\xE3o encontrado." });
+    const [updated] = await db.update(storeCoupons).set({ ...parsed.coupon, updatedAt: /* @__PURE__ */ new Date() }).where(eq43(storeCoupons.id, req.params.id)).returning();
+    const policies = await readCouponPolicies();
+    if (before.code !== parsed.coupon.code) delete policies[before.code];
+    policies[parsed.coupon.code] = parsed.policy;
+    await writeCouponPolicies(policies);
+    await logAction(req.user.userId, "STORE_COUPON_UPDATE", "store_coupons", updated.id, before, { ...updated, ...parsed.policy });
+    res.json({ data: { ...updated, ...parsed.policy } });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Erro ao salvar cupom." });
+  }
+});
+storeCouponsAdminRouter.delete("/:id", async (req, res) => {
+  try {
+    const [updated] = await db.update(storeCoupons).set({ isActive: false, updatedAt: /* @__PURE__ */ new Date() }).where(eq43(storeCoupons.id, req.params.id)).returning();
+    if (!updated) return res.status(404).json({ error: "Cupom n\xE3o encontrado." });
+    await logAction(req.user.userId, "STORE_COUPON_DISABLE", "store_coupons", updated.id, null, { code: updated.code });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Erro ao desativar cupom." });
+  }
+});
+
 // api/handler.ts
 function buildCorsOptions() {
   const allowedOrigins = (process.env.CORS_ORIGINS || "").split(",").map((origin) => origin.trim()).filter(Boolean);
@@ -15567,6 +16130,7 @@ app.use("/api/customers", customers_default);
 app.use("/api/groups", groups_default);
 app.use("/api/shelves", shelves_default);
 app.use("/api/audit", auditRouter_default);
+app.use("/api", operationsGuardRouter);
 app.use("/api/sales", receipts_default);
 app.use("/api/sales", sales_default);
 app.use("/api/reports", reports_default);
@@ -15577,6 +16141,8 @@ app.use("/api/separation", router19);
 app.use("/api/delivery", router20);
 app.use("/api/serials", router21);
 app.use("/api/settings", settings_default);
+app.use("/api/currency-config", currencyConfig_default);
+app.use("/api/store-coupons", storeCouponsAdminRouter);
 app.use("/api/suppliers", suppliers_default);
 app.use("/api/purchases", purchases_default);
 app.use("/api/expenses", expenses_default);
@@ -15591,12 +16157,13 @@ app.use("/api/finance", finance_default);
 app.use("/api/fx", fx_default);
 app.use("/api/cost", costLayers_default);
 app.use("/api/personal", personal_default);
+app.use("/api/store", publicStoreGuardRouter);
 app.use("/api/store", store_default);
 app.use("/api/store/account", customerAuth_default);
 app.use("/api/intel", intelligence_default);
 app.use("/api/statements", statements_default);
 app.use("/api/ai-reports", aiReports_default);
-app.use("/api/maintenance", router34);
+app.use("/api/maintenance", router35);
 app.use("/api/master", master_default);
 app.get("/api/ping", (_req, res) => {
   res.json({
