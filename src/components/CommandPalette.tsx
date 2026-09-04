@@ -3,7 +3,7 @@ import { useNavigate } from "react-router";
 import {
   LayoutDashboard, ShoppingCart, Wallet, PiggyBank, UserRound, HandCoins, Truck, FileText,
   Package, Tags, Users, PackageSearch, Receipt, ArrowRightLeft, BarChart3, Shield, Settings,
-  Plus, Search, Loader2,
+  Plus, Search, Loader2, TicketPercent,
 } from "lucide-react";
 import {
   CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator, CommandShortcut,
@@ -29,6 +29,7 @@ const NAV: Nav[] = [
   { label: "Fornecedores", path: "/suppliers", icon: PackageSearch, keywords: "compra origem china eua paraguai" },
   { label: "Entrada de Mercadoria", path: "/purchases", icon: Package, keywords: "compra importacao nota entrada usd" },
   { label: "Transferências", path: "/transfers", icon: ArrowRightLeft, keywords: "estoque mover loja deposito" },
+  { label: "Cupons da Loja", path: "/store-coupons", icon: TicketPercent, keywords: "cupom desconto primeira compra promocao loja" },
   { label: "Relatórios", path: "/reports", icon: BarChart3, keywords: "abc margem real comissoes lucro" },
   { label: "Margem Real (câmbio)", path: "/reports/real-margin", icon: BarChart3, keywords: "lucro verdadeiro custo epoca fifo" },
   { label: "DRE & Patrimônio (PL)", path: "/reports/statements", icon: BarChart3, keywords: "dre resultado balanco patrimonio liquido pl lucro demonstrativo" },
