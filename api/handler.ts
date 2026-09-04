@@ -42,6 +42,7 @@ import statementsRouter from "../src/server/statements";
 import { router as maintenanceRouter } from "../src/server/maintenance";
 import { apiPerformanceLogger, markResponseStart } from "../src/server/performance";
 import { operationsGuardRouter, publicStoreGuardRouter, storeCouponsAdminRouter } from "../src/server/commerceGuards";
+import { storefrontFixesRouter } from "../src/server/storefrontFixes";
 
 function buildCorsOptions(): CorsOptions {
   const allowedOrigins = (process.env.CORS_ORIGINS || "")
@@ -122,8 +123,10 @@ app.use("/api/fx", fxRouter);
 app.use("/api/cost", costLayersRouter);
 app.use("/api/personal", personalRouter);
 
-// Dedupe de visita e política de cupom precisam rodar antes do router público.
+// Dedupe de visita/política de cupom e correções factuais da vitrine precisam
+// rodar antes do router público principal.
 app.use("/api/store", publicStoreGuardRouter);
+app.use("/api/store", storefrontFixesRouter);
 app.use("/api/store", storeRouter);
 app.use("/api/store/account", customerAuthRouter);
 app.use("/api/intel", intelligenceRouter);
