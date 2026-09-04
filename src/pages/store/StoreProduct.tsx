@@ -216,7 +216,9 @@ export function StoreProduct() {
     add({
       ...currentProduct,
       name: p.name + (p.hasVariants ? ` (${currentProduct.variantName})` : ""),
-      imageUrl: p.imageUrl,
+      // O detalhe público entrega a galeria em `images`; `imageUrl` não é
+      // retornado nessa rota. Usa a primeira foto real para o carrinho/checkout.
+      imageUrl: p.images?.[0] || p.imageUrl,
     }, Math.min(qty, remaining));
     setQty(1);
     setOpen(true);
