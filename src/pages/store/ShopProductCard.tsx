@@ -252,7 +252,7 @@ export const ShopProductCard: React.FC<{ p: any }> = ({ p }) => {
               }
               event.preventDefault();
               event.stopPropagation();
-              add(p);
+              add({ ...p, imageUrl: images[0] || p.imageUrl });
               setOpen(true);
             }}
             disabled={soldOutForMe && !p.hasVariants}
