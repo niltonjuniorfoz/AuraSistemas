@@ -4,6 +4,7 @@ import App from './App.tsx';
 import './index.css';
 import './storefront-fixes.css';
 import i18n from './pages/store/i18n';
+import {StorefrontMobileHeaderBehavior} from './pages/store/StorefrontMobileHeaderBehavior';
 
 function LanguageReactiveApp() {
   const [, setLanguageVersion] = useState(0);
@@ -22,7 +23,12 @@ function LanguageReactiveApp() {
     return () => { i18n.off('languageChanged', onLanguageChanged); };
   }, []);
 
-  return <App />;
+  return (
+    <>
+      <StorefrontMobileHeaderBehavior />
+      <App />
+    </>
+  );
 }
 
 createRoot(document.getElementById('root')!).render(

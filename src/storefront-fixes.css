@@ -118,6 +118,22 @@ body.store-order-route #root > div {
     font-size: 12px !important;
   }
 
+  /* Cabeçalho mobile: desce ao primeiro gesto de rolagem para cima e some
+     somente enquanto o usuário continua descendo. O estado é controlado pelo
+     StorefrontMobileHeaderBehavior no mesmo scroller do ShopLayout. */
+  body.storefront-route-active header.sticky.top-0.z-30 {
+    transition: transform 240ms cubic-bezier(.22,.7,.25,1), box-shadow 180ms ease !important;
+    will-change: transform;
+  }
+
+  body.storefront-route-active header.sticky.top-0.z-30[data-mobile-scroll-state="hidden"] {
+    transform: translate3d(0, -105%, 0) !important;
+  }
+
+  body.storefront-route-active header.sticky.top-0.z-30[data-mobile-scroll-state="visible"] {
+    transform: translate3d(0, 0, 0) !important;
+  }
+
   /* O assistente/WhatsApp não invade a navegação inferior. Em páginas comuns
      fica logo acima do menu; se o CTA de produto estiver ativo, sobe mais um
      nível para nunca cobrir o botão de compra. */
@@ -191,34 +207,92 @@ body.store-order-route #root > div {
   }
 
   main > div[class*="bottom-[3.45rem]"][class*="md:hidden"],
-  body.storefront-route-active #root div.fixed.bottom-5.right-5.z-40 {
+  body.storefront-route-active #root div.fixed.bottom-5.right-5.z-40,
+  body.storefront-route-active header.sticky.top-0.z-30 {
     transition-duration: 1ms !important;
   }
 }
 
-/* Banner principal: tamanho M corresponde exatamente a 1600×600 (8:3). */
+/* Frames de banner são fixos por breakpoint. A imagem é quem se adapta ao
+   quadro — nunca o contrário. Isso impede banners enviados com outra proporção
+   de aumentarem a Home ou de passarem de 270 px no desktop. */
 @supports selector(section:has(img[alt^="Banner "])) {
-  main section:has(img[alt^="Banner "]) > div.group.relative.h-\[100px\] {
-    height: auto !important;
-    aspect-ratio: 16 / 5;
-  }
-
-  main section:has(img[alt^="Banner "]) > div.group.relative.h-\[120px\] {
-    height: auto !important;
-    aspect-ratio: 8 / 3;
-  }
-
-  main section:has(img[alt^="Banner "]) > div.group.relative.h-\[140px\] {
-    height: auto !important;
-    aspect-ratio: 12 / 5;
-  }
-
-  main section:has(img[alt^="Banner "]) > div.group.relative.h-\[160px\] {
-    height: auto !important;
-    aspect-ratio: 2 / 1;
+  /* Carrossel principal. Ignora o antigo tamanho P/M/G/GG na renderização: o
+     editor pode manter o dado legado, mas visualmente o frame é estável. */
+  main section:has(img[alt^="Banner "]) > div.group.relative {
+    height: 160px !important;
+    max-height: 270px !important;
+    aspect-ratio: auto !important;
   }
 
   main section:has(img[alt^="Banner "]) img[alt^="Banner "] {
-    object-fit: cover !important;
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: fill !important;
+    object-position: center !important;
+  }
+
+  /* Dois banners promocionais abaixo do hero. */
+  main section:has(img[alt^="Destaque "]) a[class*="aspect-[19/7]"] {
+    height: 150px !important;
+    max-height: 230px !important;
+    aspect-ratio: auto !important;
+  }
+
+  main section:has(img[alt^="Destaque "]) a[class*="aspect-[19/7]"] > img[alt^="Destaque "] {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: fill !important;
+    object-position: center !important;
+    transform: none !important;
+  }
+
+  /* Banner final do grupo do WhatsApp. O seletor pelo alt vale tanto na loja
+     pública quanto no preview do editor. */
+  div:has(> img[alt="Convite para o grupo do WhatsApp"]) {
+    height: 150px !important;
+    max-height: 270px !important;
+    aspect-ratio: auto !important;
+  }
+
+  div:has(> img[alt="Convite para o grupo do WhatsApp"]) > img[alt="Convite para o grupo do WhatsApp"] {
+    position: relative !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: fill !important;
+    object-position: center !important;
+    transform: none !important;
+  }
+
+  /* Previews do editor seguem o mesmo princípio: moldura estável e nenhuma
+     parte da arte é cortada por object-cover. */
+  div:has(> img[alt^="Prévia banner "]) {
+    height: 140px !important;
+    aspect-ratio: auto !important;
+  }
+
+  div:has(> img[alt^="Prévia banner "]) > img,
+  div:has(> img[alt="Prévia do banner do WhatsApp"]) > img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: fill !important;
+    object-position: center !important;
+  }
+}
+
+@media (min-width: 640px) {
+  @supports selector(section:has(img[alt^="Banner "])) {
+    main section:has(img[alt^="Banner "]) > div.group.relative { height: 220px !important; }
+    main section:has(img[alt^="Destaque "]) a[class*="aspect-[19/7]"] { height: 190px !important; }
+    div:has(> img[alt="Convite para o grupo do WhatsApp"]) { height: 200px !important; }
+  }
+}
+
+@media (min-width: 1024px) {
+  @supports selector(section:has(img[alt^="Banner "])) {
+    main section:has(img[alt^="Banner "]) > div.group.relative { height: 270px !important; }
+    main section:has(img[alt^="Destaque "]) a[class*="aspect-[19/7]"] { height: 230px !important; }
+    div:has(> img[alt="Convite para o grupo do WhatsApp"]) { height: 270px !important; }
   }
 }

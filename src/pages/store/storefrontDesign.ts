@@ -19,10 +19,12 @@ export type StorefrontDesignSettings = {
 // migração de banco nem quebrar configs antigas. Links reais, caso existam,
 // são preservados integralmente pelo upsert abaixo.
 const DESIGN_ENTRY_ID = "__aura_storefront_design__";
+const LEGACY_HEADER_LOGO = "/branding/db-cosmetics-header.svg";
+const CURRENT_HEADER_LOGO = "/branding/db-cosmetics-header-v2.svg";
 
 export const DEFAULT_STOREFRONT_DESIGN: StorefrontDesignSettings = {
   headerMode: "glass",
-  headerLogoImage: "/branding/db-cosmetics-header.svg",
+  headerLogoImage: CURRENT_HEADER_LOGO,
   featuredEyebrow: "#produto em destaque",
   featuredDescription: "Uma escolha especial da nossa curadoria para você.",
   featuredPanelColor: "#d46a86",
@@ -50,11 +52,14 @@ const cleanLink = (value: unknown) => typeof value === "string" ? value.trim().s
 export function readStorefrontDesign(quickLinks: unknown): StorefrontDesignSettings {
   const list = Array.isArray(quickLinks) ? quickLinks : [];
   const raw = list.find((item: any) => item && typeof item === "object" && item.id === DESIGN_ENTRY_ID) as any;
+  const savedHeaderLogo = cleanMedia(raw?.headerLogoImage, DEFAULT_STOREFRONT_DESIGN.headerLogoImage);
 
   return {
     headerMode: raw?.headerMode === "solid" ? "solid" : "glass",
-    headerLogoImage: cleanMedia(raw?.headerLogoImage, DEFAULT_STOREFRONT_DESIGN.headerLogoImage),
-    // Título curto e descrição podem ser apagados deliberadamente no editor.
+    // Migração visual sem banco: configurações antigas que apontavam para o
+    // arquivo padrão anterior recebem automaticamente a versão v2. Logos
+    // realmente enviados pelo usuário (data URL ou outro caminho) são mantidos.
+    headerLogoImage: savedHeaderLogo === LEGACY_HEADER_LOGO ? CURRENT_HEADER_LOGO : savedHeaderLogo,
     featuredEyebrow: cleanEditable(raw?.featuredEyebrow, DEFAULT_STOREFRONT_DESIGN.featuredEyebrow, 70),
     featuredDescription: cleanEditable(raw?.featuredDescription, DEFAULT_STOREFRONT_DESIGN.featuredDescription, 220),
     featuredPanelColor: isHex(raw?.featuredPanelColor) ? raw.featuredPanelColor : DEFAULT_STOREFRONT_DESIGN.featuredPanelColor,
