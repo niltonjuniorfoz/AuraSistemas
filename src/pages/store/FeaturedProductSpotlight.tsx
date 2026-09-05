@@ -105,11 +105,11 @@ export function FeaturedProductSpotlight({ config }: { config: any }) {
           <Link
             to={href}
             aria-label={`Ver ${product.name}`}
-            className="group relative flex min-h-[280px] items-center justify-center overflow-hidden bg-white p-7 sm:min-h-[340px] sm:p-10 md:min-h-[390px]"
+            className="group relative flex min-h-[240px] items-center justify-center overflow-hidden bg-white p-5 sm:min-h-[285px] sm:p-7 md:h-[330px] md:min-h-0 md:p-8"
           >
-            <div className="absolute inset-6 rounded-2xl bg-[radial-gradient(circle_at_center,rgba(248,221,229,.40),transparent_72%)]" aria-hidden="true" />
+            <div className="absolute inset-5 rounded-2xl bg-[radial-gradient(circle_at_center,rgba(248,221,229,.40),transparent_72%)]" aria-hidden="true" />
             {imageUrl ? (
-              <img src={imageUrl} alt={product.name} className="relative z-[1] max-h-[320px] max-w-[88%] object-contain drop-shadow-[0_24px_26px_rgba(90,50,65,.12)] transition duration-500 group-hover:scale-[1.025] md:max-h-[350px]" />
+              <img src={imageUrl} alt={product.name} className="relative z-[1] max-h-[220px] max-w-[78%] object-contain drop-shadow-[0_18px_20px_rgba(90,50,65,.10)] transition duration-500 group-hover:scale-[1.025] sm:max-h-[255px] md:max-h-[285px]" />
             ) : (
               <div className="relative z-[1] text-xs text-stone-400">Imagem indisponível</div>
             )}
@@ -123,25 +123,23 @@ export function FeaturedProductSpotlight({ config }: { config: any }) {
           </Link>
 
           <div
-            className="relative flex min-h-[280px] flex-col justify-center overflow-hidden px-7 py-9 sm:px-10 md:min-h-[390px] md:px-12"
+            className="relative flex min-h-[240px] flex-col justify-center overflow-hidden px-7 py-8 sm:min-h-[285px] sm:px-9 md:h-[330px] md:min-h-0 md:px-11 md:py-7"
             style={{ backgroundColor: design.featuredPanelColor, color: design.featuredTextColor }}
           >
-            {/* Profundidade sem trocar a cor escolhida no editor: reflexos e
-                sombras ficam em camadas translúcidas por cima do tom-base. */}
             <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(145deg,rgba(255,255,255,.22)_0%,rgba(255,255,255,.05)_32%,rgba(70,25,45,.10)_100%)]" aria-hidden="true" />
             <div className="pointer-events-none absolute -right-16 -top-20 h-72 w-72 rounded-full bg-white/20 blur-3xl" aria-hidden="true" />
             <div className="pointer-events-none absolute -bottom-24 left-[15%] h-60 w-60 rounded-full bg-black/10 blur-3xl" aria-hidden="true" />
             <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-white/40" aria-hidden="true" />
 
             <div className="relative z-[1] text-[11px] font-extrabold uppercase tracking-[0.12em] opacity-95 sm:text-xs">{design.featuredEyebrow}</div>
-            <h2 className="relative z-[1] mt-4 max-w-xl text-2xl font-extrabold leading-[1.05] drop-shadow-[0_1px_1px_rgba(0,0,0,.06)] sm:text-3xl lg:text-[34px]" style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif", textTransform: "uppercase" }}>
+            <h2 className="relative z-[1] mt-3 max-w-xl text-2xl font-extrabold leading-[1.05] drop-shadow-[0_1px_1px_rgba(0,0,0,.06)] sm:text-[28px] lg:text-[31px]" style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif", textTransform: "uppercase" }}>
               {product.name}
             </h2>
-            {design.featuredDescription && <p className="relative z-[1] mt-4 max-w-md text-sm leading-relaxed opacity-90">{design.featuredDescription}</p>}
-            <div className="relative z-[1] mt-6 text-xl font-black tracking-tight sm:text-2xl">{product.hasVariants ? <span className="mr-1 text-xs font-semibold uppercase tracking-wide opacity-70">a partir de</span> : null}{price}</div>
+            {design.featuredDescription && <p className="relative z-[1] mt-3 max-w-md text-sm leading-relaxed opacity-90">{design.featuredDescription}</p>}
+            <div className="relative z-[1] mt-4 text-xl font-black tracking-tight sm:text-2xl">{product.hasVariants ? <span className="mr-1 text-xs font-semibold uppercase tracking-wide opacity-70">a partir de</span> : null}{price}</div>
             <Link
               to={href}
-              className="relative z-[1] mt-6 inline-flex w-fit items-center gap-2 rounded-lg border border-white/60 bg-white/10 px-5 py-2.5 text-xs font-bold uppercase tracking-[0.08em] shadow-sm backdrop-blur-sm transition hover:bg-white hover:text-stone-800"
+              className="relative z-[1] mt-4 inline-flex w-fit items-center gap-2 rounded-lg border border-white/60 bg-white/10 px-5 py-2.5 text-xs font-bold uppercase tracking-[0.08em] shadow-sm backdrop-blur-sm transition hover:bg-white hover:text-stone-800"
               style={{ color: "inherit" }}
             >
               {design.featuredButtonLabel} <ArrowRight className="h-3.5 w-3.5" />
