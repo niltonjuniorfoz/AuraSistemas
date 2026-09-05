@@ -7,6 +7,9 @@ export type StorefrontDesignSettings = {
   featuredPanelColor: string;
   featuredTextColor: string;
   featuredButtonLabel: string;
+  whatsappBannerVisible: boolean;
+  whatsappBannerImage: string;
+  whatsappBannerLink: string;
 };
 
 // `quickLinks` é um campo legado que continua sendo persistido/publicado pela
@@ -23,6 +26,9 @@ export const DEFAULT_STOREFRONT_DESIGN: StorefrontDesignSettings = {
   featuredPanelColor: "#d46a86",
   featuredTextColor: "#ffffff",
   featuredButtonLabel: "ver produto",
+  whatsappBannerVisible: true,
+  whatsappBannerImage: "/banners/db-whatsapp-group.webp",
+  whatsappBannerLink: "",
 };
 
 const isHex = (value: unknown) => typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
@@ -33,6 +39,11 @@ const cleanRequired = (value: unknown, fallback: string, max: number) => {
 const cleanEditable = (value: unknown, fallback: string, max: number) => (
   typeof value === "string" ? value.trim().slice(0, max) : fallback
 );
+const cleanMedia = (value: unknown, fallback: string) => {
+  const text = typeof value === "string" ? value.trim().slice(0, 450000) : "";
+  return text || fallback;
+};
+const cleanLink = (value: unknown) => typeof value === "string" ? value.trim().slice(0, 1200) : "";
 
 export function readStorefrontDesign(quickLinks: unknown): StorefrontDesignSettings {
   const list = Array.isArray(quickLinks) ? quickLinks : [];
@@ -46,6 +57,9 @@ export function readStorefrontDesign(quickLinks: unknown): StorefrontDesignSetti
     featuredPanelColor: isHex(raw?.featuredPanelColor) ? raw.featuredPanelColor : DEFAULT_STOREFRONT_DESIGN.featuredPanelColor,
     featuredTextColor: isHex(raw?.featuredTextColor) ? raw.featuredTextColor : DEFAULT_STOREFRONT_DESIGN.featuredTextColor,
     featuredButtonLabel: cleanRequired(raw?.featuredButtonLabel, DEFAULT_STOREFRONT_DESIGN.featuredButtonLabel, 36),
+    whatsappBannerVisible: raw?.whatsappBannerVisible !== false,
+    whatsappBannerImage: cleanMedia(raw?.whatsappBannerImage, DEFAULT_STOREFRONT_DESIGN.whatsappBannerImage),
+    whatsappBannerLink: cleanLink(raw?.whatsappBannerLink),
   };
 }
 

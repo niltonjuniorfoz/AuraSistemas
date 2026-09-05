@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ArrowRight, Loader2, Star } from "lucide-react";
+import { ArrowRight, Loader2, Pencil, Star, Trash2 } from "lucide-react";
 import { Link } from "react-router";
 import { BorderBeam } from "../../components/ui/border-beam";
 import { formatPrice, useStorePrefs } from "../../stores/storePrefs";
@@ -14,6 +14,7 @@ export function FeaturedProductSpotlight({ config }: { config: any }) {
   const design = useMemo(() => readStorefrontDesign(config?.quickLinks), [config?.quickLinks]);
   const [product, setProduct] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
   useEffect(() => {
     if (!productId) { setProduct(null); setLoading(false); return; }
@@ -31,16 +32,28 @@ export function FeaturedProductSpotlight({ config }: { config: any }) {
     return () => { cancelled = true; };
   }, [productId]);
 
+  const removeFeatured = async (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!editCtx || removing) return;
+    setRemoving(true);
+    try {
+      await editCtx.patchDraft({ featuredProductIds: [] });
+    } finally {
+      setRemoving(false);
+    }
+  };
+
   if (!productId) {
     if (!editCtx) return null;
     return (
       <Editable panelKey="vitrines" label="Produto em destaque">
         <section className="mx-auto w-[95%] max-w-[1600px] px-1 py-5 sm:px-4">
-          <div className="flex min-h-36 items-center justify-center rounded-2xl border border-dashed border-[var(--store-accent,#d46a86)]/35 bg-white/65 px-6 text-center">
+          <div className="flex min-h-36 items-center justify-center rounded-2xl border border-dashed border-[var(--store-accent,#d46a86)]/35 bg-white/65 px-6 text-center shadow-[0_12px_35px_-28px_rgba(110,65,78,.3)]">
             <div>
               <Star className="mx-auto h-5 w-5 text-[var(--store-accent,#d46a86)]" />
               <p className="mt-2 text-xs font-bold text-stone-600">Escolha o produto em destaque</p>
-              <p className="mt-1 text-[11px] text-stone-400">Clique aqui e use a estrela no painel de Vitrines.</p>
+              <p className="mt-1 text-[11px] text-stone-400">Clique aqui para selecionar o produto e personalizar este bloco.</p>
             </div>
           </div>
         </section>
@@ -58,12 +71,7 @@ export function FeaturedProductSpotlight({ config }: { config: any }) {
     );
   }
 
-  if (!product) {
-    // Produto removido/ocultado depois de ser marcado: não deixa um bloco
-    // quebrado na loja pública. No editor, o usuário ainda consegue abrir o
-    // painel pelo restante da seção de vitrines e trocar a estrela.
-    return null;
-  }
+  if (!product) return null;
 
   const imageUrl = product.images?.[0] || product.imageUrl || "";
   const primaryCurrency = allowedCurrencies.includes(currency) ? currency : (allowedCurrencies[0] || "BRL");
@@ -73,15 +81,35 @@ export function FeaturedProductSpotlight({ config }: { config: any }) {
   return (
     <Editable panelKey="vitrines" label="Produto em destaque">
       <section className="mx-auto w-[95%] max-w-[1600px] px-1 py-5 sm:px-4">
-        <div className="grid overflow-hidden rounded-2xl border border-rose-100 bg-white shadow-[0_16px_45px_-28px_rgba(110,65,78,.38)] md:grid-cols-[1.08fr_.92fr]">
+        <div className="relative grid overflow-hidden rounded-2xl border border-rose-100 bg-white shadow-[0_22px_55px_-34px_rgba(110,65,78,.48)] md:grid-cols-[1.08fr_.92fr]">
+          {editCtx && (
+            <div className="absolute right-3 top-3 z-30 flex gap-2" onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); editCtx.openPanel("vitrines"); }}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-white/70 bg-white/90 px-3 py-2 text-[11px] font-bold text-stone-700 shadow-md backdrop-blur transition hover:text-[var(--store-accent,#d46a86)]"
+              >
+                <Pencil className="h-3.5 w-3.5" /> Editar
+              </button>
+              <button
+                type="button"
+                disabled={removing}
+                onClick={removeFeatured}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-white/70 bg-white/90 px-3 py-2 text-[11px] font-bold text-red-500 shadow-md backdrop-blur transition hover:bg-red-50 disabled:opacity-60"
+              >
+                {removing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} Apagar
+              </button>
+            </div>
+          )}
+
           <Link
             to={href}
             aria-label={`Ver ${product.name}`}
             className="group relative flex min-h-[280px] items-center justify-center overflow-hidden bg-white p-7 sm:min-h-[340px] sm:p-10 md:min-h-[390px]"
           >
-            <div className="absolute inset-6 rounded-2xl bg-[radial-gradient(circle_at_center,rgba(248,221,229,.34),transparent_70%)]" aria-hidden="true" />
+            <div className="absolute inset-6 rounded-2xl bg-[radial-gradient(circle_at_center,rgba(248,221,229,.40),transparent_72%)]" aria-hidden="true" />
             {imageUrl ? (
-              <img src={imageUrl} alt={product.name} className="relative z-[1] max-h-[320px] max-w-[88%] object-contain transition duration-500 group-hover:scale-[1.025] md:max-h-[350px]" />
+              <img src={imageUrl} alt={product.name} className="relative z-[1] max-h-[320px] max-w-[88%] object-contain drop-shadow-[0_24px_26px_rgba(90,50,65,.12)] transition duration-500 group-hover:scale-[1.025] md:max-h-[350px]" />
             ) : (
               <div className="relative z-[1] text-xs text-stone-400">Imagem indisponível</div>
             )}
@@ -95,18 +123,26 @@ export function FeaturedProductSpotlight({ config }: { config: any }) {
           </Link>
 
           <div
-            className="flex min-h-[280px] flex-col justify-center px-7 py-9 sm:px-10 md:min-h-[390px] md:px-12"
+            className="relative flex min-h-[280px] flex-col justify-center overflow-hidden px-7 py-9 sm:px-10 md:min-h-[390px] md:px-12"
             style={{ backgroundColor: design.featuredPanelColor, color: design.featuredTextColor }}
           >
-            <div className="text-[11px] font-extrabold uppercase tracking-[0.12em] opacity-95 sm:text-xs">{design.featuredEyebrow}</div>
-            <h2 className="mt-4 max-w-xl text-2xl font-extrabold leading-[1.05] sm:text-3xl lg:text-[34px]" style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif", textTransform: "uppercase" }}>
+            {/* Profundidade sem trocar a cor escolhida no editor: reflexos e
+                sombras ficam em camadas translúcidas por cima do tom-base. */}
+            <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(145deg,rgba(255,255,255,.22)_0%,rgba(255,255,255,.05)_32%,rgba(70,25,45,.10)_100%)]" aria-hidden="true" />
+            <div className="pointer-events-none absolute -right-16 -top-20 h-72 w-72 rounded-full bg-white/20 blur-3xl" aria-hidden="true" />
+            <div className="pointer-events-none absolute -bottom-24 left-[15%] h-60 w-60 rounded-full bg-black/10 blur-3xl" aria-hidden="true" />
+            <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-white/40" aria-hidden="true" />
+
+            <div className="relative z-[1] text-[11px] font-extrabold uppercase tracking-[0.12em] opacity-95 sm:text-xs">{design.featuredEyebrow}</div>
+            <h2 className="relative z-[1] mt-4 max-w-xl text-2xl font-extrabold leading-[1.05] drop-shadow-[0_1px_1px_rgba(0,0,0,.06)] sm:text-3xl lg:text-[34px]" style={{ fontFamily: "var(--store-font-heading, 'Barlow Condensed'), sans-serif", textTransform: "uppercase" }}>
               {product.name}
             </h2>
-            {design.featuredDescription && <p className="mt-4 max-w-md text-sm leading-relaxed opacity-85">{design.featuredDescription}</p>}
-            <div className="mt-6 text-xl font-black tracking-tight sm:text-2xl">{product.hasVariants ? <span className="mr-1 text-xs font-semibold uppercase tracking-wide opacity-70">a partir de</span> : null}{price}</div>
+            {design.featuredDescription && <p className="relative z-[1] mt-4 max-w-md text-sm leading-relaxed opacity-90">{design.featuredDescription}</p>}
+            <div className="relative z-[1] mt-6 text-xl font-black tracking-tight sm:text-2xl">{product.hasVariants ? <span className="mr-1 text-xs font-semibold uppercase tracking-wide opacity-70">a partir de</span> : null}{price}</div>
             <Link
               to={href}
-              className="mt-6 inline-flex w-fit items-center gap-2 rounded-lg border border-white/80 bg-white px-5 py-2.5 text-xs font-bold uppercase tracking-[0.08em] text-stone-800 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+              className="relative z-[1] mt-6 inline-flex w-fit items-center gap-2 rounded-lg border border-white/60 bg-white/10 px-5 py-2.5 text-xs font-bold uppercase tracking-[0.08em] shadow-sm backdrop-blur-sm transition hover:bg-white hover:text-stone-800"
+              style={{ color: "inherit" }}
             >
               {design.featuredButtonLabel} <ArrowRight className="h-3.5 w-3.5" />
             </Link>
