@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useOutletContext } from "react-router";
 import { ArrowRight, BadgeCheck, Headphones, Mail, MessageCircle, Loader2, Plus, ShieldCheck, ChevronLeft, ChevronRight, Trash2, Tags, Truck } from "lucide-react";
 import { ShopProductCard } from "./ShopProductCard";
+import { FeaturedProductSpotlight } from "./FeaturedProductSpotlight";
 import { Particles } from "../../components/ui/particles";
 import { Marquee } from "../../components/ui/marquee";
 import { PremiumCta } from "./PremiumCta";
@@ -916,6 +917,7 @@ export function StoreHome() {
         {firstRows.map(({ category, products }) => (
           <ProductSection key={`before-${category.id}`} title={translateCategoryName(category.name, i18n.language)} link={`/loja/catalogo?cat=${category.id}`} products={products} />
         ))}
+        <FeaturedProductSpotlight config={cfg} />
         <PromoBannerPair banners={cfg.promoBanners || []} />
         {lastRows.map(({ category, products }) => (
           <ProductSection key={`after-${category.id}`} title={translateCategoryName(category.name, i18n.language)} link={`/loja/catalogo?cat=${category.id}`} products={products} />

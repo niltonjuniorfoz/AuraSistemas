@@ -1,25 +1,21 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, Loader2, Plus, Search, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Loader2, Plus, Search, Star, Trash2, X } from "lucide-react";
 import { toast } from "../../../../components/Toast";
 import { useEditMode } from "../EditModeContext";
 import { PanelShell } from "./PanelShell";
+import { readStorefrontDesign, upsertStorefrontDesign } from "../../storefrontDesign";
 
 const brl = (v: any) => `R$ ${(Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
 
 type Vitrine = { id: string; title: string; productIds: string[] };
 
 // Vitrines (prateleiras de produtos escolhidos a dedo) da home da loja — até
-// 12 produtos por vitrine, título livre. Usa os MESMOS endpoints públicos de
-// busca/consulta de produto que src/pages/StoreSettings.tsx já usa pra essa
-// mesma finalidade (função VitrineCard + hydrateVitrineProduct):
-//   - GET /api/store/products?search=... — busca (sem parâmetro de limite;
-//     o resultado é cortado pra 6 no cliente, igual lá)
-//   - GET /api/store/product/:id — info de um produto já escolhido, pra
-//     mostrar nome/foto na lista
-// São rotas públicas do catálogo da loja (fetch cru, sem apiFetch/Bearer) —
-// só o que aparece pra loja pode virar destaque de vitrine.
+// 12 produtos por vitrine, título livre. O mesmo painel também controla o
+// único produto editorial em destaque exibido após as duas primeiras
+// prateleiras de categoria da home.
 export function VitrinesPanel() {
   const ctx = useEditMode();
+  const initialDesign = readStorefrontDesign(ctx?.draft?.quickLinks);
   const [vitrines, setVitrines] = useState<Vitrine[]>(Array.isArray(ctx?.draft?.vitrines) ? ctx!.draft.vitrines : []);
   const [saving, setSaving] = useState(false);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
@@ -29,14 +25,19 @@ export function VitrinesPanel() {
   const [productInfo, setProductInfo] = useState<Record<string, any>>({});
   const hydratedIds = useRef<Set<string>>(new Set());
 
-  // Nome/foto de um produto já escolhido (a vitrine só guarda o id) —
-  // hidrata sob demanda, uma vez por id (dedup via ref, não estado, pra não
-  // disparar re-render/relance a cada chamada repetida). Igual ao padrão de
-  // StoreSettings.hydrateVitrineProduct: falha aqui NÃO gera toast — um
-  // produto que sumiu do catálogo não é um erro de ação do usuário, só
-  // aparece marcado como indisponível na lista.
+  const [featuredProductId, setFeaturedProductId] = useState<string>(String(ctx?.draft?.featuredProductIds?.[0] || ""));
+  const [featuredSearch, setFeaturedSearch] = useState("");
+  const [featuredResults, setFeaturedResults] = useState<any[]>([]);
+  const [featuredSearching, setFeaturedSearching] = useState(false);
+  const [featuredEyebrow, setFeaturedEyebrow] = useState(initialDesign.featuredEyebrow);
+  const [featuredDescription, setFeaturedDescription] = useState(initialDesign.featuredDescription);
+  const [featuredPanelColor, setFeaturedPanelColor] = useState(initialDesign.featuredPanelColor);
+  const [featuredTextColor, setFeaturedTextColor] = useState(initialDesign.featuredTextColor);
+  const [featuredButtonLabel, setFeaturedButtonLabel] = useState(initialDesign.featuredButtonLabel);
+
+  // Nome/foto de um produto já escolhido (a config guarda só o id).
   const hydrate = useCallback((id: string) => {
-    if (hydratedIds.current.has(id)) return;
+    if (!id || hydratedIds.current.has(id)) return;
     hydratedIds.current.add(id);
     (async () => {
       try {
@@ -49,68 +50,40 @@ export function VitrinesPanel() {
     })();
   }, []);
 
-  // Resincroniza `vitrines` com o draft toda vez que ESTE painel abre — mesmo
-  // motivo dos demais painéis (ver BannerPanel/SideBannerPanel): o componente
-  // fica montado o tempo todo (só retorna null quando inativo), então sem
-  // isso uma edição feita e descartada (fechar sem salvar) reapareceria na
-  // reabertura. Dispara só na transição pra activePanel === "vitrines", não a
-  // cada render com o painel já aberto.
-  // `editingIdx`/`search`/`results` são estado de UI local — não vêm do
-  // draft — mas TAMBÉM precisam resetar aqui, não por "resync" (não há nada
-  // pra ressincronizar, eles não têm equivalente no draft), e sim porque
-  // `editingIdx` é um ÍNDICE dentro de `vitrines`: como `vitrines` é
-  // resincronizado nessa mesma transição, um `editingIdx` velho continuaria
-  // apontando pra uma posição que pode não existir mais (ou ser outra
-  // vitrine) no rascunho recarregado. `search`/`results` resetam junto só
-  // por higiene, pra não reabrir o painel com uma busca antiga pendurada.
+  // Resincroniza tudo que é persistido toda vez que o painel abre; alterações
+  // locais descartadas não reaparecem numa reabertura.
   useEffect(() => {
     if (ctx?.activePanel === "vitrines") {
+      const design = readStorefrontDesign(ctx?.draft?.quickLinks);
       setVitrines(Array.isArray(ctx?.draft?.vitrines) ? ctx!.draft.vitrines : []);
+      setFeaturedProductId(String(ctx?.draft?.featuredProductIds?.[0] || ""));
+      setFeaturedEyebrow(design.featuredEyebrow);
+      setFeaturedDescription(design.featuredDescription);
+      setFeaturedPanelColor(design.featuredPanelColor);
+      setFeaturedTextColor(design.featuredTextColor);
+      setFeaturedButtonLabel(design.featuredButtonLabel);
       setEditingIdx(null);
       setSearch("");
       setResults([]);
+      setFeaturedSearch("");
+      setFeaturedResults([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctx?.activePanel]);
 
-  // Hidrata nome/foto de todo produto já escolhido em qualquer vitrine,
-  // sempre que a lista de vitrines muda (inclusive ao reabrir o painel).
-  // `hydrate` já deduplica por id via ref, então rodar de novo a cada edição
-  // é barato (produtos já hidratados só fazem no-op).
   useEffect(() => {
     if (ctx?.activePanel !== "vitrines") return;
     for (const v of vitrines) for (const id of v.productIds) hydrate(id);
-  }, [ctx?.activePanel, vitrines, hydrate]);
+    if (featuredProductId) hydrate(featuredProductId);
+  }, [ctx?.activePanel, vitrines, featuredProductId, hydrate]);
 
-  // Refs que sempre refletem o editingIdx/search MAIS RECENTE (não o do
-  // closure em que a busca foi disparada) — usadas pra detectar resposta
-  // stale abaixo. Um simples `if (search)` dentro do closure do setTimeout
-  // não serviria: aquele `search` é a variável capturada no momento em que
-  // o efeito rodou, congelada, não o valor atual do estado.
+  // Busca das vitrines manuais, protegida contra resposta stale quando o
+  // usuário troca rapidamente de prateleira ou termo.
   const editingIdxRef = useRef<number | null>(editingIdx);
   useEffect(() => { editingIdxRef.current = editingIdx; }, [editingIdx]);
   const searchRef = useRef(search);
   useEffect(() => { searchRef.current = search; }, [search]);
 
-  // Busca com debounce (300ms) — mesmo padrão de StoreSettings.tsx
-  // (VitrineCard/prodSearch). Ao contrário do padrão existente lá (que
-  // engolia erro de rede em silêncio, só limpando os resultados), aqui avisa
-  // com toast: silêncio faria a busca parecer "não achou nada" sem nenhuma
-  // pista de que foi falha de rede, não ausência de resultado.
-  //
-  // Guarda contra resposta stale (Task 14 review fix): `results` não é
-  // "keyed" por vitrine — é um único estado compartilhado, renderizado só
-  // dentro da vitrine com editingIdx === i. Se o usuário disparar uma busca
-  // na vitrine A (debounce agendado, fetch a caminho) e, antes dela resolver,
-  // clicar "editar produtos" em outra vitrine B (editingIdx muda, search/
-  // results resetam pra B), a resposta de A ainda chega mais tarde. Sem essa
-  // guarda, `setResults(...)` sobrescreveria incondicionalmente os
-  // resultados — que nesse momento já são os de B — fazendo produtos da
-  // busca de A aparecerem (e serem clicáveis/adicionáveis) dentro da caixa
-  // de B. `requestIdx`/`requestQuery` capturam o "de onde veio" desta busca
-  // específica; na resolução, comparamos contra os refs (valor atual) — se
-  // não bater mais (trocou de vitrine, ou a mesma vitrine já tem uma busca
-  // mais nova em andamento), a resposta é descartada em silêncio.
   useEffect(() => {
     if (!search.trim()) { setResults([]); setSearching(false); return; }
     setSearching(true);
@@ -125,11 +98,6 @@ export function VitrinesPanel() {
         if (stale()) return;
         setResults((j.data || []).slice(0, 6));
       } catch (e: any) {
-        // Erro de uma busca stale também é descartado (sem toast): se o
-        // usuário já trocou de vitrine (ou já digitou algo novo), um toast
-        // de erro sobre uma busca que ele não está mais olhando só confunde
-        // — ele pode nem lembrar do que buscou lá, e a vitrine atual pode
-        // estar funcionando normalmente nesse exato momento.
         if (stale()) return;
         setResults([]);
         toast.error(e.message || "Erro ao buscar produtos.");
@@ -140,53 +108,68 @@ export function VitrinesPanel() {
     return () => clearTimeout(t);
   }, [search]);
 
+  // Busca independente para o produto editorial em destaque. É seleção única:
+  // clicar na estrela troca o produto atual, e clicar na estrela do selecionado
+  // remove o destaque da página pública.
+  const featuredSearchRef = useRef(featuredSearch);
+  useEffect(() => { featuredSearchRef.current = featuredSearch; }, [featuredSearch]);
+  useEffect(() => {
+    if (ctx?.activePanel !== "vitrines") return;
+    if (!featuredSearch.trim()) { setFeaturedResults([]); setFeaturedSearching(false); return; }
+    const requestQuery = featuredSearch;
+    setFeaturedSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/store/products?search=${encodeURIComponent(requestQuery.trim())}`);
+        if (!r.ok) throw new Error("Erro ao buscar produtos.");
+        const j = await r.json();
+        if (featuredSearchRef.current !== requestQuery) return;
+        setFeaturedResults((j.data || []).slice(0, 8));
+      } catch (e: any) {
+        if (featuredSearchRef.current !== requestQuery) return;
+        setFeaturedResults([]);
+        toast.error(e.message || "Erro ao buscar produtos.");
+      } finally {
+        if (featuredSearchRef.current === requestQuery) setFeaturedSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [ctx?.activePanel, featuredSearch]);
+
   if (!ctx || ctx.activePanel !== "vitrines") return null;
 
-  // Só fecha o painel se o patchDraft realmente salvou — se falhar
-  // (patchDraft já mostrou o toast de erro), mantém o painel aberto com as
-  // edições feitas pra não perder o trabalho do usuário sem chance de tentar
-  // de novo.
+  // Um único patch salva prateleiras + destaque + aparência. A atualização de
+  // quickLinks é funcional para nunca apagar metadata concorrente do draft.
   const save = async () => {
     setSaving(true);
     try {
-      const ok = await ctx.patchDraft({ vitrines });
+      const ok = await ctx.patchDraft((draft: any) => ({
+        vitrines,
+        featuredProductIds: featuredProductId ? [featuredProductId] : [],
+        quickLinks: upsertStorefrontDesign(draft?.quickLinks, {
+          featuredEyebrow,
+          featuredDescription,
+          featuredPanelColor,
+          featuredTextColor,
+          featuredButtonLabel,
+        }),
+      }));
       if (ok) ctx.closePanel();
     } finally {
       setSaving(false);
     }
   };
 
-  // Formas funcionais de setState (prev => ...) em vez de fechar sobre a
-  // variável `vitrines` do render em que a função foi criada — mesmo
-  // raciocínio do BannerPanel (Task 10, bug de closure obsoleto):
-  // `toggleProduct` é disparado a partir de um clique num resultado de busca
-  // que já rodou de forma assíncrona (debounce), e o usuário pode clicar
-  // rápido em mais de um resultado ou trocar de vitrine sendo editada
-  // enquanto isso — se essas funções lessem `vitrines` direto do closure,
-  // qualquer atualização concorrente (outra chamada a addVitrine/move/
-  // toggleProduct/etc que já tenha resolvido nesse meio tempo) seria
-  // sobrescrita/revertida. Partindo sempre de `prev`, cada atualização usa o
-  // estado mais recente no momento em que roda de fato.
+  const chooseFeatured = (p: any) => {
+    const id = String(p?.id || "");
+    if (!id) return;
+    setProductInfo((cur) => ({ ...cur, [id]: { ...p, images: p.images || (p.imageUrl ? [p.imageUrl] : []) } }));
+    setFeaturedProductId(id);
+    setFeaturedSearch("");
+    setFeaturedResults([]);
+  };
+
   const addVitrine = () => setVitrines((prev) => [...prev, { id: crypto.randomUUID(), title: "Nova vitrine", productIds: [] }]);
-  // `removeVitrine`/`move` seguem a MESMA vitrine (objeto) quando ela muda de
-  // índice sob o `editingIdx` aberto — por isso mexem em `editingIdx` mesmo
-  // sem o usuário ter clicado em nada relacionado à busca. Igual aos outros
-  // dois lugares que mudam `editingIdx` neste arquivo (fechar a busca, abrir
-  // "Adicionar produtos" em outra vitrine — ambos linhas ~230/248), qualquer
-  // mudança de `editingIdx` precisa resetar `search`/`results` junto: senão
-  // uma busca em voo pra vitrine A, iniciada antes do reorder/remoção,
-  // resolve depois com `editingIdxRef.current` já apontando (corretamente)
-  // pra A na nova posição — o guard de stale acima acha que só a POSIÇÃO
-  // mudou (achando que trocou de vitrine) e descarta a resposta, mas o
-  // `finally` que zera `searching` também é pulado (mesma condição `stale()`),
-  // deixando o spinner "Buscando..." preso pra sempre numa vitrine que o
-  // usuário nunca saiu de fato, só reordenou/outra foi removida antes dela.
-  // Resetar aqui zera `search`, o que faz o efeito de busca cair no
-  // early-return (`!search.trim()`) e chamar `setSearching(false)` de
-  // imediato — sem depender do fetch em voo pra limpar o spinner.
-  // Só reseta quando `editingIdx` de fato muda (a busca aberta É a vitrine
-  // afetada) — reordenar/remover uma vitrine que não é a que está com a
-  // busca aberta não deve mexer em `search`/`results` à toa.
   const removeVitrine = (i: number) => {
     setVitrines((prev) => prev.filter((_, idx) => idx !== i));
     setEditingIdx((cur) => {
@@ -220,9 +203,92 @@ export function VitrinesPanel() {
     }));
   };
 
+  const selectedFeatured = featuredProductId ? productInfo[featuredProductId] : null;
+  const safePanelColor = /^#[0-9a-fA-F]{6}$/.test(featuredPanelColor) ? featuredPanelColor : "#d46a86";
+  const safeTextColor = /^#[0-9a-fA-F]{6}$/.test(featuredTextColor) ? featuredTextColor : "#ffffff";
+
   return (
     <PanelShell title="Vitrines de produtos" onClose={ctx.closePanel} onSave={save} saving={saving} wide>
-      <p className="mb-3 text-[11px] text-stone-500">Prateleiras de produtos escolhidos a dedo pra home da loja — até 12 produtos cada. Sem nenhuma vitrine aqui, a home mostra 4 padrão automáticas.</p>
+      <section className="mb-5 overflow-hidden rounded-xl border border-rose-200 bg-gradient-to-br from-white to-rose-50/40">
+        <div className="flex items-start gap-3 border-b border-rose-100 p-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--store-accent,#d46a86)]/10 text-[var(--store-accent,#d46a86)]">
+            <Star className="h-4 w-4 fill-current" />
+          </span>
+          <div className="min-w-0">
+            <div className="text-xs font-bold text-stone-800">Produto em destaque</div>
+            <p className="mt-0.5 text-[11px] leading-relaxed text-stone-500">A estrela escolhe um único produto para o bloco editorial depois das duas primeiras vitrines de categoria. Nome e preço são puxados automaticamente do produto.</p>
+          </div>
+        </div>
+
+        <div className="space-y-3 p-3">
+          {featuredProductId ? (
+            <div className="flex items-center gap-2.5 rounded-lg border border-[var(--store-accent,#d46a86)]/25 bg-white p-2 shadow-sm">
+              <span className="h-10 w-10 shrink-0 overflow-hidden rounded-md bg-stone-100">
+                {(selectedFeatured?.images?.[0] || selectedFeatured?.imageUrl) && <img src={selectedFeatured.images?.[0] || selectedFeatured.imageUrl} className="h-full w-full object-contain" alt="" />}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className={`truncate text-xs font-semibold ${selectedFeatured?.missing ? "text-amber-600" : "text-stone-700"}`}>{selectedFeatured?.name || "carregando produto..."}</div>
+                {!selectedFeatured?.missing && selectedFeatured?.price != null && <div className="mt-0.5 text-[11px] font-bold text-[var(--store-accent,#d46a86)]">{brl(selectedFeatured.price)}</div>}
+              </div>
+              <button type="button" onClick={() => setFeaturedProductId("")} title="Remover produto em destaque" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--store-accent,#d46a86)] text-white shadow-sm transition hover:scale-105">
+                <Star className="h-4 w-4 fill-current" />
+              </button>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-stone-300 bg-white/70 px-3 py-3 text-center text-[11px] text-stone-400">Nenhum produto destacado. Busque abaixo e clique na estrela.</div>
+          )}
+
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-400" />
+            <input value={featuredSearch} onChange={(e) => setFeaturedSearch(e.target.value)} placeholder="Buscar produto para destacar..." className="w-full rounded-lg border border-stone-300 bg-white py-2 pl-8 pr-3 text-xs outline-none focus:border-[var(--store-accent,#d46a86)]" />
+          </div>
+          {featuredSearching && <div className="flex items-center gap-1 text-[11px] text-stone-400"><Loader2 className="h-3 w-3 animate-spin" /> Buscando...</div>}
+          {!featuredSearching && featuredResults.length > 0 && (
+            <div className="max-h-48 overflow-y-auto rounded-lg border border-stone-200 bg-white">
+              {featuredResults.map((p) => {
+                const selected = featuredProductId === String(p.id);
+                return (
+                  <button key={p.id} type="button" onClick={() => selected ? setFeaturedProductId("") : chooseFeatured(p)} className="flex w-full items-center gap-2 border-b border-stone-100 px-2 py-2 text-left last:border-b-0 hover:bg-rose-50/40">
+                    <span className="h-8 w-8 shrink-0 overflow-hidden rounded bg-stone-100">{(p.imageUrl || p.images?.[0]) && <img src={p.imageUrl || p.images?.[0]} className="h-full w-full object-contain" alt="" />}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs font-semibold text-stone-700">{p.name}</span>
+                      <span className="block text-[10px] text-stone-400">{brl(p.price)}</span>
+                    </span>
+                    <Star className={`h-4 w-4 shrink-0 ${selected ? "fill-[var(--store-accent,#d46a86)] text-[var(--store-accent,#d46a86)]" : "text-stone-300"}`} />
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-stone-500">Título curto / hashtag</span>
+              <input value={featuredEyebrow} onChange={(e) => setFeaturedEyebrow(e.target.value.slice(0, 70))} className="w-full rounded-md border border-stone-300 p-2 text-xs outline-none focus:border-[var(--store-accent,#d46a86)]" />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-stone-500">Texto do botão</span>
+              <input value={featuredButtonLabel} onChange={(e) => setFeaturedButtonLabel(e.target.value.slice(0, 36))} className="w-full rounded-md border border-stone-300 p-2 text-xs outline-none focus:border-[var(--store-accent,#d46a86)]" />
+            </label>
+          </div>
+          <label className="block">
+            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-stone-500">Descrição</span>
+            <textarea value={featuredDescription} onChange={(e) => setFeaturedDescription(e.target.value.slice(0, 220))} rows={3} className="w-full resize-none rounded-md border border-stone-300 p-2 text-xs outline-none focus:border-[var(--store-accent,#d46a86)]" />
+          </label>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="flex items-center gap-2 rounded-lg border border-stone-200 bg-white p-2">
+              <input type="color" value={safePanelColor} onChange={(e) => setFeaturedPanelColor(e.target.value)} className="h-8 w-8 shrink-0 cursor-pointer rounded border-0 bg-transparent p-0" />
+              <span className="min-w-0"><span className="block text-[10px] font-bold uppercase tracking-wide text-stone-500">Cor do painel</span><span className="block text-[10px] font-mono text-stone-400">{safePanelColor}</span></span>
+            </label>
+            <label className="flex items-center gap-2 rounded-lg border border-stone-200 bg-white p-2">
+              <input type="color" value={safeTextColor} onChange={(e) => setFeaturedTextColor(e.target.value)} className="h-8 w-8 shrink-0 cursor-pointer rounded border-0 bg-transparent p-0" />
+              <span className="min-w-0"><span className="block text-[10px] font-bold uppercase tracking-wide text-stone-500">Cor do texto</span><span className="block text-[10px] font-mono text-stone-400">{safeTextColor}</span></span>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <p className="mb-3 text-[11px] text-stone-500">Prateleiras de produtos escolhidos a dedo pra home da loja — até 12 produtos cada. Sem nenhuma vitrine aqui, a home usa as vitrines automáticas.</p>
       <div className="space-y-3">
         {vitrines.length === 0 && <div className="py-4 text-center text-xs text-stone-400">Nenhuma vitrine criada ainda.</div>}
         {vitrines.map((v, i) => (
