@@ -1,0 +1,84 @@
+/* Mantém o comportamento visual dos banners anterior ao ajuste de molduras fixas.
+   O banner do WhatsApp continua usando o frame compacto de até 270 px definido
+   em storefront-fixes.css. */
+
+@supports selector(section:has(img[alt^="Banner "])) {
+  /* Carrossel principal: volta a respeitar os tamanhos P/M/G/GG originais. */
+  main section:has(img[alt^="Banner "]) > div.group.relative.h-\[100px\] {
+    height: auto !important;
+    max-height: none !important;
+    aspect-ratio: 16 / 5 !important;
+  }
+
+  main section:has(img[alt^="Banner "]) > div.group.relative.h-\[120px\] {
+    height: auto !important;
+    max-height: 420px !important;
+    aspect-ratio: 8 / 3 !important;
+  }
+
+  main section:has(img[alt^="Banner "]) > div.group.relative.h-\[140px\] {
+    height: auto !important;
+    max-height: none !important;
+    aspect-ratio: 12 / 5 !important;
+  }
+
+  main section:has(img[alt^="Banner "]) > div.group.relative.h-\[160px\] {
+    height: auto !important;
+    max-height: none !important;
+    aspect-ratio: 2 / 1 !important;
+  }
+
+  main section:has(img[alt^="Banner "]) img[alt^="Banner "] {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+    object-position: var(--banner-object-position, center) !important;
+  }
+
+  /* Os dois banners promocionais voltam ao card 19:7 original. */
+  main section:has(img[alt^="Destaque "]) a[class*="aspect-[19/7]"] {
+    height: auto !important;
+    max-height: none !important;
+    aspect-ratio: 19 / 7 !important;
+  }
+
+  main section:has(img[alt^="Destaque "]) a[class*="aspect-[19/7]"] > img[alt^="Destaque "] {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+    object-position: var(--banner-object-position, center) !important;
+    transform: scale(1) !important;
+  }
+
+  main section:has(img[alt^="Destaque "]) a[class*="aspect-[19/7]"]:hover > img[alt^="Destaque "] {
+    transform: scale(1.015) !important;
+  }
+
+  /* Preview dos banners promocionais também volta à proporção original. */
+  div:has(> img[alt^="Prévia banner "]) {
+    height: auto !important;
+    aspect-ratio: 19 / 7 !important;
+  }
+
+  div:has(> img[alt^="Prévia banner "]) > img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+    object-position: var(--banner-object-position, center) !important;
+  }
+
+  /* WhatsApp mantém o tamanho compacto atual, mas passa a aceitar o novo
+     controle de enquadramento horizontal/vertical. */
+  div:has(> img[alt="Convite para o grupo do WhatsApp"]) > img[alt="Convite para o grupo do WhatsApp"],
+  div:has(> img[alt="Prévia do banner do WhatsApp"]) > img[alt="Prévia do banner do WhatsApp"] {
+    object-position: var(--banner-object-position, center 42%) !important;
+  }
+}
+
+/* A logo padrão é SVG vetorial: sem blur, sombra ou filtros que forcem
+   rasterização no Safari/iPhone. */
+header.sticky.top-0.z-30 img[data-aura-header-logo="true"] {
+  filter: none !important;
+  image-rendering: auto !important;
+  backface-visibility: hidden;
+}
