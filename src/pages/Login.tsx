@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { useAuthStore } from '../stores/authStore';
 import { ArrowRight, CheckCircle2, Compass, Lock, Menu, Share2, User } from 'lucide-react';
 import { Button } from '../components/ui/button';
-import { buildSupportMailto, SYSTEM_BRAND } from '../lib/branding';
+import { SYSTEM_BRAND } from '../lib/branding';
 
 
 function shouldShowMobileInstallIntro() {
@@ -196,13 +196,13 @@ export function Login() {
               />
             </div>
             <div className="mt-2 text-right">
-              <a
-                href={buildSupportMailto()}
+              <Link
+                to="/suporte"
                 className="text-xs font-medium text-gray-400 transition-colors hover:text-brand-gold hover:underline"
                 title={`Suporte ${SYSTEM_BRAND.name}`}
               >
                 Problemas para acessar?
-              </a>
+              </Link>
             </div>
           </div>
 

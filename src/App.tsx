@@ -13,6 +13,7 @@ function lazyNamed<T extends React.ComponentType<any>>(loader: () => Promise<Rec
 }
 
 const Login = lazyNamed(() => import('./pages/Login'), 'Login');
+const Support = lazyNamed(() => import('./pages/Support'), 'Support');
 const Products = lazyNamed(() => import('./pages/Products'), 'Products');
 const ProductDetails = lazyNamed(() => import('./pages/ProductDetails'), 'ProductDetails');
 const Users = lazyNamed(() => import('./pages/Users'), 'Users');
@@ -143,6 +144,7 @@ export default function App() {
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/suporte" element={<Support />} />
 
           <Route path="/loja" element={<ShopLayout />}>
             <Route index element={<StoreHome />} />
