@@ -217,13 +217,14 @@ export function Support() {
         <footer className="py-5 text-center">
           <p className="text-[10px] text-gray-500" data-platform-copyright="true">
             {buildPlatformCopyrightBase(SYSTEM_BRAND.name)}
-            <span
+            <a
+              href={SYSTEM_BRAND.publicIdentityPath}
               data-platform-reference="true"
-              className="ml-1 align-baseline text-[7px] tracking-[0.08em] text-gray-600"
+              className="ml-1 align-baseline text-[7px] tracking-[0.08em] text-gray-600 no-underline"
               title="Referência técnica da plataforma"
             >
               {SYSTEM_BRAND.platformId}
-            </span>
+            </a>
           </p>
         </footer>
       </div>

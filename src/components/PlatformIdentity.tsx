@@ -31,11 +31,12 @@ function syncStoreFooterCopyright() {
   const displayName = resolveStoreDisplayName(footer);
   const baseText = buildPlatformCopyrightBase(displayName);
   const existingBase = copyright.querySelector<HTMLElement>('[data-platform-copyright-base="true"]');
-  const existingReference = copyright.querySelector<HTMLElement>('[data-platform-reference="true"]');
+  const existingReference = copyright.querySelector<HTMLAnchorElement>('[data-platform-reference="true"]');
 
   if (
     existingBase?.textContent === baseText
     && existingReference?.textContent === SYSTEM_BRAND.platformId
+    && existingReference?.getAttribute("href") === SYSTEM_BRAND.publicIdentityPath
   ) {
     return;
   }
@@ -44,7 +45,8 @@ function syncStoreFooterCopyright() {
   base.dataset.platformCopyrightBase = "true";
   base.textContent = baseText;
 
-  const reference = document.createElement("span");
+  const reference = document.createElement("a");
+  reference.href = SYSTEM_BRAND.publicIdentityPath;
   reference.dataset.platformReference = "true";
   reference.textContent = SYSTEM_BRAND.platformId;
   reference.title = "Referência técnica da plataforma";
@@ -55,6 +57,8 @@ function syncStoreFooterCopyright() {
   reference.style.letterSpacing = ".08em";
   reference.style.opacity = ".28";
   reference.style.whiteSpace = "nowrap";
+  reference.style.color = "inherit";
+  reference.style.textDecoration = "none";
 
   copyright.dataset.platformCopyright = "true";
   copyright.replaceChildren(base, reference);
@@ -75,6 +79,7 @@ export function PlatformIdentity() {
     ensureMeta("support-email", SYSTEM_BRAND.supportEmail);
     ensureMeta("support-whatsapp", SYSTEM_BRAND.supportWhatsApp);
     ensureMeta("platform-copyright-suffix", SYSTEM_BRAND.copyrightSuffix);
+    ensureMeta("platform-identity-path", SYSTEM_BRAND.publicIdentityPath);
 
     let frame = 0;
     const scheduleFooterSync = () => {

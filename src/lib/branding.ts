@@ -8,12 +8,14 @@ export const SYSTEM_BRAND = {
 
   // Identidade operacional estável da plataforma. Em rebrandings, clones de
   // layout ou mudanças do nome exibido, somente o displayName/nome da loja é
-  // variável. platformId, copyrightSuffix e os contatos de suporte pertencem
-  // ao núcleo da plataforma e não devem ser derivados da identidade da loja.
+  // variável. platformId, copyrightSuffix, publicIdentityPath e os contatos de
+  // suporte pertencem ao núcleo da plataforma e não devem ser derivados da
+  // identidade visual da loja.
   platformId: "S8R4S2C1O1O2B1Y5",
   supportEmail: "sistemasaura1@gmail.com",
   supportWhatsApp: "595995661934",
   copyrightSuffix: "Todos os direitos reservados.",
+  publicIdentityPath: "/identificacao",
 } as const;
 
 function cleanDisplayName(displayName: unknown) {

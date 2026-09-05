@@ -13,6 +13,10 @@
       "destination": "/api/runtime?__path=:path*"
     },
     {
+      "source": "/identificacao",
+      "destination": "/identificacao.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
