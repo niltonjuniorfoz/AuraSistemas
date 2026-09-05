@@ -19,11 +19,8 @@ import {
 } from "../../../../lib/imageUpload";
 import { toast } from "../../../../components/Toast";
 
-const MIN_CONTRAST = 4.5; // WCAG AA pra texto normal
+const MIN_CONTRAST = 4.5;
 
-// ShopLayout já monta este componente em todas as rotas públicas da loja. O
-// cabeçalho continua pertencendo ao layout, mas suas preferências visuais e a
-// logo são aplicadas aqui para usar a mesma configuração publicada/rascunho.
 const HEADER_SURFACE_CSS = `
 header.sticky.top-0.z-30:not([data-store-header-mode="solid"]),
 header[data-store-header-mode="glass"] {
@@ -50,22 +47,29 @@ header[data-store-header-mode="solid"] > form.bg-white {
   background-color: var(--store-header-bg,#ffffff) !important;
 }
 header.sticky.top-0.z-30 img[data-aura-header-logo="true"] {
-  width: 285px !important;
+  width: 300px !important;
   height: 82px !important;
-  max-width: 285px !important;
+  max-width: 300px !important;
   transform: none !important;
   scale: 1 !important;
   object-fit: contain !important;
-  filter: drop-shadow(0 3px 9px rgba(115,82,13,.12));
+  filter: none !important;
+  image-rendering: auto !important;
 }
 @media (max-width: 767px) {
   header.sticky.top-0.z-30 img[data-aura-header-logo="true"] {
-    width: 185px !important;
-    height: 58px !important;
-    max-width: 185px !important;
+    width: 205px !important;
+    height: 64px !important;
+    max-width: 205px !important;
   }
 }
 `;
+
+const emitWhatsappFraming = (posX: number, posY: number) => {
+  window.dispatchEvent(new CustomEvent("aura-banner-framing", {
+    detail: { kind: "whatsapp", posX, posY },
+  }));
+};
 
 export function ColorsPanel() {
   const ctx = useEditMode();
@@ -80,6 +84,8 @@ export function ColorsPanel() {
   const [waVisible, setWaVisible] = useState(initialDesign.whatsappBannerVisible);
   const [waImage, setWaImage] = useState(initialDesign.whatsappBannerImage);
   const [waLink, setWaLink] = useState(initialDesign.whatsappBannerLink);
+  const [waPosX, setWaPosX] = useState(initialDesign.whatsappBannerPosX);
+  const [waPosY, setWaPosY] = useState(initialDesign.whatsappBannerPosY);
   const [waUploading, setWaUploading] = useState(false);
   const [waSaving, setWaSaving] = useState(false);
 
@@ -87,9 +93,6 @@ export function ColorsPanel() {
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoSaving, setLogoSaving] = useState(false);
 
-  // Fora do editor, a configuração publicada é a fonte da verdade. O default
-  // já aponta para a nova logo horizontal, então lojas antigas também deixam
-  // de ficar presas à logo vertical do cadastro enquanto a config carrega.
   useEffect(() => {
     if (ctx) return;
     let cancelled = false;
@@ -103,8 +106,6 @@ export function ColorsPanel() {
     return () => { cancelled = true; };
   }, [ctx]);
 
-  // Resincroniza cada painel quando ele é aberto; fechar sem salvar não deixa
-  // estado antigo reaparecer na próxima abertura.
   useEffect(() => {
     if (ctx?.activePanel === "colors") {
       setColors(ctx?.draft?.theme?.colors || {});
@@ -115,6 +116,9 @@ export function ColorsPanel() {
       setWaVisible(d.whatsappBannerVisible);
       setWaImage(d.whatsappBannerImage);
       setWaLink(d.whatsappBannerLink);
+      setWaPosX(d.whatsappBannerPosX);
+      setWaPosY(d.whatsappBannerPosY);
+      requestAnimationFrame(() => emitWhatsappFraming(d.whatsappBannerPosX, d.whatsappBannerPosY));
     }
     if (ctx?.activePanel === "brand") {
       setHeaderLogoImage(readStorefrontDesign(ctx?.draft?.quickLinks).headerLogoImage);
@@ -125,12 +129,15 @@ export function ColorsPanel() {
   const draftDesign = ctx ? readStorefrontDesign(ctx?.draft?.quickLinks) : publishedDesign;
   const effectiveHeaderMode = ctx?.activePanel === "colors" ? headerMode : draftDesign.headerMode;
   let effectiveDesign: StorefrontDesignSettings = draftDesign;
+
   if (ctx?.activePanel === "whatsappBanner") {
     effectiveDesign = {
       ...effectiveDesign,
       whatsappBannerVisible: waVisible,
       whatsappBannerImage: waImage,
       whatsappBannerLink: waLink,
+      whatsappBannerPosX: waPosX,
+      whatsappBannerPosY: waPosY,
     };
   }
   if (ctx?.activePanel === "brand") {
@@ -144,11 +151,6 @@ export function ColorsPanel() {
     return () => { delete header.dataset.storeHeaderMode; };
   }, [effectiveHeaderMode]);
 
-  // O <img> da logo só nasce depois que /api/store/info termina de carregar.
-  // O efeito antigo rodava antes disso e encerrava sem encontrar a imagem,
-  // deixando o logoUrl vertical do cadastro para sempre. Observamos o header e
-  // reaplicamos a logo publicada/rascunho também quando React recria ou altera
-  // o <img>, sem depender da ordem das requisições.
   useEffect(() => {
     const header = document.querySelector<HTMLElement>("header.sticky.top-0.z-30");
     if (!header) return;
@@ -166,9 +168,9 @@ export function ColorsPanel() {
     const applyLogo = () => {
       const image = header.querySelector<HTMLImageElement>('a[href="/loja"] img');
       if (!image) return;
-
       if (image.getAttribute("src") !== desiredSrc) image.setAttribute("src", desiredSrc);
       image.dataset.auraHeaderLogo = "true";
+      image.setAttribute("decoding", "sync");
 
       if (ctx) {
         image.title = "Clique para editar a logo do cabeçalho";
@@ -184,13 +186,8 @@ export function ColorsPanel() {
     };
 
     applyLogo();
-    const observer = new MutationObserver(() => applyLogo());
-    observer.observe(header, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["src"],
-    });
+    const observer = new MutationObserver(applyLogo);
+    observer.observe(header, { childList: true, subtree: true, attributes: true, attributeFilter: ["src"] });
 
     return () => {
       observer.disconnect();
@@ -237,6 +234,8 @@ export function ColorsPanel() {
           whatsappBannerVisible: waVisible,
           whatsappBannerImage: waImage,
           whatsappBannerLink: waLink,
+          whatsappBannerPosX: waPosX,
+          whatsappBannerPosY: waPosY,
         }),
       }));
       if (ok) ctx.closePanel();
@@ -290,18 +289,13 @@ export function ColorsPanel() {
   const renderHomeBanner = publicHome || editorHome;
   const canRenderPublished = !!ctx || publishedLoaded;
 
-  // A área do WhatsApp fica propositalmente panorâmica no desktop. A arte
-  // atual (3:1) é mais alta do que o espaço desejado, então usamos object-cover
-  // para manter a largura inteira sem deformar e recortamos apenas as bordas.
-  // Em ~1365 px de largura, 90:19 resulta em ~288 px de altura — exatamente a
-  // faixa indicada na referência enviada.
   const bannerContent = effectiveDesign.whatsappBannerImage ? (
     <div className="relative aspect-[3/1] w-full overflow-hidden rounded-2xl border border-rose-100 bg-[#fff7f8] shadow-[0_18px_45px_-34px_rgba(100,55,70,.42)] sm:aspect-[4/1] lg:aspect-[90/19]">
       <img
         src={effectiveDesign.whatsappBannerImage}
         alt="Convite para o grupo do WhatsApp"
         className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.003]"
-        style={{ objectPosition: "center 42%" }}
+        style={{ objectPosition: `${effectiveDesign.whatsappBannerPosX}% ${effectiveDesign.whatsappBannerPosY}%` }}
       />
       <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-white/70" aria-hidden="true" />
     </div>
@@ -311,8 +305,6 @@ export function ColorsPanel() {
     <>
       <style data-store-header-surface>{HEADER_SURFACE_CSS}</style>
 
-      {/* Fica depois de todo o conteúdo da Home e imediatamente antes do
-          rodapé porque ColorsPanel é montado logo após o Outlet no ShopLayout. */}
       {renderHomeBanner && canRenderPublished && (
         <section className="mx-auto w-[95%] max-w-[1600px] px-1 py-5 sm:px-4">
           {effectiveDesign.whatsappBannerVisible ? (
@@ -327,18 +319,10 @@ export function ColorsPanel() {
 
               {ctx && (
                 <div className="absolute right-3 top-3 z-20 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); ctx.openPanel("whatsappBanner"); }}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-white/75 bg-white/90 px-3 py-2 text-[11px] font-bold text-stone-700 shadow-md backdrop-blur transition hover:text-[var(--store-accent,#d46a86)]"
-                  >
+                  <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); ctx.openPanel("whatsappBanner"); }} className="inline-flex items-center gap-1.5 rounded-lg border border-white/75 bg-white/90 px-3 py-2 text-[11px] font-bold text-stone-700 shadow-md backdrop-blur transition hover:text-[var(--store-accent,#d46a86)]">
                     <Pencil className="h-3.5 w-3.5" /> Editar
                   </button>
-                  <button
-                    type="button"
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setWhatsappVisibility(false); }}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-white/75 bg-white/90 px-3 py-2 text-[11px] font-bold text-stone-600 shadow-md backdrop-blur transition hover:text-red-500"
-                  >
+                  <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setWhatsappVisibility(false); }} className="inline-flex items-center gap-1.5 rounded-lg border border-white/75 bg-white/90 px-3 py-2 text-[11px] font-bold text-stone-600 shadow-md backdrop-blur transition hover:text-red-500">
                     <EyeOff className="h-3.5 w-3.5" /> Ocultar
                   </button>
                 </div>
@@ -367,29 +351,17 @@ export function ColorsPanel() {
               <p className="mt-0.5 text-[11px] leading-relaxed text-stone-500">Translúcido deixa o conteúdo passar por trás com efeito de vidro. Sólido usa a cor configurada em “Fundo do cabeçalho”.</p>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setHeaderMode("glass")}
-                className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition ${headerMode === "glass" ? "border-[var(--store-accent,#d46a86)] bg-white text-[var(--store-accent,#d46a86)] shadow-sm" : "border-stone-200 bg-white/60 text-stone-500 hover:border-stone-300"}`}
-              >
+              <button type="button" onClick={() => setHeaderMode("glass")} className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition ${headerMode === "glass" ? "border-[var(--store-accent,#d46a86)] bg-white text-[var(--store-accent,#d46a86)] shadow-sm" : "border-stone-200 bg-white/60 text-stone-500 hover:border-stone-300"}`}>
                 <Layers3 className="h-4 w-4" /> Translúcido
               </button>
-              <button
-                type="button"
-                onClick={() => setHeaderMode("solid")}
-                className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition ${headerMode === "solid" ? "border-[var(--store-accent,#d46a86)] bg-white text-[var(--store-accent,#d46a86)] shadow-sm" : "border-stone-200 bg-white/60 text-stone-500 hover:border-stone-300"}`}
-              >
+              <button type="button" onClick={() => setHeaderMode("solid")} className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition ${headerMode === "solid" ? "border-[var(--store-accent,#d46a86)] bg-white text-[var(--store-accent,#d46a86)] shadow-sm" : "border-stone-200 bg-white/60 text-stone-500 hover:border-stone-300"}`}>
                 <Square className="h-4 w-4" /> Sólido
               </button>
             </div>
-            <button
-              type="button"
-              onClick={() => ctx.openPanel("brand")}
-              className="mt-3 flex w-full items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2.5 text-left transition hover:border-[var(--store-accent,#d46a86)]"
-            >
+            <button type="button" onClick={() => ctx.openPanel("brand")} className="mt-3 flex w-full items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2.5 text-left transition hover:border-[var(--store-accent,#d46a86)]">
               <span>
                 <span className="block text-xs font-bold text-stone-700">Logo do cabeçalho</span>
-                <span className="mt-0.5 block text-[10px] text-stone-400">Ideal: 1200 × 400 px, fundo transparente.</span>
+                <span className="mt-0.5 block text-[10px] text-stone-400">Ideal: SVG vetorial ou 1200 × 400 px com fundo transparente.</span>
               </span>
               <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[var(--store-accent,#d46a86)]"><Pencil className="h-3.5 w-3.5" /> Editar</span>
             </button>
@@ -404,20 +376,10 @@ export function ColorsPanel() {
           <div className="space-y-2">
             {STORE_COLOR_TOKENS.map(({ key, label }) => (
               <div key={key} className="flex items-center gap-2 rounded-lg border border-stone-200 p-2">
-                <input
-                  type="color"
-                  value={/^#[0-9a-fA-F]{6}$/.test(colors[key] || "") ? colors[key] : DEFAULT_STORE_COLORS[key]}
-                  onChange={(e) => set(key, e.target.value)}
-                  className="h-8 w-8 shrink-0 cursor-pointer rounded border border-stone-300 bg-transparent p-0"
-                />
+                <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(colors[key] || "") ? colors[key] : DEFAULT_STORE_COLORS[key]} onChange={(e) => set(key, e.target.value)} className="h-8 w-8 shrink-0 cursor-pointer rounded border border-stone-300 bg-transparent p-0" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-xs font-semibold text-stone-700">{label}</div>
-                  <input
-                    value={colors[key] || ""}
-                    onChange={(e) => set(key, e.target.value)}
-                    placeholder={`Padrão ${DEFAULT_STORE_COLORS[key]}`}
-                    className="w-full rounded-md border border-stone-300 p-1.5 text-xs font-mono outline-none focus:border-amber-500"
-                  />
+                  <input value={colors[key] || ""} onChange={(e) => set(key, e.target.value)} placeholder={`Padrão ${DEFAULT_STORE_COLORS[key]}`} className="w-full rounded-md border border-stone-300 p-1.5 text-xs font-mono outline-none focus:border-amber-500" />
                 </div>
                 {colors[key] && <button onClick={() => reset(key)} className="shrink-0 text-[11px] font-semibold text-stone-400 hover:text-stone-700">Padrão</button>}
               </div>
@@ -430,16 +392,14 @@ export function ColorsPanel() {
         <PanelShell title="Logo do cabeçalho" onClose={ctx.closePanel} onSave={saveLogo} saving={logoSaving} wide>
           <div className="space-y-4">
             <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-[11px] leading-relaxed text-stone-600">
-              <strong className="text-stone-800">Tamanho ideal: 1200 × 400 px (3:1).</strong><br />
-              Use PNG ou WebP com fundo transparente. Deixe uma pequena margem ao redor da arte; a loja reduz automaticamente no celular sem cortar a logo.
+              <strong className="text-stone-800">Melhor qualidade: SVG vetorial. Alternativa: 1200 × 400 px (3:1).</strong><br />
+              SVG permanece nítido em qualquer tela. Para PNG/WebP, use fundo transparente e evite arquivos já comprimidos por WhatsApp ou redes sociais.
             </div>
-
             <div className="overflow-hidden rounded-xl border border-stone-200 bg-[linear-gradient(45deg,#f7f7f7_25%,transparent_25%),linear-gradient(-45deg,#f7f7f7_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#f7f7f7_75%),linear-gradient(-45deg,transparent_75%,#f7f7f7_75%)] bg-[length:18px_18px] bg-[position:0_0,0_9px,9px_-9px,-9px_0px] p-5">
               <div className="flex min-h-36 items-center justify-center rounded-lg bg-white/55 p-3">
                 {headerLogoImage ? <img src={headerLogoImage} alt="Prévia da logo" className="max-h-36 w-full max-w-xl object-contain" /> : <ImageIcon className="h-8 w-8 text-stone-300" />}
               </div>
             </div>
-
             <div className="flex flex-wrap gap-2">
               <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-600 transition hover:border-[var(--store-accent,#d46a86)]">
                 {logoUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />} Trocar logo
@@ -448,10 +408,6 @@ export function ColorsPanel() {
               <button type="button" onClick={() => setHeaderLogoImage(DEFAULT_STOREFRONT_DESIGN.headerLogoImage)} className="inline-flex items-center gap-1.5 rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-500 transition hover:text-stone-800">
                 <RotateCcw className="h-3.5 w-3.5" /> Usar logo padrão
               </button>
-            </div>
-
-            <div className="rounded-lg border border-rose-100 bg-rose-50/40 px-3 py-2 text-[10px] leading-relaxed text-stone-500">
-              Dica: você também pode clicar diretamente na logo do cabeçalho enquanto estiver no editor para abrir esta configuração.
             </div>
           </div>
         </PanelShell>
@@ -462,7 +418,7 @@ export function ColorsPanel() {
           <div className="space-y-4">
             <div className="rounded-xl border border-rose-100 bg-rose-50/60 p-3 text-[11px] leading-relaxed text-stone-600">
               <strong className="text-stone-800">Tamanho ideal: 1800 × 380 px (aprox. 4,7:1).</strong><br />
-              Essa é a proporção exibida no desktop. Imagens mais altas são recortadas pelas bordas, sem deformar, para o banner não ficar grande demais na página.
+              O card mantém a altura atual. Use os dois controles abaixo para reposicionar a arte dentro dele.
             </div>
 
             <label className="flex items-center justify-between gap-4 rounded-xl border border-stone-200 bg-white p-3">
@@ -477,10 +433,21 @@ export function ColorsPanel() {
 
             <div className="relative aspect-[90/19] overflow-hidden rounded-xl border border-stone-200 bg-[#fff7f8]">
               {waImage ? (
-                <img src={waImage} alt="Prévia do banner do WhatsApp" className="absolute inset-0 h-full w-full object-cover" style={{ objectPosition: "center 42%" }} />
+                <img src={waImage} alt="Prévia do banner do WhatsApp" className="absolute inset-0 h-full w-full object-cover" style={{ objectPosition: `${waPosX}% ${waPosY}%` }} />
               ) : (
                 <div className="flex h-full min-h-32 items-center justify-center text-xs text-stone-400">Nenhuma imagem selecionada.</div>
               )}
+            </div>
+
+            <div className="space-y-2 rounded-xl border border-stone-200 bg-stone-50/60 p-3">
+              <label className="block text-[10px] font-semibold text-stone-500">
+                Enquadramento horizontal: {Math.round(waPosX)}%
+                <input type="range" min="0" max="100" value={waPosX} onChange={(e) => { const value = Number(e.target.value); setWaPosX(value); emitWhatsappFraming(value, waPosY); }} className="mt-1 w-full accent-rose-400" />
+              </label>
+              <label className="block text-[10px] font-semibold text-stone-500">
+                Enquadramento vertical: {Math.round(waPosY)}%
+                <input type="range" min="0" max="100" value={waPosY} onChange={(e) => { const value = Number(e.target.value); setWaPosY(value); emitWhatsappFraming(waPosX, value); }} className="mt-1 w-full accent-rose-400" />
+              </label>
             </div>
 
             <div className="flex flex-wrap gap-2">
