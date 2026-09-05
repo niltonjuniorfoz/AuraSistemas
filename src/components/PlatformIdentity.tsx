@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { buildPlatformCopyrightBase, SYSTEM_BRAND } from "../lib/branding";
+import { SYSTEM_BRAND } from "../lib/branding";
 
 function ensureMeta(name: string, content: string) {
   let meta = document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`);
@@ -29,39 +29,45 @@ function syncStoreFooterCopyright() {
   if (!copyright) return;
 
   const displayName = resolveStoreDisplayName(footer);
-  const baseText = buildPlatformCopyrightBase(displayName);
-  const existingBase = copyright.querySelector<HTMLElement>('[data-platform-copyright-base="true"]');
-  const existingReference = copyright.querySelector<HTMLAnchorElement>('[data-platform-reference="true"]');
+  const prefixText = `© ${displayName}. `;
+  const existingPrefix = copyright.querySelector<HTMLElement>('[data-platform-copyright-prefix="true"]');
+  const existingLink = copyright.querySelector<HTMLAnchorElement>('[data-platform-copyright-link="true"]');
+  const existingReference = copyright.querySelector<HTMLElement>('[data-platform-reference="true"]');
 
   if (
-    existingBase?.textContent === baseText
+    existingPrefix?.textContent === prefixText
+    && existingLink?.textContent === SYSTEM_BRAND.copyrightSuffix
+    && existingLink?.getAttribute("href") === SYSTEM_BRAND.publicIdentityPath
     && existingReference?.textContent === SYSTEM_BRAND.platformId
-    && existingReference?.getAttribute("href") === SYSTEM_BRAND.publicIdentityPath
   ) {
     return;
   }
 
-  const base = document.createElement("span");
-  base.dataset.platformCopyrightBase = "true";
-  base.textContent = baseText;
+  const prefix = document.createElement("span");
+  prefix.dataset.platformCopyrightPrefix = "true";
+  prefix.textContent = prefixText;
 
-  const reference = document.createElement("a");
-  reference.href = SYSTEM_BRAND.publicIdentityPath;
+  const copyrightLink = document.createElement("a");
+  copyrightLink.href = SYSTEM_BRAND.publicIdentityPath;
+  copyrightLink.dataset.platformCopyrightLink = "true";
+  copyrightLink.textContent = SYSTEM_BRAND.copyrightSuffix;
+  copyrightLink.title = "Identificação da plataforma";
+  copyrightLink.style.color = "inherit";
+  copyrightLink.style.textDecoration = "none";
+
+  const reference = document.createElement("span");
   reference.dataset.platformReference = "true";
   reference.textContent = SYSTEM_BRAND.platformId;
-  reference.title = "Referência técnica da plataforma";
-  reference.setAttribute("aria-label", `Referência técnica da plataforma ${SYSTEM_BRAND.platformId}`);
+  reference.title = "Identificador da plataforma";
   reference.style.marginLeft = "4px";
   reference.style.fontSize = "7px";
   reference.style.lineHeight = "1";
   reference.style.letterSpacing = ".08em";
   reference.style.opacity = ".28";
   reference.style.whiteSpace = "nowrap";
-  reference.style.color = "inherit";
-  reference.style.textDecoration = "none";
 
   copyright.dataset.platformCopyright = "true";
-  copyright.replaceChildren(base, reference);
+  copyright.replaceChildren(prefix, copyrightLink, reference);
 }
 
 /**
