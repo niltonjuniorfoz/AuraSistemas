@@ -193,7 +193,7 @@ export function Support() {
                   className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-300 transition hover:bg-emerald-500/15"
                 >
                   <MessageCircle className="h-4 w-4" />
-                  +595 995 661934
+                  Chamar no WhatsApp
                 </a>
               </div>
 
