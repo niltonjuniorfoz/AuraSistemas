@@ -105,13 +105,16 @@ export function FeaturedProductSpotlight({ config }: { config: any }) {
           <Link
             to={href}
             aria-label={`Ver ${product.name}`}
-            className="group relative flex min-h-[240px] items-center justify-center overflow-hidden bg-white p-5 sm:min-h-[285px] sm:p-7 md:h-[330px] md:min-h-0 md:p-8"
+            className="group relative flex min-h-[240px] items-stretch justify-center overflow-hidden bg-white sm:min-h-[285px] md:h-[330px] md:min-h-0"
           >
-            <div className="absolute inset-5 rounded-2xl bg-[radial-gradient(circle_at_center,rgba(248,221,229,.40),transparent_72%)]" aria-hidden="true" />
             {imageUrl ? (
-              <img src={imageUrl} alt={product.name} className="relative z-[1] max-h-[220px] max-w-[78%] object-contain drop-shadow-[0_18px_20px_rgba(90,50,65,.10)] transition duration-500 group-hover:scale-[1.025] sm:max-h-[255px] md:max-h-[285px]" />
+              <img
+                src={imageUrl}
+                alt={product.name}
+                className="relative z-[1] h-full w-full object-contain transition duration-500 group-hover:scale-[1.015]"
+              />
             ) : (
-              <div className="relative z-[1] text-xs text-stone-400">Imagem indisponível</div>
+              <div className="relative z-[1] flex h-full w-full items-center justify-center text-xs text-stone-400">Imagem indisponível</div>
             )}
             <BorderBeam
               colorFrom="var(--store-accent, #D46A86)"
