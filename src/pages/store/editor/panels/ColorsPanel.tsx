@@ -144,17 +144,17 @@ export function ColorsPanel() {
     return () => { delete header.dataset.storeHeaderMode; };
   }, [effectiveHeaderMode]);
 
-  // O ShopLayout antes priorizava info.logoUrl, portanto a arte horizontal
-  // criada para o vidro nunca chegava ao <img>. Aplicamos explicitamente a
-  // logo da configuração ao mesmo elemento e, no editor, o clique nela abre o
-  // painel de identidade sem navegar de volta para a Home.
+  // O <img> da logo só nasce depois que /api/store/info termina de carregar.
+  // O efeito antigo rodava antes disso e encerrava sem encontrar a imagem,
+  // deixando o logoUrl vertical do cadastro para sempre. Observamos o header e
+  // reaplicamos a logo publicada/rascunho também quando React recria ou altera
+  // o <img>, sem depender da ordem das requisições.
   useEffect(() => {
-    const image = document.querySelector<HTMLImageElement>('header.sticky.top-0.z-30 a[href="/loja"] img');
-    if (!image) return;
-    const previousSrc = image.getAttribute("src") || "";
-    const previousTitle = image.getAttribute("title");
-    image.src = effectiveDesign.headerLogoImage || DEFAULT_STOREFRONT_DESIGN.headerLogoImage;
-    image.dataset.auraHeaderLogo = "true";
+    const header = document.querySelector<HTMLElement>("header.sticky.top-0.z-30");
+    if (!header) return;
+
+    const desiredSrc = effectiveDesign.headerLogoImage || DEFAULT_STOREFRONT_DESIGN.headerLogoImage;
+    const boundImages = new WeakSet<HTMLImageElement>();
 
     const onEditLogo = (event: Event) => {
       if (!ctx) return;
@@ -162,18 +162,40 @@ export function ColorsPanel() {
       event.stopPropagation();
       ctx.openPanel("brand");
     };
-    if (ctx) {
-      image.title = "Clique para editar a logo do cabeçalho";
-      image.style.cursor = "pointer";
-      image.addEventListener("click", onEditLogo, true);
-    }
+
+    const applyLogo = () => {
+      const image = header.querySelector<HTMLImageElement>('a[href="/loja"] img');
+      if (!image) return;
+
+      if (image.getAttribute("src") !== desiredSrc) image.setAttribute("src", desiredSrc);
+      image.dataset.auraHeaderLogo = "true";
+
+      if (ctx) {
+        image.title = "Clique para editar a logo do cabeçalho";
+        image.style.cursor = "pointer";
+        if (!boundImages.has(image)) {
+          image.addEventListener("click", onEditLogo, true);
+          boundImages.add(image);
+        }
+      } else {
+        image.removeAttribute("title");
+        image.style.removeProperty("cursor");
+      }
+    };
+
+    applyLogo();
+    const observer = new MutationObserver(() => applyLogo());
+    observer.observe(header, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["src"],
+    });
 
     return () => {
-      image.removeEventListener("click", onEditLogo, true);
-      delete image.dataset.auraHeaderLogo;
-      image.style.removeProperty("cursor");
-      if (previousTitle == null) image.removeAttribute("title"); else image.setAttribute("title", previousTitle);
-      if (previousSrc) image.setAttribute("src", previousSrc);
+      observer.disconnect();
+      const image = header.querySelector<HTMLImageElement>('a[href="/loja"] img');
+      if (image && boundImages.has(image)) image.removeEventListener("click", onEditLogo, true);
     };
   }, [ctx, effectiveDesign.headerLogoImage]);
 
@@ -268,15 +290,18 @@ export function ColorsPanel() {
   const renderHomeBanner = publicHome || editorHome;
   const canRenderPublished = !!ctx || publishedLoaded;
 
-  // Sem altura fixa: o card assume a proporção real da arte. Assim a imagem
-  // usa 100% da largura, nunca é cortada e nunca sobra aquele grande quadro
-  // vazio ao redor. Para o padrão atual, 1800×600 (3:1) é o alvo ideal.
+  // A área do WhatsApp fica propositalmente panorâmica no desktop. A arte
+  // atual (3:1) é mais alta do que o espaço desejado, então usamos object-cover
+  // para manter a largura inteira sem deformar e recortamos apenas as bordas.
+  // Em ~1365 px de largura, 90:19 resulta em ~288 px de altura — exatamente a
+  // faixa indicada na referência enviada.
   const bannerContent = effectiveDesign.whatsappBannerImage ? (
-    <div className="relative w-full overflow-hidden rounded-2xl border border-rose-100 bg-[#fff7f8] shadow-[0_18px_45px_-34px_rgba(100,55,70,.42)]">
+    <div className="relative aspect-[3/1] w-full overflow-hidden rounded-2xl border border-rose-100 bg-[#fff7f8] shadow-[0_18px_45px_-34px_rgba(100,55,70,.42)] sm:aspect-[4/1] lg:aspect-[90/19]">
       <img
         src={effectiveDesign.whatsappBannerImage}
         alt="Convite para o grupo do WhatsApp"
-        className="block h-auto w-full object-contain transition duration-500 group-hover:scale-[1.003]"
+        className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.003]"
+        style={{ objectPosition: "center 42%" }}
       />
       <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-white/70" aria-hidden="true" />
     </div>
@@ -436,8 +461,8 @@ export function ColorsPanel() {
         <PanelShell title="Banner Grupo WhatsApp" onClose={ctx.closePanel} onSave={saveWhatsapp} saving={waSaving} wide>
           <div className="space-y-4">
             <div className="rounded-xl border border-rose-100 bg-rose-50/60 p-3 text-[11px] leading-relaxed text-stone-600">
-              <strong className="text-stone-800">Tamanho ideal: 1800 × 600 px (3:1).</strong><br />
-              O card acompanha a proporção real da imagem: ela ocupa 100% da largura e é mostrada inteira, sem recorte. Para manter o banner baixo e minimalista, crie a arte nessa proporção.
+              <strong className="text-stone-800">Tamanho ideal: 1800 × 380 px (aprox. 4,7:1).</strong><br />
+              Essa é a proporção exibida no desktop. Imagens mais altas são recortadas pelas bordas, sem deformar, para o banner não ficar grande demais na página.
             </div>
 
             <label className="flex items-center justify-between gap-4 rounded-xl border border-stone-200 bg-white p-3">
@@ -450,8 +475,12 @@ export function ColorsPanel() {
               </button>
             </label>
 
-            <div className="overflow-hidden rounded-xl border border-stone-200 bg-[#fff7f8]">
-              {waImage ? <img src={waImage} alt="Prévia do banner do WhatsApp" className="block h-auto w-full object-contain" /> : <div className="flex min-h-32 items-center justify-center text-xs text-stone-400">Nenhuma imagem selecionada.</div>}
+            <div className="relative aspect-[90/19] overflow-hidden rounded-xl border border-stone-200 bg-[#fff7f8]">
+              {waImage ? (
+                <img src={waImage} alt="Prévia do banner do WhatsApp" className="absolute inset-0 h-full w-full object-cover" style={{ objectPosition: "center 42%" }} />
+              ) : (
+                <div className="flex h-full min-h-32 items-center justify-center text-xs text-stone-400">Nenhuma imagem selecionada.</div>
+              )}
             </div>
 
             <div className="flex flex-wrap gap-2">
