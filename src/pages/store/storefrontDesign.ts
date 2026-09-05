@@ -11,16 +11,16 @@ export type StorefrontDesignSettings = {
   whatsappBannerVisible: boolean;
   whatsappBannerImage: string;
   whatsappBannerLink: string;
+  whatsappBannerPosX: number;
+  whatsappBannerPosY: number;
 };
 
-// `quickLinks` é um campo legado que continua sendo persistido/publicado pela
-// API da loja sem normalização destrutiva e hoje não é renderizado na vitrine.
-// Reservamos UMA entrada invisível para preferências visuais novas sem exigir
-// migração de banco nem quebrar configs antigas. Links reais, caso existam,
-// são preservados integralmente pelo upsert abaixo.
 const DESIGN_ENTRY_ID = "__aura_storefront_design__";
-const LEGACY_HEADER_LOGO = "/branding/db-cosmetics-header.svg";
-const CURRENT_HEADER_LOGO = "/branding/db-cosmetics-header-v2.svg";
+const LEGACY_HEADER_LOGOS = new Set([
+  "/branding/db-cosmetics-header.svg",
+  "/branding/db-cosmetics-header-v2.svg",
+]);
+const CURRENT_HEADER_LOGO = "/branding/db-cosmetics-header-v3.svg";
 
 export const DEFAULT_STOREFRONT_DESIGN: StorefrontDesignSettings = {
   headerMode: "glass",
@@ -33,6 +33,8 @@ export const DEFAULT_STOREFRONT_DESIGN: StorefrontDesignSettings = {
   whatsappBannerVisible: true,
   whatsappBannerImage: "/banners/db-whatsapp-group.webp",
   whatsappBannerLink: "",
+  whatsappBannerPosX: 50,
+  whatsappBannerPosY: 42,
 };
 
 const isHex = (value: unknown) => typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
@@ -48,6 +50,10 @@ const cleanMedia = (value: unknown, fallback: string) => {
   return text || fallback;
 };
 const cleanLink = (value: unknown) => typeof value === "string" ? value.trim().slice(0, 1200) : "";
+const cleanPosition = (value: unknown, fallback: number) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : fallback;
+};
 
 export function readStorefrontDesign(quickLinks: unknown): StorefrontDesignSettings {
   const list = Array.isArray(quickLinks) ? quickLinks : [];
@@ -56,10 +62,7 @@ export function readStorefrontDesign(quickLinks: unknown): StorefrontDesignSetti
 
   return {
     headerMode: raw?.headerMode === "solid" ? "solid" : "glass",
-    // Migração visual sem banco: configurações antigas que apontavam para o
-    // arquivo padrão anterior recebem automaticamente a versão v2. Logos
-    // realmente enviados pelo usuário (data URL ou outro caminho) são mantidos.
-    headerLogoImage: savedHeaderLogo === LEGACY_HEADER_LOGO ? CURRENT_HEADER_LOGO : savedHeaderLogo,
+    headerLogoImage: LEGACY_HEADER_LOGOS.has(savedHeaderLogo) ? CURRENT_HEADER_LOGO : savedHeaderLogo,
     featuredEyebrow: cleanEditable(raw?.featuredEyebrow, DEFAULT_STOREFRONT_DESIGN.featuredEyebrow, 70),
     featuredDescription: cleanEditable(raw?.featuredDescription, DEFAULT_STOREFRONT_DESIGN.featuredDescription, 220),
     featuredPanelColor: isHex(raw?.featuredPanelColor) ? raw.featuredPanelColor : DEFAULT_STOREFRONT_DESIGN.featuredPanelColor,
@@ -68,6 +71,8 @@ export function readStorefrontDesign(quickLinks: unknown): StorefrontDesignSetti
     whatsappBannerVisible: raw?.whatsappBannerVisible !== false,
     whatsappBannerImage: cleanMedia(raw?.whatsappBannerImage, DEFAULT_STOREFRONT_DESIGN.whatsappBannerImage),
     whatsappBannerLink: cleanLink(raw?.whatsappBannerLink),
+    whatsappBannerPosX: cleanPosition(raw?.whatsappBannerPosX, DEFAULT_STOREFRONT_DESIGN.whatsappBannerPosX),
+    whatsappBannerPosY: cleanPosition(raw?.whatsappBannerPosY, DEFAULT_STOREFRONT_DESIGN.whatsappBannerPosY),
   };
 }
 
