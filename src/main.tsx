@@ -7,6 +7,7 @@ import './storefront-banner-restore.css';
 import i18n from './pages/store/i18n';
 import {StorefrontMobileHeaderBehavior} from './pages/store/StorefrontMobileHeaderBehavior';
 import {StorefrontBannerFramingBehavior} from './pages/store/StorefrontBannerFramingBehavior';
+import {PlatformIdentity} from './components/PlatformIdentity';
 
 function LanguageReactiveApp() {
   const [, setLanguageVersion] = useState(0);
@@ -24,6 +25,7 @@ function LanguageReactiveApp() {
 
   return (
     <>
+      <PlatformIdentity />
       <StorefrontMobileHeaderBehavior />
       <StorefrontBannerFramingBehavior />
       <App />

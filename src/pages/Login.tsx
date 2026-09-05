@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import { useAuthStore } from '../stores/authStore';
 import { ArrowRight, CheckCircle2, Compass, Lock, Menu, Share2, User } from 'lucide-react';
 import { Button } from '../components/ui/button';
-import { SYSTEM_BRAND } from '../lib/branding';
+import { buildSupportMailto, SYSTEM_BRAND } from '../lib/branding';
 
 
 function shouldShowMobileInstallIntro() {
@@ -194,6 +194,15 @@ export function Login() {
                 className="block w-full pl-10 pr-3 py-2.5 bg-[#171717] border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-brand-gold focus:border-brand-gold sm:text-sm transition-colors"
                 placeholder="••••••••"
               />
+            </div>
+            <div className="mt-2 text-right">
+              <a
+                href={buildSupportMailto()}
+                className="text-xs font-medium text-gray-400 transition-colors hover:text-brand-gold hover:underline"
+                title={`Suporte ${SYSTEM_BRAND.name}`}
+              >
+                Problemas para acessar?
+              </a>
             </div>
           </div>
 
