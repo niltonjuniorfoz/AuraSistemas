@@ -2,6 +2,7 @@ export type StoreHeaderMode = "glass" | "solid";
 
 export type StorefrontDesignSettings = {
   headerMode: StoreHeaderMode;
+  headerLogoImage: string;
   featuredEyebrow: string;
   featuredDescription: string;
   featuredPanelColor: string;
@@ -21,6 +22,7 @@ const DESIGN_ENTRY_ID = "__aura_storefront_design__";
 
 export const DEFAULT_STOREFRONT_DESIGN: StorefrontDesignSettings = {
   headerMode: "glass",
+  headerLogoImage: "/branding/db-cosmetics-header.svg",
   featuredEyebrow: "#produto em destaque",
   featuredDescription: "Uma escolha especial da nossa curadoria para você.",
   featuredPanelColor: "#d46a86",
@@ -40,7 +42,7 @@ const cleanEditable = (value: unknown, fallback: string, max: number) => (
   typeof value === "string" ? value.trim().slice(0, max) : fallback
 );
 const cleanMedia = (value: unknown, fallback: string) => {
-  const text = typeof value === "string" ? value.trim().slice(0, 450000) : "";
+  const text = typeof value === "string" ? value.trim().slice(0, 900000) : "";
   return text || fallback;
 };
 const cleanLink = (value: unknown) => typeof value === "string" ? value.trim().slice(0, 1200) : "";
@@ -51,6 +53,7 @@ export function readStorefrontDesign(quickLinks: unknown): StorefrontDesignSetti
 
   return {
     headerMode: raw?.headerMode === "solid" ? "solid" : "glass",
+    headerLogoImage: cleanMedia(raw?.headerLogoImage, DEFAULT_STOREFRONT_DESIGN.headerLogoImage),
     // Título curto e descrição podem ser apagados deliberadamente no editor.
     featuredEyebrow: cleanEditable(raw?.featuredEyebrow, DEFAULT_STOREFRONT_DESIGN.featuredEyebrow, 70),
     featuredDescription: cleanEditable(raw?.featuredDescription, DEFAULT_STOREFRONT_DESIGN.featuredDescription, 220),

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useLocation } from "react-router";
-import { AlertTriangle, Eye, EyeOff, Layers3, Loader2, MessageCircle, Pencil, RotateCcw, Square, Upload } from "lucide-react";
+import { AlertTriangle, Eye, EyeOff, Image as ImageIcon, Layers3, Loader2, MessageCircle, Pencil, RotateCcw, Square, Upload } from "lucide-react";
 import { useEditMode } from "../EditModeContext";
 import { PanelShell } from "./PanelShell";
 import { DEFAULT_STORE_COLORS, STORE_COLOR_TOKENS, contrastRatio } from "../storeTheme";
@@ -11,14 +11,19 @@ import {
   StorefrontDesignSettings,
   upsertStorefrontDesign,
 } from "../../storefrontDesign";
-import { compressImage, BANNER_COMPRESS_OPTS } from "../../../../lib/imageUpload";
+import {
+  BANNER_COMPRESS_OPTS,
+  LOGO_COMPRESS_OPTS,
+  compressImage,
+  compressTransparentImage,
+} from "../../../../lib/imageUpload";
 import { toast } from "../../../../components/Toast";
 
 const MIN_CONTRAST = 4.5; // WCAG AA pra texto normal
 
-// O ShopLayout já monta este componente em todas as rotas públicas da loja.
-// Isso nos permite manter a superfície do header e o banner final da Home no
-// mesmo nível do layout sem alterar o fluxo do carrinho/rodapé.
+// ShopLayout já monta este componente em todas as rotas públicas da loja. O
+// cabeçalho continua pertencendo ao layout, mas suas preferências visuais e a
+// logo são aplicadas aqui para usar a mesma configuração publicada/rascunho.
 const HEADER_SURFACE_CSS = `
 header.sticky.top-0.z-30:not([data-store-header-mode="solid"]),
 header[data-store-header-mode="glass"] {
@@ -44,25 +49,20 @@ header[data-store-header-mode="solid"] > .bg-white,
 header[data-store-header-mode="solid"] > form.bg-white {
   background-color: var(--store-header-bg,#ffffff) !important;
 }
-
-/* Identidade específica DB Cosmetics: versão horizontal, transparente e mais
-   legível sobre o vidro. O seletor por alt impede trocar logos de outras lojas
-   que usem a mesma aplicação Aura. */
-header.sticky.top-0.z-30 a[href="/loja"] img[alt*="Cosmetics" i] {
-  content: url('/branding/db-cosmetics-header.svg') !important;
-  width: 245px !important;
+header.sticky.top-0.z-30 img[data-aura-header-logo="true"] {
+  width: 285px !important;
   height: 82px !important;
-  max-width: 245px !important;
+  max-width: 285px !important;
   transform: none !important;
   scale: 1 !important;
   object-fit: contain !important;
-  filter: drop-shadow(0 3px 8px rgba(115,82,13,.10));
+  filter: drop-shadow(0 3px 9px rgba(115,82,13,.12));
 }
 @media (max-width: 767px) {
-  header.sticky.top-0.z-30 a[href="/loja"] img[alt*="Cosmetics" i] {
-    width: 174px !important;
+  header.sticky.top-0.z-30 img[data-aura-header-logo="true"] {
+    width: 185px !important;
     height: 58px !important;
-    max-width: 174px !important;
+    max-width: 185px !important;
   }
 }
 `;
@@ -77,15 +77,19 @@ export function ColorsPanel() {
   const [publishedLoaded, setPublishedLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Estado do editor do banner do grupo. Fica aqui porque este componente já
-  // está montado exatamente entre a página (<Outlet>) e o rodapé no ShopLayout.
   const [waVisible, setWaVisible] = useState(initialDesign.whatsappBannerVisible);
   const [waImage, setWaImage] = useState(initialDesign.whatsappBannerImage);
   const [waLink, setWaLink] = useState(initialDesign.whatsappBannerLink);
   const [waUploading, setWaUploading] = useState(false);
   const [waSaving, setWaSaving] = useState(false);
 
-  // Fora do editor, lê uma vez a config pública para header + banner final.
+  const [headerLogoImage, setHeaderLogoImage] = useState(initialDesign.headerLogoImage);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoSaving, setLogoSaving] = useState(false);
+
+  // Fora do editor, a configuração publicada é a fonte da verdade. O default
+  // já aponta para a nova logo horizontal, então lojas antigas também deixam
+  // de ficar presas à logo vertical do cadastro enquanto a config carrega.
   useEffect(() => {
     if (ctx) return;
     let cancelled = false;
@@ -99,7 +103,8 @@ export function ColorsPanel() {
     return () => { cancelled = true; };
   }, [ctx]);
 
-  // Resincroniza os painéis com o draft quando são abertos.
+  // Resincroniza cada painel quando ele é aberto; fechar sem salvar não deixa
+  // estado antigo reaparecer na próxima abertura.
   useEffect(() => {
     if (ctx?.activePanel === "colors") {
       setColors(ctx?.draft?.theme?.colors || {});
@@ -111,14 +116,26 @@ export function ColorsPanel() {
       setWaImage(d.whatsappBannerImage);
       setWaLink(d.whatsappBannerLink);
     }
+    if (ctx?.activePanel === "brand") {
+      setHeaderLogoImage(readStorefrontDesign(ctx?.draft?.quickLinks).headerLogoImage);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctx?.activePanel]);
 
   const draftDesign = ctx ? readStorefrontDesign(ctx?.draft?.quickLinks) : publishedDesign;
   const effectiveHeaderMode = ctx?.activePanel === "colors" ? headerMode : draftDesign.headerMode;
-  const effectiveDesign: StorefrontDesignSettings = ctx?.activePanel === "whatsappBanner"
-    ? { ...draftDesign, whatsappBannerVisible: waVisible, whatsappBannerImage: waImage, whatsappBannerLink: waLink }
-    : draftDesign;
+  let effectiveDesign: StorefrontDesignSettings = draftDesign;
+  if (ctx?.activePanel === "whatsappBanner") {
+    effectiveDesign = {
+      ...effectiveDesign,
+      whatsappBannerVisible: waVisible,
+      whatsappBannerImage: waImage,
+      whatsappBannerLink: waLink,
+    };
+  }
+  if (ctx?.activePanel === "brand") {
+    effectiveDesign = { ...effectiveDesign, headerLogoImage };
+  }
 
   useEffect(() => {
     const header = document.querySelector<HTMLElement>("header.sticky.top-0.z-30");
@@ -126,6 +143,39 @@ export function ColorsPanel() {
     header.dataset.storeHeaderMode = effectiveHeaderMode;
     return () => { delete header.dataset.storeHeaderMode; };
   }, [effectiveHeaderMode]);
+
+  // O ShopLayout antes priorizava info.logoUrl, portanto a arte horizontal
+  // criada para o vidro nunca chegava ao <img>. Aplicamos explicitamente a
+  // logo da configuração ao mesmo elemento e, no editor, o clique nela abre o
+  // painel de identidade sem navegar de volta para a Home.
+  useEffect(() => {
+    const image = document.querySelector<HTMLImageElement>('header.sticky.top-0.z-30 a[href="/loja"] img');
+    if (!image) return;
+    const previousSrc = image.getAttribute("src") || "";
+    const previousTitle = image.getAttribute("title");
+    image.src = effectiveDesign.headerLogoImage || DEFAULT_STOREFRONT_DESIGN.headerLogoImage;
+    image.dataset.auraHeaderLogo = "true";
+
+    const onEditLogo = (event: Event) => {
+      if (!ctx) return;
+      event.preventDefault();
+      event.stopPropagation();
+      ctx.openPanel("brand");
+    };
+    if (ctx) {
+      image.title = "Clique para editar a logo do cabeçalho";
+      image.style.cursor = "pointer";
+      image.addEventListener("click", onEditLogo, true);
+    }
+
+    return () => {
+      image.removeEventListener("click", onEditLogo, true);
+      delete image.dataset.auraHeaderLogo;
+      image.style.removeProperty("cursor");
+      if (previousTitle == null) image.removeAttribute("title"); else image.setAttribute("title", previousTitle);
+      if (previousSrc) image.setAttribute("src", previousSrc);
+    };
+  }, [ctx, effectiveDesign.headerLogoImage]);
 
   const set = (key: string, value: string) => setColors((c) => ({ ...c, [key]: value }));
   const reset = (key: string) => setColors((c) => ({ ...c, [key]: "" }));
@@ -180,6 +230,31 @@ export function ColorsPanel() {
     }));
   };
 
+  const handleLogoFile = async (file: File | undefined) => {
+    if (!file) return;
+    setLogoUploading(true);
+    try {
+      setHeaderLogoImage(await compressTransparentImage(file, LOGO_COMPRESS_OPTS));
+    } catch (e: any) {
+      toast.error(e.message || "Erro ao processar a logo.");
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
+  const saveLogo = async () => {
+    if (!ctx) return;
+    setLogoSaving(true);
+    try {
+      const ok = await ctx.patchDraft((draft: any) => ({
+        quickLinks: upsertStorefrontDesign(draft?.quickLinks, { headerLogoImage }),
+      }));
+      if (ok) ctx.closePanel();
+    } finally {
+      setLogoSaving(false);
+    }
+  };
+
   const textContrast = colors.text && colors.bg ? contrastRatio(colors.text, colors.bg) : null;
   const accentContrast = colors.accent && colors.accentText ? contrastRatio(colors.accent, colors.accentText) : null;
   const warnings = [
@@ -193,12 +268,17 @@ export function ColorsPanel() {
   const renderHomeBanner = publicHome || editorHome;
   const canRenderPublished = !!ctx || publishedLoaded;
 
+  // Sem altura fixa: o card assume a proporção real da arte. Assim a imagem
+  // usa 100% da largura, nunca é cortada e nunca sobra aquele grande quadro
+  // vazio ao redor. Para o padrão atual, 1800×600 (3:1) é o alvo ideal.
   const bannerContent = effectiveDesign.whatsappBannerImage ? (
-    <div className="relative h-[145px] overflow-hidden rounded-2xl border border-rose-100 bg-[#fff7f8] shadow-[0_18px_45px_-34px_rgba(100,55,70,.42)] sm:h-[185px] lg:h-[225px]">
-      <img src={effectiveDesign.whatsappBannerImage} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full scale-110 object-cover opacity-20 blur-2xl" />
-      <div className="absolute inset-0 bg-gradient-to-r from-white/20 via-transparent to-white/20" aria-hidden="true" />
-      <img src={effectiveDesign.whatsappBannerImage} alt="Convite para o grupo do WhatsApp" className="relative z-[1] h-full w-full object-contain transition duration-500 group-hover:scale-[1.006]" />
-      <div className="pointer-events-none absolute inset-x-8 top-0 z-[2] h-px bg-white/70" aria-hidden="true" />
+    <div className="relative w-full overflow-hidden rounded-2xl border border-rose-100 bg-[#fff7f8] shadow-[0_18px_45px_-34px_rgba(100,55,70,.42)]">
+      <img
+        src={effectiveDesign.whatsappBannerImage}
+        alt="Convite para o grupo do WhatsApp"
+        className="block h-auto w-full object-contain transition duration-500 group-hover:scale-[1.003]"
+      />
+      <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-white/70" aria-hidden="true" />
     </div>
   ) : null;
 
@@ -277,6 +357,17 @@ export function ColorsPanel() {
                 <Square className="h-4 w-4" /> Sólido
               </button>
             </div>
+            <button
+              type="button"
+              onClick={() => ctx.openPanel("brand")}
+              className="mt-3 flex w-full items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2.5 text-left transition hover:border-[var(--store-accent,#d46a86)]"
+            >
+              <span>
+                <span className="block text-xs font-bold text-stone-700">Logo do cabeçalho</span>
+                <span className="mt-0.5 block text-[10px] text-stone-400">Ideal: 1200 × 400 px, fundo transparente.</span>
+              </span>
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[var(--store-accent,#d46a86)]"><Pencil className="h-3.5 w-3.5" /> Editar</span>
+            </button>
           </div>
 
           {warnings.length > 0 && (
@@ -310,11 +401,43 @@ export function ColorsPanel() {
         </PanelShell>
       )}
 
+      {ctx?.activePanel === "brand" && (
+        <PanelShell title="Logo do cabeçalho" onClose={ctx.closePanel} onSave={saveLogo} saving={logoSaving} wide>
+          <div className="space-y-4">
+            <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-[11px] leading-relaxed text-stone-600">
+              <strong className="text-stone-800">Tamanho ideal: 1200 × 400 px (3:1).</strong><br />
+              Use PNG ou WebP com fundo transparente. Deixe uma pequena margem ao redor da arte; a loja reduz automaticamente no celular sem cortar a logo.
+            </div>
+
+            <div className="overflow-hidden rounded-xl border border-stone-200 bg-[linear-gradient(45deg,#f7f7f7_25%,transparent_25%),linear-gradient(-45deg,#f7f7f7_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#f7f7f7_75%),linear-gradient(-45deg,transparent_75%,#f7f7f7_75%)] bg-[length:18px_18px] bg-[position:0_0,0_9px,9px_-9px,-9px_0px] p-5">
+              <div className="flex min-h-36 items-center justify-center rounded-lg bg-white/55 p-3">
+                {headerLogoImage ? <img src={headerLogoImage} alt="Prévia da logo" className="max-h-36 w-full max-w-xl object-contain" /> : <ImageIcon className="h-8 w-8 text-stone-300" />}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-600 transition hover:border-[var(--store-accent,#d46a86)]">
+                {logoUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />} Trocar logo
+                <input type="file" accept="image/png,image/webp,image/svg+xml" className="hidden" disabled={logoUploading} onChange={(e) => handleLogoFile(e.target.files?.[0])} />
+              </label>
+              <button type="button" onClick={() => setHeaderLogoImage(DEFAULT_STOREFRONT_DESIGN.headerLogoImage)} className="inline-flex items-center gap-1.5 rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-500 transition hover:text-stone-800">
+                <RotateCcw className="h-3.5 w-3.5" /> Usar logo padrão
+              </button>
+            </div>
+
+            <div className="rounded-lg border border-rose-100 bg-rose-50/40 px-3 py-2 text-[10px] leading-relaxed text-stone-500">
+              Dica: você também pode clicar diretamente na logo do cabeçalho enquanto estiver no editor para abrir esta configuração.
+            </div>
+          </div>
+        </PanelShell>
+      )}
+
       {ctx?.activePanel === "whatsappBanner" && (
         <PanelShell title="Banner Grupo WhatsApp" onClose={ctx.closePanel} onSave={saveWhatsapp} saving={waSaving} wide>
           <div className="space-y-4">
             <div className="rounded-xl border border-rose-100 bg-rose-50/60 p-3 text-[11px] leading-relaxed text-stone-600">
-              Este banner aparece no fim da Home, depois do último conteúdo e antes do rodapé. A altura é reduzida automaticamente para manter o visual minimalista.
+              <strong className="text-stone-800">Tamanho ideal: 1800 × 600 px (3:1).</strong><br />
+              O card acompanha a proporção real da imagem: ela ocupa 100% da largura e é mostrada inteira, sem recorte. Para manter o banner baixo e minimalista, crie a arte nessa proporção.
             </div>
 
             <label className="flex items-center justify-between gap-4 rounded-xl border border-stone-200 bg-white p-3">
@@ -328,9 +451,7 @@ export function ColorsPanel() {
             </label>
 
             <div className="overflow-hidden rounded-xl border border-stone-200 bg-[#fff7f8]">
-              <div className="relative h-40">
-                {waImage && <img src={waImage} alt="Prévia do banner do WhatsApp" className="h-full w-full object-contain" />}
-              </div>
+              {waImage ? <img src={waImage} alt="Prévia do banner do WhatsApp" className="block h-auto w-full object-contain" /> : <div className="flex min-h-32 items-center justify-center text-xs text-stone-400">Nenhuma imagem selecionada.</div>}
             </div>
 
             <div className="flex flex-wrap gap-2">

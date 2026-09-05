@@ -8,6 +8,7 @@ const MAX_DIM = 1024;       // maior lado em px — suficiente pra foto de produ
 const TARGET_CHARS = 190000; // ~140KB de imagem, bom pra thumbnail repetida
 
 export const BANNER_COMPRESS_OPTS = { maxDim: 1920, targetChars: 500000 }; // ~375KB, 1 por página
+export const LOGO_COMPRESS_OPTS = { maxDim: 1600, targetChars: 650000 }; // WebP com alpha, mantém fundo transparente
 
 export async function compressImage(file: File, opts?: { maxDim?: number; targetChars?: number }): Promise<string> {
   const maxDim = opts?.maxDim ?? MAX_DIM;
@@ -47,6 +48,40 @@ export async function compressImage(file: File, opts?: { maxDim?: number; target
     ctx.drawImage(c2, 0, 0);
   }
   throw new Error("Não consegui comprimir a imagem o suficiente. Tente uma foto menor.");
+}
+
+// Logos precisam manter o canal alpha para funcionar sobre cabeçalhos
+// translúcidos. WebP preserva transparência e normalmente fica muito menor que
+// PNG; se ainda ficar grande, reduzimos a dimensão sem pintar um fundo atrás.
+export async function compressTransparentImage(file: File, opts?: { maxDim?: number; targetChars?: number }): Promise<string> {
+  const maxDim = opts?.maxDim ?? LOGO_COMPRESS_OPTS.maxDim;
+  const targetChars = opts?.targetChars ?? LOGO_COMPRESS_OPTS.targetChars;
+  if (!file.type.startsWith("image/")) throw new Error("Arquivo não é imagem.");
+  const dataUrl = await readFile(file);
+  const img = await loadImage(dataUrl);
+
+  let w = img.naturalWidth, h = img.naturalHeight;
+  if (Math.max(w, h) > maxDim) {
+    const k = maxDim / Math.max(w, h);
+    w = Math.round(w * k); h = Math.round(h * k);
+  }
+
+  for (let dim = 0; dim < 4; dim++) {
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(w));
+    canvas.height = Math.max(1, Math.round(h));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas indisponível.");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    for (const q of [0.9, 0.82, 0.72, 0.62]) {
+      const out = canvas.toDataURL("image/webp", q);
+      if (out.length <= targetChars) return out;
+    }
+    w *= 0.78; h *= 0.78;
+  }
+  throw new Error("A logo ficou muito grande. Tente um arquivo menor ou com menos resolução.");
 }
 
 function readFile(file: File): Promise<string> {
