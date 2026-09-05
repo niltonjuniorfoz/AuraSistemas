@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 220" role="img" aria-labelledby="title desc" shape-rendering="geometricPrecision" text-rendering="geometricPrecision" preserveAspectRatio="xMidYMid meet">
+  <title id="title">DB Cosmetics By Jessica Ferreira</title>
+  <desc id="desc">Logo horizontal dourada com monograma DB em moldura oval vertical, Cosmetics abaixo e assinatura By Jessica Ferreira à direita.</desc>
+
+  <g fill="none" stroke="#a97805" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="24" y="12" width="118" height="154" rx="59" stroke-width="3"/>
+    <rect x="30" y="18" width="106" height="142" rx="53" stroke-width="1.5"/>
+  </g>
+
+  <g fill="#a97805" font-family="Georgia, 'Times New Roman', serif">
+    <text x="43" y="117" font-size="82" letter-spacing="-8">D</text>
+    <text x="82" y="136" font-size="70" letter-spacing="-7">B</text>
+    <text x="14" y="204" font-size="27" letter-spacing="1.2">COSMETICS</text>
+  </g>
+
+  <line x1="174" y1="48" x2="174" y2="165" stroke="#c7a85c" stroke-width="1"/>
+  <text x="205" y="116" fill="#946905" font-family="Georgia, 'Times New Roman', serif" font-size="35" font-weight="600">By Jessica Ferreira.</text>
+</svg>
